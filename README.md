@@ -8,6 +8,13 @@ ____   ____.___
    \___/   |___|
 ```
 
+> [!IMPORTANT]
+> **📬 Contact Info / Get in Touch:**
+> * **Email:** [halva@horni.cc](mailto:halva@horni.cc)
+> * **Discord:** `@halvu`
+> 
+> Reach out to collaborate, suggest improvements, or ask questions!
+
 Viss is a modern, statically typed, prefix-oriented programming language designed for high-performance native development. By transpiling directly to clean, debuggable C++17, Viss combines the safety and readability of expressive syntax with the raw speed and portability of native binaries.
 
 ---
