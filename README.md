@@ -194,6 +194,11 @@ The runtime library [vissrt.hpp](file:///C:/Users/halva/Desktop/Viss/vissrt.hpp)
 #### `thread` (Threading)
 * `thread.run(func)` - Spawns a background system thread running the given function reference.
 
+#### `webviss` (Web & Secure VTS Protocol)
+* `webviss.protocol(proto)` - Registers protocols. Passing `"vts"` enables the Viss Tunnel Security protocol.
+* `webviss.fetch(url)` - Fetches response data from `http://`, `https://`, or `vts://` URLs.
+  * **Viss Tunnel Security (VTS)**: Automatically negotiates ephemeral ECDH keys for perfect forward secrecy, uses dynamic ratcheting symmetric encryption, and appends randomized noise padding to deceive Deep Packet Inspection (DPI) censorship firewalls.
+
 ---
 
 ## 4. Custom Modules (VCM) & Package Management (VPM)
