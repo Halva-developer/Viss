@@ -114,6 +114,14 @@ def transpile(viss_code, filename):
     # Match double quoted string literals
     processed_code = re.sub(r'"(?:[^"\\]|\\.)*"', replace_str, viss_code)
 
+    # Extract comments to protect them from regex translation
+    comments = []
+    def replace_comment(match):
+        comments.append(match.group(0))
+        return f" __VISS_COMMENT_{len(comments)-1}__ "
+        
+    processed_code = re.sub(r'//.*|/\*[\s\S]*?\*/', replace_comment, processed_code)
+
     # Replace using blocks (potentially multiline)
     processed_code = re.sub(
         r'using\s+[a-zA-Z0-9_]+\s*\{\s*return\s+([^;]+);\s*\}',
@@ -174,6 +182,10 @@ def transpile(viss_code, filename):
         cpp_lines.append(transpiled)
 
     cpp_code = '\n'.join(cpp_lines)
+
+    # Restore comments
+    for i, com in enumerate(comments):
+        cpp_code = cpp_code.replace(f" __VISS_COMMENT_{i}__ ", com)
 
     # Restore string literals
     for i, lit in enumerate(string_literals):

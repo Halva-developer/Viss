@@ -237,6 +237,18 @@ std::string transpile(const std::string& vissCode, const std::string& filename) 
         temp = processed;
     }
 
+    // Extract comments to protect them from regex translation
+    std::vector<std::string> comments;
+    std::regex commentRegex(R"(//.*|/\*[\s\S]*?\*/)");
+    std::smatch commentMatch;
+    temp = processed;
+    while (std::regex_search(temp, commentMatch, commentRegex)) {
+        comments.push_back(commentMatch.str());
+        std::string placeholder = " __VISS_COMMENT_" + std::to_string(comments.size() - 1) + "__ ";
+        processed.replace(processed.find(commentMatch.str()), commentMatch.str().length(), placeholder);
+        temp = processed;
+    }
+
     // 2. Replace using blocks
     std::regex usingBlockRegex(R"(using\s+[a-zA-Z0-9_]+\s*\{\s*return\s+([^;]+);\s*\})");
     processed = std::regex_replace(processed, usingBlockRegex, "return $1;");
@@ -306,7 +318,13 @@ std::string transpile(const std::string& vissCode, const std::string& filename) 
         cppCode += l + "\n";
     }
 
-    // 4. Restore string literals
+    // 4. Restore comments
+    for (size_t i = 0; i < comments.size(); ++i) {
+        std::string placeholder = " __VISS_COMMENT_" + std::to_string(i) + "__ ";
+        cppCode = replaceAll(cppCode, placeholder, comments[i]);
+    }
+
+    // 5. Restore string literals
     for (size_t i = 0; i < stringLiterals.size(); ++i) {
         std::string placeholder = "__VISS_STR_LIT_" + std::to_string(i) + "__";
         cppCode = replaceAll(cppCode, placeholder, stringLiterals[i]);
