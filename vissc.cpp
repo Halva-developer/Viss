@@ -79,8 +79,11 @@ void validateVissSyntax(const std::string& code, const std::string& filename) {
             continue;
         }
 
+        // Remove string literals to prevent matching else/if/etc. inside strings
+        std::string testLine = std::regex_replace(stripped, std::regex(R"("(?:[^"\\]|\\.)*")"), "");
+
         // Check ? prefix on conditionals
-        if (std::regex_search(stripped, ifRegex) && !startsWith(stripped, "?if") && stripped.find("+cpp") == std::string::npos) {
+        if (std::regex_search(testLine, ifRegex) && !startsWith(stripped, "?if") && testLine.find("+cpp") == std::string::npos) {
             std::cerr << "Syntax Error in " << filename << ":" << lineNum << ":\n";
             std::cerr << "  " << line << "\n";
             std::cerr << "  " << std::string(line.length(), '^') << "\n";
@@ -88,7 +91,7 @@ void validateVissSyntax(const std::string& code, const std::string& filename) {
             std::exit(1);
         }
 
-        if (std::regex_search(stripped, elseRegex) && stripped.find("?else") == std::string::npos && stripped.find("+cpp") == std::string::npos) {
+        if (std::regex_search(testLine, elseRegex) && stripped.find("?else") == std::string::npos && testLine.find("+cpp") == std::string::npos) {
             std::cerr << "Syntax Error in " << filename << ":" << lineNum << ":\n";
             std::cerr << "  " << line << "\n";
             std::cerr << "  " << std::string(line.length(), '^') << "\n";
@@ -97,7 +100,7 @@ void validateVissSyntax(const std::string& code, const std::string& filename) {
         }
 
         // Check ! prefix on blocks
-        if (std::regex_search(stripped, funcRegex) && !startsWith(stripped, "!func") && stripped.find("+cpp") == std::string::npos && stripped.find("!") == std::string::npos) {
+        if (std::regex_search(testLine, funcRegex) && !startsWith(stripped, "!func") && testLine.find("+cpp") == std::string::npos && testLine.find("!") == std::string::npos) {
             std::cerr << "Syntax Error in " << filename << ":" << lineNum << ":\n";
             std::cerr << "  " << line << "\n";
             std::cerr << "  " << std::string(line.length(), '^') << "\n";
@@ -105,7 +108,7 @@ void validateVissSyntax(const std::string& code, const std::string& filename) {
             std::exit(1);
         }
 
-        if (std::regex_search(stripped, loopRegex) && !startsWith(stripped, "!loop") && stripped.find("+cpp") == std::string::npos) {
+        if (std::regex_search(testLine, loopRegex) && !startsWith(stripped, "!loop") && testLine.find("+cpp") == std::string::npos) {
             std::cerr << "Syntax Error in " << filename << ":" << lineNum << ":\n";
             std::cerr << "  " << line << "\n";
             std::cerr << "  " << std::string(line.length(), '^') << "\n";
@@ -115,7 +118,7 @@ void validateVissSyntax(const std::string& code, const std::string& filename) {
 
         // Check @ prefix on variable declarations
         std::smatch varMatch;
-        if (std::regex_search(stripped, varMatch, varDeclRegex) && stripped.find("+cpp") == std::string::npos) {
+        if (std::regex_search(testLine, varMatch, varDeclRegex) && testLine.find("+cpp") == std::string::npos) {
             std::string varType = varMatch[1].str();
             std::string varName = varMatch[2].str();
             std::cerr << "Syntax Error in " << filename << ":" << lineNum << ":\n";
@@ -131,6 +134,7 @@ bool needsSemicolon(const std::string& line) {
     std::string s = trim(line);
     if (s.empty()) return false;
     if (startsWith(s, "//")) return false;
+    if (s.find("__VISS_COMMENT_") != std::string::npos) return false;
     
     char lastChar = s.back();
     if (lastChar == '{' || lastChar == '}' || lastChar == ';' || lastChar == ',' || lastChar == ':') return false;
@@ -171,7 +175,7 @@ std::string transpileLine(std::string line, int lineNum, const std::string& file
 
     // 2. Block definitions starting with !
     line = std::regex_replace(line, std::regex(R"(!func\s+main\s*\(\s*\))"), "int main()");
-    line = std::regex_replace(line, std::regex(R"(!\$func\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)\s*\{)"), "inline auto $1($2) { return std::async(std::launch::async, [=]() {");
+    line = std::regex_replace(line, std::regex(R"(!\$func\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)\s*\{)"), "inline auto $1($2) { return viss::getGlobalThreadPool().enqueue([=]() {");
     line = std::regex_replace(line, std::regex(R"(!func\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\))"), "inline auto $1($2)");
     line = std::regex_replace(line, std::regex(R"(!loop\s*\(([^)]+)\))"), "while ($1)");
     line = std::regex_replace(line, std::regex(R"(!class\s+([a-zA-Z0-9_]+))"), "struct $1");
@@ -183,7 +187,7 @@ std::string transpileLine(std::string line, int lineNum, const std::string& file
     line = std::regex_replace(line, std::regex(R"(\?try)"), "try");
     line = std::regex_replace(line, std::regex(R"(\?catch\s*\(\s*Error\s+@([a-zA-Z0-9_]+)\s*\)\s*\{)"), "catch (const std::exception& _std_err) { viss::Error $1(_std_err.what());");
     line = std::regex_replace(line, std::regex(R"(\?catch\s*\{)"), "catch (...) {");
-    line = std::regex_replace(line, std::regex(R"(\$await\s+([a-zA-Z0-9_\.\(\):]+))"), "($1).get()");
+    line = std::regex_replace(line, std::regex(R"(\$await\s+([^;]+))"), "($1).get()");
 
     // 4. Pure C++ block prefix
     line = std::regex_replace(line, std::regex(R"(\+cpp)"), "");
@@ -327,7 +331,13 @@ std::string transpile(const std::string& vissCode, const std::string& filename) 
     // 5. Restore string literals
     for (size_t i = 0; i < stringLiterals.size(); ++i) {
         std::string placeholder = "__VISS_STR_LIT_" + std::to_string(i) + "__";
-        cppCode = replaceAll(cppCode, placeholder, stringLiterals[i]);
+        std::string lit = stringLiterals[i];
+        if (lit.find('\n') != std::string::npos || lit.find('\r') != std::string::npos) {
+            if (lit.length() >= 2 && lit.front() == '"' && lit.back() == '"') {
+                lit = "R\"viss(" + lit.substr(1, lit.length() - 2) + ")viss\"";
+            }
+        }
+        cppCode = replaceAll(cppCode, placeholder, lit);
     }
 
     return cppCode;

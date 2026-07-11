@@ -4,6 +4,7 @@ import json
 import urllib.request
 import subprocess
 import shutil
+import hashlib
 
 CONFIG_FILE = "vpm_config.json"
 MODULES_DIR = "viss_modules"
@@ -20,6 +21,16 @@ def load_config():
 def save_config(config):
     with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=4)
+
+def get_file_sha256(path):
+    h = hashlib.sha256()
+    try:
+        with open(path, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except Exception:
+        return ""
 
 def ensure_modules_dir():
     if not os.path.exists(MODULES_DIR):
@@ -127,7 +138,7 @@ def cmd_install(pkg_name=None, install_all=False, force_yes=False):
     if install_all:
         print("[VPM] Installing all packages from repositories...")
         for name in db.keys():
-            install_package(name, db[name], config, force_yes)
+            install_package(name, db[name], config, db, force_yes)
         save_config(config)
         return
 
@@ -139,15 +150,26 @@ def cmd_install(pkg_name=None, install_all=False, force_yes=False):
         print(f"[VPM] Error: Package '{pkg_name}' not found in connected repositories.")
         return
         
-    install_package(pkg_name, db[pkg_name], config, force_yes)
+    install_package(pkg_name, db[pkg_name], config, db, force_yes)
     save_config(config)
 
-def install_package(name, info, config, force_yes):
+def install_package(name, info, config, db, force_yes):
     if name in config["installed"] and not force_yes:
         ans = input(f"[VPM] Package '{name}' is already installed. Reinstall/Update? (y/n): ")
         if ans.lower() != 'y':
             return
             
+    # Dependency resolution
+    dependencies = info.get("dependencies", [])
+    for dep in dependencies:
+        if dep not in config["installed"]:
+            print(f"[VPM] Resolving dependency: '{name}' requires '{dep}'...")
+            if dep in db:
+                install_package(dep, db[dep], config, db, force_yes)
+            else:
+                print(f"[VPM] Error: Dependency '{dep}' not found in connected repositories!")
+                return
+
     repo = info["repo"]
     filename = info["file"]
     print(f"[VPM] Downloading package '{name}' ({filename})...")
@@ -176,6 +198,21 @@ def install_package(name, info, config, force_yes):
             shutil.rmtree(temp_dir)
             
     if success:
+        # Hash Verification (Security check)
+        expected_hash = info.get("sha256")
+        if expected_hash:
+            actual_hash = get_file_sha256(dest_path)
+            if actual_hash != expected_hash:
+                print(f"[VPM] SECURITY WARNING: Hash verification failed for package '{name}'!")
+                print(f"      Expected: {expected_hash}")
+                print(f"      Actual:   {actual_hash}")
+                print("[VPM] Aborting installation for safety.")
+                if os.path.exists(dest_path):
+                    os.remove(dest_path)
+                return
+            else:
+                print(f"[VPM] Security check passed: hash match for '{name}'.")
+
         config["installed"][name] = {"version": info.get("version", "1.0.0"), "file": filename}
         print(f"[VPM] Successfully installed '{name}'!")
     else:

@@ -26,7 +26,7 @@ def transpile_line(line, line_num, filename, string_literals):
     # Main function
     line = re.sub(r'!func\s+main\s*\(\s*\)', 'int main()', line)
     # Normal functions (deduced return type via auto)
-    line = re.sub(r'!\$func\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)\s*\{', r'inline auto \1(\2) { return std::async(std::launch::async, [=]() {', line)
+    line = re.sub(r'!\$func\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)\s*\{', r'inline auto \1(\2) { return viss::getGlobalThreadPool().enqueue([=]() {', line)
     line = re.sub(r'!func\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)', r'inline auto \1(\2)', line)
     # Loop block
     line = re.sub(r'!loop\s*\(([^)]+)\)', r'while (\1)', line)
@@ -41,7 +41,7 @@ def transpile_line(line, line_num, filename, string_literals):
     line = re.sub(r'\?try', 'try', line)
     line = re.sub(r'\?catch\s*\(\s*Error\s+@([a-zA-Z0-9_]+)\s*\)\s*\{', r'catch (const std::exception& _std_err) { viss::Error \1(_std_err.what());', line)
     line = re.sub(r'\?catch\s*\{', 'catch (...) {', line)
-    line = re.sub(r'\$await\s+([a-zA-Z0-9_\.\(\):]+)', r'(\1).get()', line)
+    line = re.sub(r'\$await\s+([^;]+)', r'(\1).get()', line)
 
     # 4. Handle pure C++ block prefix +cpp
     line = re.sub(r'\+cpp', '', line)
@@ -85,6 +85,9 @@ def needs_semicolon(line):
     if not s or s.startswith("//"):
         return False
     
+    if "__VISS_COMMENT_" in s:
+        return False
+        
     last_char = s[-1]
     if last_char in ('{', '}', ';', ',', ':'):
         return False
@@ -189,6 +192,9 @@ def transpile(viss_code, filename):
 
     # Restore string literals
     for i, lit in enumerate(string_literals):
+        if '\n' in lit or '\r' in lit:
+            if len(lit) >= 2 and lit.startswith('"') and lit.endswith('"'):
+                lit = 'R"viss(' + lit[1:-1] + ')viss"'
         cpp_code = cpp_code.replace(f"__VISS_STR_LIT_{i}__", lit)
 
     return cpp_code
@@ -274,15 +280,18 @@ def validate_viss_syntax(viss_code, filename):
         if not stripped or stripped.startswith('//'):
             continue
             
+        # Remove string literals to prevent matching else/if/etc. inside strings
+        test_line = re.sub(r'"(?:[^"\\]|\\.)*"', '', stripped)
+            
         # Check: logical conditionals must start with ?
-        if re.search(r'\bif\s*\(', stripped) and not stripped.startswith('?if') and not '+cpp' in stripped:
+        if re.search(r'\bif\s*\(', test_line) and not stripped.startswith('?if') and not '+cpp' in test_line:
             print(f"Syntax Error in {filename}:{line_num}:")
             print(f"  {line}")
             print(f"  {'^' * len(line)}")
             print("  Detail: Logical conditionals must be prefixed with '?'. Did you mean '?if'?")
             sys.exit(1)
             
-        if re.search(r'\belse\b', stripped) and not re.search(r'\?else\b', stripped) and not '+cpp' in stripped:
+        if re.search(r'\belse\b', test_line) and not re.search(r'\?else\b', test_line) and not '+cpp' in test_line:
             print(f"Syntax Error in {filename}:{line_num}:")
             print(f"  {line}")
             print(f"  {'^' * len(line)}")
@@ -290,14 +299,14 @@ def validate_viss_syntax(viss_code, filename):
             sys.exit(1)
             
         # Check: flow blocks must start with !
-        if re.search(r'\bfunc\s+', stripped) and not stripped.startswith('!func') and not '+cpp' in stripped and not '!' in stripped:
+        if re.search(r'\bfunc\s+', test_line) and not stripped.startswith('!func') and not '+cpp' in test_line and not '!' in test_line:
             print(f"Syntax Error in {filename}:{line_num}:")
             print(f"  {line}")
             print(f"  {'^' * len(line)}")
             print("  Detail: Function blocks must be prefixed with '!'. Did you mean '!func'?")
             sys.exit(1)
             
-        if re.search(r'\bloop\s*\(', stripped) and not stripped.startswith('!loop') and not '+cpp' in stripped:
+        if re.search(r'\bloop\s*\(', test_line) and not stripped.startswith('!loop') and not '+cpp' in test_line:
             print(f"Syntax Error in {filename}:{line_num}:")
             print(f"  {line}")
             print(f"  {'^' * len(line)}")
@@ -305,8 +314,8 @@ def validate_viss_syntax(viss_code, filename):
             sys.exit(1)
             
         # Check: Variable declaration without @ prefix
-        m_var = re.search(r'\b(Str|Int|Dec|Bool)\s+([a-zA-Z0-9_]+)\s*=', stripped)
-        if m_var and not '+cpp' in stripped:
+        m_var = re.search(r'\b(Str|Int|Dec|Bool)\s+([a-zA-Z0-9_]+)\s*=', test_line)
+        if m_var and not '+cpp' in test_line:
             var_type = m_var.group(1)
             var_name = m_var.group(2)
             print(f"Syntax Error in {filename}:{line_num}:")
