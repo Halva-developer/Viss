@@ -224,7 +224,7 @@ std::string transpileLine(std::string line, int lineNum, const std::string& file
     }
 
     // 1. Imports and standard libraries
-    line = std::regex_replace(line, std::regex(R"(@use\s+<IOstream>\s+for\s+\*)"), "#include \"vissrt.hpp\"\nusing namespace viss;");
+    line = std::regex_replace(line, std::regex(R"(@use\s+<?IOstream>?\s+for\s+\*)"), "#include \"libs/vissrt.hpp\"\nusing namespace viss;");
     
     // Custom use lists
     std::smatch useListMatch;

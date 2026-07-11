@@ -10,7 +10,7 @@ def transpile_line(line, line_num, filename, string_literals):
         return line
 
     # 1. Handle C++ imports and library use mappings
-    line = re.sub(r'@use\s+<IOstream>\s+for\s+\*', '#include "vissrt.hpp"\nusing namespace viss;', line)
+    line = re.sub(r'@use\s+<?IOstream>?\s+for\s+\*', '#include "libs/vissrt.hpp"\nusing namespace viss;', line)
     
     def translate_use_list(match):
         lib = match.group(1)
