@@ -211,7 +211,7 @@ bool needsSemicolon(const std::string& line) {
     
     if (startsWith(s, "@use") || startsWith(s, "&vcm") || startsWith(s, "+cpp") || startsWith(s, "using") || startsWith(s, "#")) return false;
     if (startsWith(s, "!func") || startsWith(s, "!loop") || startsWith(s, "!class") || startsWith(s, "!space")) return false;
-    if (startsWith(s, "?if") || startsWith(s, "?else") || startsWith(s, "?try") || startsWith(s, "?catch")) return false;
+    if (startsWith(s, "?if") || startsWith(s, "?else") || startsWith(s, "?try") || startsWith(s, "?catch") || startsWith(s, "?match")) return false;
     
     return true;
 }
@@ -252,6 +252,9 @@ std::string transpileLine(std::string line, int lineNum, const std::string& file
     line = std::regex_replace(line, std::regex(R"(!space\s+([a-zA-Z0-9_]+))"), "namespace $1");
 
     // 3. Logical actions starting with ?
+    line = std::regex_replace(line, std::regex(R"(\?match\s*\(([^)]+)\))"), "switch ($1)");
+    line = std::regex_replace(line, std::regex(R"(\?else\s*=>\s*\{)"), "default: {");
+    line = std::regex_replace(line, std::regex(R"(([^=]+)\s*=>\s*\{)"), "case $1: {");
     line = std::regex_replace(line, std::regex(R"(\?if\s*\(([^)]+)\))"), "if ($1)");
     line = std::regex_replace(line, std::regex(R"(\?else)"), "else");
     line = std::regex_replace(line, std::regex(R"(\?try)"), "try");
@@ -337,6 +340,7 @@ std::string transpile(const std::string& vissCode, const std::string& filename) 
 
     std::regex classDefRegex(R"(!class\s+[a-zA-Z0-9_]+)");
     std::regex asyncFuncDefRegex(R"(!\$func\s+[a-zA-Z0-9_]+)");
+    std::regex matchDefRegex(R"(\?match\s*\()");
 
     while (std::getline(stream, line)) {
         lineIndex++;
@@ -347,6 +351,7 @@ std::string transpile(const std::string& vissCode, const std::string& filename) 
         
         bool isClassOpen = std::regex_search(stripped, classDefRegex);
         bool isAsyncFuncOpen = std::regex_search(stripped, asyncFuncDefRegex);
+        bool isMatchOpen = std::regex_search(stripped, matchDefRegex);
         size_t openBraces = countChar(stripped, '{');
         size_t closeBraces = countChar(stripped, '}');
 
@@ -357,6 +362,11 @@ std::string transpile(const std::string& vissCode, const std::string& filename) 
             } else if (isAsyncFuncOpen) {
                 blockStack.push_back("async_func");
                 isAsyncFuncOpen = false;
+            } else if (isMatchOpen) {
+                blockStack.push_back("match");
+                isMatchOpen = false;
+            } else if (!blockStack.empty() && blockStack.back() == "match") {
+                blockStack.push_back("match_case");
             } else {
                 blockStack.push_back("other");
             }
@@ -377,6 +387,11 @@ std::string transpile(const std::string& vissCode, const std::string& filename) 
                     size_t pos = transpiled.rfind('}');
                     if (pos != std::string::npos) {
                         transpiled.replace(pos, 1, "}); }");
+                    }
+                } else if (type == "match_case") {
+                    size_t pos = transpiled.rfind('}');
+                    if (pos != std::string::npos) {
+                        transpiled.replace(pos, 1, "break; }");
                     }
                 }
             }

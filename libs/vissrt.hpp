@@ -16,25 +16,6 @@
 #include <queue>
 #include <condition_variable>
 
-#ifdef _WIN32
-#include <winsock2.h>
-#include <windows.h>
-#include <GL/gl.h>
-#pragma comment(lib, "user32.lib")
-#pragma comment(lib, "gdi32.lib")
-#pragma comment(lib, "opengl32.lib")
-#pragma comment(lib, "ws2_32.lib")
-#else
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <netdb.h>
-#include <sys/stat.h>
-#define SOCKET int
-#define INVALID_SOCKET -1
-#define closesocket close
-#endif
-
 namespace viss {
     using Str = std::string;
     using Int = long long;
@@ -49,14 +30,15 @@ namespace viss {
         std::condition_variable cv;
         bool stop = false;
     public:
-        ThreadPool(size_t threads = std::max(1u, std::thread::hardware_concurrency())) {
+        ThreadPool(size_t threads = std::thread::hardware_concurrency()) {
+            if (threads == 0) threads = 2;
             for (size_t i = 0; i < threads; ++i) {
-                workers.emplace_back([this] {
+                workers.emplace_back([this]() {
                     while (true) {
                         std::function<void()> task;
                         {
                             std::unique_lock<std::mutex> lock(this->queueMutex);
-                            this->cv.wait(lock, [this] {
+                            this->cv.wait(lock, [this]() {
                                 return this->stop || !this->tasks.empty();
                             });
                             if (this->stop && this->tasks.empty()) return;
@@ -68,8 +50,8 @@ namespace viss {
                 });
             }
         }
-        
-        template<class F, class... Args>
+
+        template<typename F, typename... Args>
         auto enqueue(F&& f, Args&&... args) 
             -> std::future<typename std::invoke_result<F, Args...>::type> {
             using return_type = typename std::invoke_result<F, Args...>::type;
@@ -108,6 +90,16 @@ namespace viss {
     struct Point {
         Int x = 0;
         Int y = 0;
+    };
+
+    class Error : public std::exception {
+    private:
+        Str message;
+    public:
+        Error(const Str& msg) : message(msg) {}
+        virtual const char* what() const noexcept override {
+            return message.c_str();
+        }
     };
 
     template<typename T>
@@ -157,23 +149,11 @@ namespace viss {
             data->clear();
         }
 
-        typename std::vector<T>::iterator begin() { return data->begin(); }
-        typename std::vector<T>::iterator end() { return data->end(); }
-        typename std::vector<T>::const_iterator begin() const { return data->begin(); }
-        typename std::vector<T>::const_iterator end() const { return data->end(); }
-    };
-
-    class Error : public std::exception {
-    private:
-        Str msg;
-    public:
-        Error(const Str& m) : msg(m) {}
-        virtual const char* what() const noexcept override {
-            return msg.c_str();
-        }
-        inline Str message() const {
-            return msg;
-        }
+        // Iterator support
+        inline auto begin() { return data->begin(); }
+        inline auto end() { return data->end(); }
+        inline auto begin() const { return data->begin(); }
+        inline auto end() const { return data->end(); }
     };
 
     template<typename K, typename V>
@@ -222,534 +202,6 @@ namespace viss {
         }
     };
 
-    namespace sys {
-        inline void seed() {
-            #ifdef _WIN32
-            srand(GetTickCount());
-            #else
-            srand((unsigned int)time(nullptr));
-            #endif
-        }
-        inline Int random(Int min, Int max) {
-            if (max <= min) return min;
-            return min + (rand() % (max - min));
-        }
-    }
-
-    namespace io {
-        inline void println(const Str& value) { std::cout << value << "\n"; }
-        inline void println(Int value) { std::cout << value << "\n"; }
-        inline void println(Dec value) { std::cout << value << "\n"; }
-        inline void println(Bool value) { std::cout << (value ? "true" : "false") << "\n"; }
-
-        inline void print(const Str& value) { std::cout << value; }
-        inline void print(Int value) { std::cout << value; }
-        inline void print(Dec value) { std::cout << value; }
-        inline void print(Bool value) { std::cout << (value ? "true" : "false"); }
-
-        inline void eprint(const Str& value) { std::cerr << value; }
-        inline void eprintln(const Str& value) { std::cerr << value << "\n"; }
-
-        inline Str readln() {
-            Str s;
-            std::getline(std::cin, s);
-            return s;
-        }
-
-        inline void color(Int colorCode) {
-            #ifdef _WIN32
-            SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), (WORD)colorCode);
-            #else
-            int ansiCode = 37;
-            switch (colorCode) {
-                case 0: ansiCode = 30; break;
-                case 1: ansiCode = 34; break;
-                case 2: ansiCode = 32; break;
-                case 3: ansiCode = 36; break;
-                case 4: ansiCode = 31; break;
-                case 5: ansiCode = 35; break;
-                case 6: ansiCode = 33; break;
-                case 7: ansiCode = 37; break;
-                case 8: ansiCode = 90; break;
-                case 9: ansiCode = 94; break;
-                case 10: ansiCode = 92; break;
-                case 11: ansiCode = 96; break;
-                case 12: ansiCode = 91; break;
-                case 13: ansiCode = 95; break;
-                case 14: ansiCode = 93; break;
-                case 15: ansiCode = 97; break;
-            }
-            std::cout << "\033[" << ansiCode << "m";
-            #endif
-        }
-        inline void clear() {
-            #ifdef _WIN32
-            COORD topLeft  = { 0, 0 };
-            HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
-            CONSOLE_SCREEN_BUFFER_INFO screen;
-            DWORD written;
-            GetConsoleScreenBufferInfo(console, &screen);
-            FillConsoleOutputCharacterA(console, ' ', screen.dwSize.X * screen.dwSize.Y, topLeft, &written);
-            FillConsoleOutputAttribute(console, screen.wAttributes, screen.dwSize.X * screen.dwSize.Y, topLeft, &written);
-            SetConsoleCursorPosition(console, topLeft);
-            #else
-            std::cout << "\033[2J\033[1;1H";
-            #endif
-        }
-        inline void cursor(Int x, Int y) {
-            #ifdef _WIN32
-            COORD pos = { (SHORT)x, (SHORT)y };
-            SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), pos);
-            #else
-            std::cout << "\033[" << (y + 1) << ";" << (x + 1) << "H";
-            #endif
-        }
-    }
-
-    namespace fs {
-        inline void write(const Str& path, const Str& content) {
-            std::ofstream f(path);
-            if (f.is_open()) {
-                f << content;
-            }
-        }
-        inline Str read(const Str& path) {
-            std::ifstream f(path);
-            if (!f.is_open()) return "";
-            Str content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-            return content;
-        }
-        inline Bool exists(const Str& path) {
-            std::ifstream f(path);
-            return f.good();
-        }
-        inline void append(const Str& path, const Str& content) {
-            std::ofstream f(path, std::ios::app);
-            if (f.is_open()) {
-                f << content;
-            }
-        }
-        inline void remove(const Str& path) {
-            std::remove(path.c_str());
-        }
-        inline void mkdir(const Str& path) {
-            #ifdef _WIN32
-            CreateDirectoryA(path.c_str(), NULL);
-            #else
-            mkdir(path.c_str(), 0777);
-            #endif
-        }
-    }
-
-    namespace math {
-        inline const Dec PI = 3.14159265358979323846;
-        inline const Dec E  = 2.71828182845904523536;
-
-        inline Dec sin(Dec x) { return std::sin(x); }
-        inline Dec cos(Dec x) { return std::cos(x); }
-        inline Dec tan(Dec x) { return std::tan(x); }
-        inline Dec sqrt(Dec x) { return std::sqrt(x); }
-        inline Dec pow(Dec base, Dec exp) { return std::pow(base, exp); }
-        inline Dec abs(Dec x) { return std::abs(x); }
-        inline Int abs(Int x) { return std::abs(x); }
-        inline Dec round(Dec x) { return std::round(x); }
-        inline Dec floor(Dec x) { return std::floor(x); }
-        inline Dec ceil(Dec x) { return std::ceil(x); }
-    }
-
-    namespace time {
-        inline Int now() {
-            return std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::system_clock::now().time_since_epoch()
-            ).count();
-        }
-        inline Int ms() {
-            return std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()
-            ).count();
-        }
-        inline void sleep(Int milliseconds) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
-        }
-    }
-
-    namespace str {
-        inline Int len(const Str& s) {
-            return (Int)s.length();
-        }
-        inline Str sub(const Str& s, Int start, Int len) {
-            if (start < 0 || start >= (Int)s.length()) return "";
-            return s.substr(start, len);
-        }
-        inline Int find(const Str& s, const Str& subStr) {
-            auto pos = s.find(subStr);
-            if (pos == std::string::npos) return -1;
-            return (Int)pos;
-        }
-        inline Str lower(Str s) {
-            std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return std::tolower(c); });
-            return s;
-        }
-        inline Str upper(Str s) {
-            std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return std::toupper(c); });
-            return s;
-        }
-        inline List<Str> split(const Str& s, const Str& delimiter) {
-            List<Str> tokens;
-            size_t prev = 0, pos = 0;
-            do {
-                pos = s.find(delimiter, prev);
-                if (pos == std::string::npos) pos = s.length();
-                Str token = s.substr(prev, pos - prev);
-                tokens.add(token);
-                prev = pos + delimiter.length();
-            } while (pos < s.length() && prev < s.length());
-            return tokens;
-        }
-    }
-
-    namespace webviss {
-        inline Bool vtsEnabled = false;
-
-        inline void protocol(const Str& proto) {
-            if (proto == "vts") {
-                vtsEnabled = true;
-                std::cout << "[WebViss] Protocol 'vts://' (Viss Tunnel Security) has been enabled.\n";
-                std::cout << "[WebViss] Security: Ephemeral ECDH key exchange, Perfect Forward Secrecy & Traffic Obfuscation active.\n";
-            }
-        }
-
-        struct VtsSession {
-            Str sessionKey;
-            Int ratchetStep = 0;
-
-            Str encrypt(const Str& plaintext) {
-                Str ciphertext = "";
-                for (size_t i = 0; i < plaintext.length(); ++i) {
-                    char keyChar = sessionKey[(i + ratchetStep) % sessionKey.length()];
-                    char encryptedChar = plaintext[i] ^ keyChar;
-                    encryptedChar = ((encryptedChar << 3) & 0xF8) | ((encryptedChar >> 5) & 0x07);
-                    ciphertext += encryptedChar;
-                }
-                ratchetStep++;
-                Str padded = ciphertext;
-                padded += "::VTS_PAD::" + std::to_string(rand() % 1000);
-                return padded;
-            }
-
-            Str decrypt(const Str& ciphertext) {
-                size_t padPos = ciphertext.find("::VTS_PAD::");
-                Str cleanCipher = (padPos != std::string::npos) ? ciphertext.substr(0, padPos) : ciphertext;
-                
-                Str plaintext = "";
-                for (size_t i = 0; i < cleanCipher.length(); ++i) {
-                    char encryptedChar = cleanCipher[i];
-                    encryptedChar = ((encryptedChar >> 3) & 0x1F) | ((encryptedChar << 5) & 0xE0);
-                    char keyChar = sessionKey[(i + ratchetStep) % sessionKey.length()];
-                    plaintext += (encryptedChar ^ keyChar);
-                }
-                ratchetStep++;
-                return plaintext;
-            }
-        };
-
-        inline VtsSession initiateVtsHandshake(const Str& host) {
-            std::cout << "[VTS Handshake] Initiating secure tunnel with " << host << "...\n";
-            Int clientPriv = 1000 + (rand() % 9000);
-            Int g = 5, p = 23;
-            Int clientPub = 1;
-            for (Int i = 0; i < clientPriv; ++i) clientPub = (clientPub * g) % p;
-
-            std::cout << "[VTS Handshake] Exchanging ephemeral public keys...\n";
-            Int serverPriv = 2000 + (rand() % 8000);
-            Int serverPub = 1;
-            for (Int i = 0; i < serverPriv; ++i) serverPub = (serverPub * g) % p;
-
-            Int clientShared = 1;
-            for (Int i = 0; i < clientPriv; ++i) clientShared = (clientShared * serverPub) % p;
-
-            Str key = std::to_string(clientShared) + "_VTS_SECRET_KEY_SHIFT_93";
-            std::cout << "[VTS Handshake] Shared key established. Perfect Forward Secrecy enabled.\n";
-            
-            VtsSession session;
-            session.sessionKey = key;
-            return session;
-        }
-
-        inline Str fetch(const Str& url) {
-            if (url.rfind("vts://", 0) == 0) {
-                if (!vtsEnabled) {
-                    return "[WebViss Error] vts:// protocol is not registered. Run webviss.protocol(\"vts\") first.";
-                }
-                Str address = url.substr(6);
-                VtsSession session = initiateVtsHandshake(address);
-                
-                Str request = "GET / HTTP/1.1\r\nHost: " + address + "\r\n\r\n";
-                Str encryptedRequest = session.encrypt(request);
-                std::cout << "[VTS Tunnel] Obfuscated Request payload sent: " << encryptedRequest.length() << " bytes (randomized noise)\n";
-                
-                Str response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html><body><h1>WebViss Secure Page via VTS Protocol</h1></body></html>";
-                Str encryptedResponse = session.encrypt(response);
-                std::cout << "[VTS Tunnel] Obfuscated Response payload received: " << encryptedResponse.length() << " bytes\n";
-                
-                Str decryptedResponse = session.decrypt(encryptedResponse);
-                return decryptedResponse;
-            } else if (url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0) {
-                std::cout << "[WebViss] Fetching standard web url: " << url << "\n";
-                return "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n[WebViss] Standard HTTP Response stub";
-            }
-            return "[WebViss Error] Unsupported protocol in URL: " + url;
-        }
-
-        inline void registerProtocol() {
-            #ifdef _WIN32
-            HKEY hKey;
-            char path[MAX_PATH];
-            GetModuleFileNameA(nullptr, path, MAX_PATH);
-            std::string appPath(path);
-
-            if (RegCreateKeyExA(HKEY_CLASSES_ROOT, "vts", 0, nullptr, REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &hKey, nullptr) == ERROR_SUCCESS) {
-                std::string desc = "URL:Viss Tunnel Security Protocol";
-                RegSetValueExA(hKey, nullptr, 0, REG_SZ, (const BYTE*)desc.c_str(), (DWORD)(desc.length() + 1));
-                std::string urlProto = "";
-                RegSetValueExA(hKey, "URL Protocol", 0, REG_SZ, (const BYTE*)urlProto.c_str(), 1);
-                RegCloseKey(hKey);
-            }
-
-            if (RegCreateKeyExA(HKEY_CLASSES_ROOT, "vts\\shell\\open\\command", 0, nullptr, REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &hKey, nullptr) == ERROR_SUCCESS) {
-                std::string cmd = "\"" + appPath + "\" \"%1\"";
-                RegSetValueExA(hKey, nullptr, 0, REG_SZ, (const BYTE*)cmd.c_str(), (DWORD)(cmd.length() + 1));
-                RegCloseKey(hKey);
-            }
-            std::cout << "[WebViss] VTS protocol successfully registered in Windows Registry.\n";
-            std::cout << "[WebViss] Typing 'vts://<site>' in Run or browser will launch this gateway!\n";
-            #else
-            std::cout << "[WebViss] URI scheme registration is only supported on Windows.\n";
-            #endif
-        }
-
-        inline void startGateway(Int port) {
-            std::cout << "[WebViss Gateway] Starting HTTP-to-VTS Gateway on http://localhost:" << port << "\n";
-            std::thread([port]() {
-                #ifdef _WIN32
-                WSADATA wsa;
-                WSAStartup(MAKEWORD(2,2), &wsa);
-                #endif
-
-                SOCKET server = socket(AF_INET, SOCK_STREAM, 0);
-                sockaddr_in addr = {};
-                addr.sin_family = AF_INET;
-                addr.sin_port = htons(port);
-                addr.sin_addr.s_addr = INADDR_ANY;
-
-                int opt = 1;
-                setsockopt(server, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
-
-                if (bind(server, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
-                    std::cout << "[WebViss Gateway] Error binding to port " << port << "\n";
-                    return;
-                }
-
-                listen(server, 10);
-
-                while (true) {
-                    SOCKET client = accept(server, nullptr, nullptr);
-                    if (client == INVALID_SOCKET) continue;
-
-                    char buf[2048] = {0};
-                    int bytes = recv(client, buf, sizeof(buf) - 1, 0);
-                    if (bytes > 0) {
-                        std::string req(buf);
-                        size_t fetchPos = req.find("/fetch?url=");
-                        if (fetchPos != std::string::npos) {
-                            size_t urlStart = fetchPos + 11;
-                            size_t urlEnd = req.find(" ", urlStart);
-                            std::string targetUrl = req.substr(urlStart, urlEnd - urlStart);
-                            
-                            // URL decode helper
-                            auto replaceAll = [](std::string& s, const std::string& f, const std::string& r) {
-                                size_t pos = 0;
-                                while((pos = s.find(f, pos)) != std::string::npos) {
-                                    s.replace(pos, f.length(), r);
-                                    pos += r.length();
-                                }
-                            };
-                            replaceAll(targetUrl, "%3A", ":");
-                            replaceAll(targetUrl, "%2F", "/");
-
-                            std::cout << "[WebViss Gateway] Intercepted browser request for VTS URL: " << targetUrl << "\n";
-                            
-                            webviss::protocol("vts");
-                            std::string decryptedHtml = webviss::fetch(targetUrl);
-
-                            std::string httpRes = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " + std::to_string(decryptedHtml.length()) + "\r\nConnection: close\r\n\r\n" + decryptedHtml;
-                            send(client, httpRes.c_str(), (int)httpRes.length(), 0);
-                        } else {
-                            std::string defaultHtml = "<html><body><h1>WebViss Gateway is running!</h1><p>Type <code>vts://host</code> in Windows Run or browser to browse securely.</p></body></html>";
-                            std::string httpRes = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: " + std::to_string(defaultHtml.length()) + "\r\nConnection: close\r\n\r\n" + defaultHtml;
-                            send(client, httpRes.c_str(), (int)httpRes.length(), 0);
-                        }
-                    }
-                    closesocket(client);
-                }
-            }).detach();
-        }
-    }
-
-    namespace env {
-        inline Str get(const Str& name) {
-            char* val = std::getenv(name.c_str());
-            return val ? Str(val) : "";
-        }
-        inline void set(const Str& name, const Str& value) {
-            #ifdef _WIN32
-            _putenv_s(name.c_str(), value.c_str());
-            #else
-            setenv(name.c_str(), value.c_str(), 1);
-            #endif
-        }
-        inline List<Str> args() {
-            List<Str> argList;
-            return argList;
-        }
-        inline void exit(Int code) {
-            std::exit((int)code);
-        }
-    }
-
-#ifdef _WIN32
-    namespace gfx {
-        inline HWND hwnd = nullptr;
-        inline HDC hdc = nullptr;
-        inline HDC memDC = nullptr;
-        inline HBITMAP hbm = nullptr;
-        inline int width = 0;
-        inline int height = 0;
-        inline bool running = false;
-        inline bool keys[256] = {false};
-
-        inline LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-            switch(msg) {
-                case WM_DESTROY:
-                    PostQuitMessage(0);
-                    running = false;
-                    return 0;
-                case WM_KEYDOWN:
-                    if (wParam < 256) keys[wParam] = true;
-                    return 0;
-                case WM_KEYUP:
-                    if (wParam < 256) keys[wParam] = false;
-                    return 0;
-            }
-            return DefWindowProc(hwnd, msg, wParam, lParam);
-        }
-
-        inline void init(Int w, Int h, const Str& title) {
-            width = w;
-            height = h;
-            HINSTANCE hInst = GetModuleHandle(nullptr);
-            
-            WNDCLASS wc = {};
-            wc.lpfnWndProc = WndProc;
-            wc.hInstance = hInst;
-            wc.lpszClassName = "VissGfxWindowClass";
-            wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-            wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-
-            RegisterClass(&wc);
-
-            RECT r = {0, 0, (LONG)width, (LONG)height};
-            AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX, FALSE);
-
-            hwnd = CreateWindowEx(
-                0, "VissGfxWindowClass", title.c_str(),
-                WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX,
-                CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left, r.bottom - r.top,
-                nullptr, nullptr, hInst, nullptr
-            );
-
-            if (hwnd) {
-                ShowWindow(hwnd, SW_SHOW);
-                hdc = GetDC(hwnd);
-
-                HDC winDC = GetDC(hwnd);
-                memDC = CreateCompatibleDC(winDC);
-                hbm = CreateCompatibleBitmap(winDC, width, height);
-                SelectObject(memDC, hbm);
-                ReleaseDC(hwnd, winDC);
-
-                running = true;
-            }
-        }
-
-        inline Bool isOpen() {
-            if (!running) return false;
-            MSG msg;
-            while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
-                TranslateMessage(&msg);
-                DispatchMessage(&msg);
-            }
-            return running;
-        }
-
-        inline void clear(Int color) {
-            if (!memDC) return;
-            RECT r = {0, 0, width, height};
-            HBRUSH brush = CreateSolidBrush(color);
-            FillRect(memDC, &r, brush);
-            DeleteObject(brush);
-        }
-
-        inline void drawRect(Int x, Int y, Int w, Int h, Int color) {
-            if (!memDC) return;
-            RECT r = {(LONG)x, (LONG)y, (LONG)(x + w), (LONG)(y + h)};
-            HBRUSH brush = CreateSolidBrush(color);
-            FillRect(memDC, &r, brush);
-            DeleteObject(brush);
-        }
-
-        inline void drawText(Int x, Int y, const Str& text, Int color) {
-            if (!memDC) return;
-            SetTextColor(memDC, color);
-            SetBkMode(memDC, TRANSPARENT);
-            TextOut(memDC, x, y, text.c_str(), (int)text.length());
-        }
-
-        inline Bool getKey(Int keyCode) {
-            if (keyCode >= 0 && keyCode < 256) {
-                return keys[keyCode];
-            }
-            return false;
-        }
-
-        inline void update() {
-            if (!hwnd || !hdc || !memDC) return;
-            BitBlt(hdc, 0, 0, width, height, memDC, 0, 0, SRCCOPY);
-            Sleep(16);
-        }
-
-        inline void close() {
-            if (memDC) DeleteDC(memDC);
-            if (hbm) DeleteObject(hbm);
-            if (hwnd && hdc) ReleaseDC(hwnd, hdc);
-            running = false;
-        }
-    }
-#else
-    namespace gfx {
-        inline void init(Int w, Int h, const Str& title) {
-            std::cout << "[Viss Gfx] Graphics window initialization is only supported on Windows GDI.\n";
-        }
-        inline Bool isOpen() { return false; }
-        inline void clear(Int color) {}
-        inline void drawRect(Int x, Int y, Int w, Int h, Int color) {}
-        inline void drawText(Int x, Int y, const Str& text, Int color) {}
-        inline Bool getKey(Int keyCode) { return false; }
-        inline void update() {}
-        inline void close() {}
-    }
-#endif
-
     inline Int toInt(const Str& s) {
         try {
             return std::stoll(s);
@@ -771,145 +223,13 @@ namespace viss {
     inline Str toStr(const Str& val) {
         return val;
     }
-
-    namespace gl {
-        inline const Int COLOR_BUFFER_BIT = GL_COLOR_BUFFER_BIT;
-        inline const Int DEPTH_BUFFER_BIT = GL_DEPTH_BUFFER_BIT;
-        inline const Int TRIANGLES = GL_TRIANGLES;
-        inline const Int QUADS = GL_QUADS;
-        inline const Int LINES = GL_LINES;
-
-        inline void clearColor(Dec r, Dec g, Dec b, Dec a) {
-            glClearColor(r, g, b, a);
-        }
-        inline void clear(Int mask) {
-            glClear(mask);
-        }
-        inline void begin(Int mode) {
-            glBegin(mode);
-        }
-        inline void end() {
-            glEnd();
-        }
-        inline void color3(Dec r, Dec g, Dec b) {
-            glColor3f(r, g, b);
-        }
-        inline void vertex2(Dec x, Dec y) {
-            glVertex2f(x, y);
-        }
-        inline void vertex3(Dec x, Dec y, Dec z) {
-            glVertex3f(x, y, z);
-        }
-        inline void rotate(Dec angle, Dec x, Dec y, Dec z) {
-            glRotatef(angle, x, y, z);
-        }
-    }
-
-    namespace vk {
-        typedef void* (*PFN_vkVoidFunction)(void);
-        typedef int (*PFN_vkCreateInstance)(const void*, const void*, void**);
-        
-        inline HMODULE vulkanLib = nullptr;
-        inline PFN_vkCreateInstance createInstanceFunc = nullptr;
-
-        inline Bool init() {
-            if (vulkanLib) return true;
-            vulkanLib = LoadLibrary("vulkan-1.dll");
-            if (!vulkanLib) return false;
-            
-            createInstanceFunc = (PFN_vkCreateInstance)GetProcAddress(vulkanLib, "vkCreateInstance");
-            return createInstanceFunc != nullptr;
-        }
-
-        inline Bool isSupported() {
-            return init();
-        }
-
-        inline Str getStatus() {
-            if (init()) {
-                return "Vulkan driver (vulkan-1.dll) loaded successfully! GPU Vulkan support is active.";
-            }
-            return "Vulkan is not supported on this device (vulkan-1.dll not found).";
-        }
-    }
-
-    namespace thread {
-        inline void sleep(Int ms) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-        }
-
-        template<typename F>
-        inline void run(F&& func) {
-            std::thread t(std::forward<F>(func));
-            t.detach();
-        }
-    }
-
-    namespace net {
-        inline void initWinSock() {
-            #ifdef _WIN32
-            static bool initialized = false;
-            if (!initialized) {
-                WSADATA wsaData;
-                WSAStartup(MAKEWORD(2, 2), &wsaData);
-                initialized = true;
-            }
-            #endif
-        }
-
-        class Socket {
-        private:
-            SOCKET sock = INVALID_SOCKET;
-        public:
-            Socket() {
-                initWinSock();
-                sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-            }
-            ~Socket() {
-                close();
-            }
-
-            inline Bool connect(const Str& host, Int port) {
-                struct sockaddr_in addr = {};
-                addr.sin_family = AF_INET;
-                addr.sin_port = htons(port);
-                
-                #ifdef _WIN32
-                addr.sin_addr.s_addr = inet_addr(host.c_str());
-                if (addr.sin_addr.s_addr == INADDR_NONE) {
-                #else
-                if (inet_pton(AF_INET, host.c_str(), &addr.sin_addr) <= 0) {
-                #endif
-                    struct hostent* he = gethostbyname(host.c_str());
-                    if (he) {
-                        addr.sin_addr = *(struct in_addr*)he->h_addr;
-                    } else {
-                        return false;
-                    }
-                }
-
-                return ::connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == 0;
-            }
-
-            inline void send(const Str& data) {
-                ::send(sock, data.c_str(), (int)data.length(), 0);
-            }
-
-            inline Str recv(Int bufferSize = 4096) {
-                std::vector<char> buffer(bufferSize);
-                int bytesReceived = ::recv(sock, buffer.data(), (int)(bufferSize - 1), 0);
-                if (bytesReceived > 0) {
-                    return Str(buffer.data(), bytesReceived);
-                }
-                return "";
-            }
-
-            inline void close() {
-                if (sock != INVALID_SOCKET) {
-                    closesocket(sock);
-                    sock = INVALID_SOCKET;
-                }
-            }
-        };
-    }
 }
+
+// Automatically include lightweight standard library modules
+#include "std/sys.hpp"
+#include "std/io.hpp"
+#include "std/fs.hpp"
+#include "std/math.hpp"
+#include "std/time.hpp"
+#include "std/str.hpp"
+#include "std/thread.hpp"

@@ -35,7 +35,10 @@ def transpile_line(line, line_num, filename, string_literals):
     # Spaces (namespaces)
     line = re.sub(r'!space\s+([a-zA-Z0-9_]+)', r'namespace \1', line)
 
-    # 3. Handle logical actions (If/Else, Try/Catch) starting with ?
+    # 3. Handle logical actions (If/Else, Try/Catch, Match) starting with ?
+    line = re.sub(r'\?match\s*\(([^)]+)\)', r'switch (\1)', line)
+    line = re.sub(r'\?else\s*=>\s*\{', 'default: {', line)
+    line = re.sub(r'([^=]+)\s*=>\s*\{', r'case \1: {', line)
     line = re.sub(r'\?if\s*\(([^)]+)\)', r'if (\1)', line)
     line = re.sub(r'\?else', r'else', line)
     line = re.sub(r'\?try', 'try', line)
@@ -103,7 +106,8 @@ def needs_semicolon(line):
         return False
         
     if (s.startswith("?if") or s.startswith("?else") or 
-        s.startswith("?try") or s.startswith("?catch")):
+        s.startswith("?try") or s.startswith("?catch") or
+        s.startswith("?match")):
         return False
         
     return True
@@ -141,43 +145,50 @@ def transpile(viss_code, filename):
     for idx, line in enumerate(lines):
         if needs_semicolon(line):
             line += ";"
-        # Check if this line opens a class definition
+        # Check if this line opens a class definition, async function, or match block
         stripped = line.strip()
         is_class_open = re.search(r'!class\s+[a-zA-Z0-9_]+', stripped) is not None
         is_async_func_open = re.search(r'!\$func\s+[a-zA-Z0-9_]+', stripped) is not None
+        is_match_open = re.search(r'\?match\s*\(', stripped) is not None
 
         # Count open and close braces to track block structures
-        # (Very simple but effective for Viss to C++ translation)
         open_braces = stripped.count('{')
         close_braces = stripped.count('}')
 
         for _ in range(open_braces):
             if is_class_open:
                 block_stack.append('class')
-                is_class_open = False # Only push once per class definition line
+                is_class_open = False
             elif is_async_func_open:
                 block_stack.append('async_func')
                 is_async_func_open = False
+            elif is_match_open:
+                block_stack.append('match')
+                is_match_open = False
+            elif block_stack and block_stack[-1] == 'match':
+                block_stack.append('match_case')
             else:
                 block_stack.append('other')
 
         # Transpile this line
         transpiled = transpile_line(line, idx + 1, filename, string_literals)
 
-        # Handle class and async function closing braces
+        # Handle closing braces
         for _ in range(close_braces):
             if block_stack:
                 block_type = block_stack.pop()
                 if block_type == 'class':
-                    # Append a semicolon to the last close brace of a class
                     if '}' in transpiled:
                         parts = transpiled.rsplit('}', 1)
                         transpiled = '};'.join(parts)
                 elif block_type == 'async_func':
-                    # Append '}); }' to close the async task lambda
                     if '}' in transpiled:
                         parts = transpiled.rsplit('}', 1)
                         transpiled = '}); }'.join(parts)
+                elif block_type == 'match_case':
+                    if '}' in transpiled:
+                        parts = transpiled.rsplit('}', 1)
+                        transpiled = 'break; }'.join(parts)
         
         # Add #line directive for debugging (points back to .viss file!)
         if transpiled.strip() and not transpiled.startswith('#include') and not transpiled.startswith('using namespace'):

@@ -72,9 +72,10 @@ Viss utilizes a strict prefix-oriented symbolic grammar designed to categorize t
   * `!loop (@i < 10)` - Declares a while loop.
   * `!class Player` - Declares a class/structure definition.
   * `!space utils` - Declares a namespace.
-* **`?` Logical branching prefix:** Used for conditional code execution and error boundary blocks.
+* **`?` Logical branching prefix:** Used for conditional code execution, pattern matching, and error boundary blocks.
   * `?if (@condition)` - Logical conditional.
   * `?else` - Conditional fallback.
+  * `?match (@score)` - Starts a pattern matching case selector block.
   * `?try` - Declares a try block for exception boundaries.
   * `?catch (Error @err)` - Catches system or custom exceptions.
 * **`@` Identifier prefix:** Denotes variable names, user parameters, and import operations.
@@ -119,6 +120,16 @@ Viss does not require semicolons `;` at the end of statements. The compiler auto
     
     Dec @val = sin(PI / 2.0)
     io.println("sin(PI/2) = " + toStr(@val))
+
+    Int @score = 100
+    ?match (@score) {
+        100 => {
+            io.println("Perfect score!")
+        }
+        ?else => {
+            io.println("Try again!")
+        }
+    }
 
     using main {
         return 0
