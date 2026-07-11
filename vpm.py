@@ -153,70 +153,81 @@ def cmd_install(pkg_name=None, install_all=False, force_yes=False):
     install_package(pkg_name, db[pkg_name], config, db, force_yes)
     save_config(config)
 
-def install_package(name, info, config, db, force_yes):
+def install_package(name, info, config, db, force_yes, resolving=None):
     if name in config["installed"] and not force_yes:
         ans = input(f"[VPM] Package '{name}' is already installed. Reinstall/Update? (y/n): ")
         if ans.lower() != 'y':
             return
             
-    # Dependency resolution
-    dependencies = info.get("dependencies", [])
-    for dep in dependencies:
-        if dep not in config["installed"]:
-            print(f"[VPM] Resolving dependency: '{name}' requires '{dep}'...")
-            if dep in db:
-                install_package(dep, db[dep], config, db, force_yes)
-            else:
-                print(f"[VPM] Error: Dependency '{dep}' not found in connected repositories!")
-                return
-
-    repo = info["repo"]
-    filename = info["file"]
-    print(f"[VPM] Downloading package '{name}' ({filename})...")
-    
-    dest_path = os.path.join(MODULES_DIR, filename)
-    
-    urls = get_raw_github_url(repo, filename)
-    success = False
-    if urls:
-        success = download_file(urls, dest_path)
+    if resolving is None:
+        resolving = set()
         
-    if not success:
-        temp_dir = "temp_vpm_clone"
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
-        try:
-            result = subprocess.run(["git", "clone", "--depth", "1", repo, temp_dir], capture_output=True)
-            if result.returncode == 0:
-                src_file = os.path.join(temp_dir, filename)
-                if os.path.exists(src_file):
-                    shutil.copy(src_file, dest_path)
-                    success = True
-        except Exception:
-            pass
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
-            
-    if success:
-        # Hash Verification (Security check)
-        expected_hash = info.get("sha256")
-        if expected_hash:
-            actual_hash = get_file_sha256(dest_path)
-            if actual_hash != expected_hash:
-                print(f"[VPM] SECURITY WARNING: Hash verification failed for package '{name}'!")
-                print(f"      Expected: {expected_hash}")
-                print(f"      Actual:   {actual_hash}")
-                print("[VPM] Aborting installation for safety.")
-                if os.path.exists(dest_path):
-                    os.remove(dest_path)
-                return
-            else:
-                print(f"[VPM] Security check passed: hash match for '{name}'.")
+    if name in resolving:
+        print(f"[VPM] Error: Circular dependency detected involving '{name}'!")
+        return
+        
+    resolving.add(name)
+    try:
+        # Dependency resolution
+        dependencies = info.get("dependencies", [])
+        for dep in dependencies:
+            if dep not in config["installed"]:
+                print(f"[VPM] Resolving dependency: '{name}' requires '{dep}'...")
+                if dep in db:
+                    install_package(dep, db[dep], config, db, force_yes, resolving)
+                else:
+                    print(f"[VPM] Error: Dependency '{dep}' not found in connected repositories!")
+                    return
 
-        config["installed"][name] = {"version": info.get("version", "1.0.0"), "file": filename}
-        print(f"[VPM] Successfully installed '{name}'!")
-    else:
-        print(f"[VPM] Error: Failed to download package '{name}' from {repo}.")
+        repo = info["repo"]
+        filename = info["file"]
+        print(f"[VPM] Downloading package '{name}' ({filename})...")
+        
+        dest_path = os.path.join(MODULES_DIR, filename)
+        
+        urls = get_raw_github_url(repo, filename)
+        success = False
+        if urls:
+            success = download_file(urls, dest_path)
+            
+        if not success:
+            temp_dir = "temp_vpm_clone"
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+            try:
+                result = subprocess.run(["git", "clone", "--depth", "1", repo, temp_dir], capture_output=True)
+                if result.returncode == 0:
+                    src_file = os.path.join(temp_dir, filename)
+                    if os.path.exists(src_file):
+                        shutil.copy(src_file, dest_path)
+                        success = True
+            except Exception:
+                pass
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+                
+        if success:
+            # Hash Verification (Security check)
+            expected_hash = info.get("sha256")
+            if expected_hash:
+                actual_hash = get_file_sha256(dest_path)
+                if actual_hash != expected_hash:
+                    print(f"[VPM] SECURITY WARNING: Hash verification failed for package '{name}'!")
+                    print(f"      Expected: {expected_hash}")
+                    print(f"      Actual:   {actual_hash}")
+                    print("[VPM] Aborting installation for safety.")
+                    if os.path.exists(dest_path):
+                        os.remove(dest_path)
+                    return
+                else:
+                    print(f"[VPM] Security check passed: hash match for '{name}'.")
+
+            config["installed"][name] = {"version": info.get("version", "1.0.0"), "file": filename}
+            print(f"[VPM] Successfully installed '{name}'!")
+        else:
+            print(f"[VPM] Error: Failed to download package '{name}' from {repo}.")
+    finally:
+        resolving.remove(name)
 
 def cmd_uninstall(name, force=False):
     config = load_config()

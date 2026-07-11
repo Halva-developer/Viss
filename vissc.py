@@ -259,9 +259,73 @@ def process_vcm_imports(viss_code, current_dir):
         
     return '\n'.join(new_lines), includes, usings
 
+def sanitize_code(code):
+    clean = list(code)
+    in_string = False
+    in_line_comment = False
+    in_block_comment = False
+    i = 0
+    n = len(clean)
+    while i < n:
+        if in_block_comment:
+            if i + 1 < n and clean[i] == '*' and clean[i+1] == '/':
+                clean[i] = ' '
+                clean[i+1] = ' '
+                in_block_comment = False
+                i += 2
+                continue
+            if clean[i] not in ('\n', '\r'):
+                clean[i] = ' '
+            i += 1
+            continue
+            
+        if in_line_comment:
+            if clean[i] in ('\n', '\r'):
+                in_line_comment = False
+            else:
+                clean[i] = ' '
+            i += 1
+            continue
+            
+        if in_string:
+            if clean[i] == '\\' and i + 1 < n:
+                clean[i] = ' '
+                if clean[i+1] not in ('\n', '\r'):
+                    clean[i+1] = ' '
+                i += 2
+                continue
+            if clean[i] == '"':
+                clean[i] = ' '
+                in_string = False
+                i += 1
+                continue
+            if clean[i] not in ('\n', '\r'):
+                clean[i] = ' '
+            i += 1
+            continue
+            
+        if i + 1 < n and clean[i] == '/' and clean[i+1] == '*':
+            clean[i] = ' '
+            clean[i+1] = ' '
+            in_block_comment = True
+            i += 2
+            continue
+            
+        if i + 1 < n and clean[i] == '/' and clean[i+1] == '/':
+            clean[i] = ' '
+            clean[i+1] = ' '
+            in_line_comment = True
+            i += 2
+            continue
+            
+        if clean[i] == '"':
+            clean[i] = ' '
+            in_string = True
+            
+        i += 1
+    return "".join(clean)
+
 def validate_viss_syntax(viss_code, filename):
-    lines = viss_code.split('\n')
-    
     # 1. Check unbalanced curly braces
     open_count = viss_code.count('{')
     close_count = viss_code.count('}')
@@ -271,56 +335,57 @@ def validate_viss_syntax(viss_code, filename):
         print("Please check your block closures.")
         sys.exit(1)
         
+    sanitized = sanitize_code(viss_code)
+    original_lines = viss_code.split('\n')
+    sanitized_lines = sanitized.split('\n')
+    
     # 2. Check prefix violations line by line
-    for idx, line in enumerate(lines):
-        stripped = line.strip()
+    for idx, sanitized_line in enumerate(sanitized_lines):
+        stripped = sanitized_line.strip()
         line_num = idx + 1
+        original_line = original_lines[idx]
         
-        # Skip comments
-        if not stripped or stripped.startswith('//'):
+        if not stripped:
             continue
             
-        # Remove string literals to prevent matching else/if/etc. inside strings
-        test_line = re.sub(r'"(?:[^"\\]|\\.)*"', '', stripped)
-            
         # Check: logical conditionals must start with ?
-        if re.search(r'\bif\s*\(', test_line) and not stripped.startswith('?if') and not '+cpp' in test_line:
+        if re.search(r'\bif\s*\(', stripped) and not stripped.startswith('?if') and not '+cpp' in stripped:
             print(f"Syntax Error in {filename}:{line_num}:")
-            print(f"  {line}")
-            print(f"  {'^' * len(line)}")
+            print(f"  {original_line}")
+            print(f"  {'^' * len(original_line)}")
             print("  Detail: Logical conditionals must be prefixed with '?'. Did you mean '?if'?")
             sys.exit(1)
             
-        if re.search(r'\belse\b', test_line) and not re.search(r'\?else\b', test_line) and not '+cpp' in test_line:
+        if re.search(r'\belse\b', stripped) and not re.search(r'\?else\b', stripped) and not '+cpp' in stripped:
             print(f"Syntax Error in {filename}:{line_num}:")
-            print(f"  {line}")
-            print(f"  {'^' * len(line)}")
+            print(f"  {original_line}")
+            print(f"  {'^' * len(original_line)}")
             print("  Detail: Logical else statements must be prefixed with '?'. Did you mean '?else'?")
             sys.exit(1)
             
         # Check: flow blocks must start with !
-        if re.search(r'\bfunc\s+', test_line) and not stripped.startswith('!func') and not '+cpp' in test_line and not '!' in test_line:
+        if re.search(r'\bfunc\s+', stripped) and not stripped.startswith('!func') and not '+cpp' in stripped and not '!' in stripped:
             print(f"Syntax Error in {filename}:{line_num}:")
-            print(f"  {line}")
-            print(f"  {'^' * len(line)}")
+            print(f"  {original_line}")
+            print(f"  {'^' * len(original_line)}")
             print("  Detail: Function blocks must be prefixed with '!'. Did you mean '!func'?")
             sys.exit(1)
             
-        if re.search(r'\bloop\s*\(', test_line) and not stripped.startswith('!loop') and not '+cpp' in test_line:
+        if re.search(r'\bloop\s*\(', stripped) and not stripped.startswith('!loop') and not '+cpp' in stripped:
             print(f"Syntax Error in {filename}:{line_num}:")
-            print(f"  {line}")
-            print(f"  {'^' * len(line)}")
+            print(f"  {original_line}")
+            print(f"  {'^' * len(original_line)}")
             print("  Detail: Loop blocks must be prefixed with '!'. Did you mean '!loop'?")
             sys.exit(1)
             
         # Check: Variable declaration without @ prefix
-        m_var = re.search(r'\b(Str|Int|Dec|Bool)\s+([a-zA-Z0-9_]+)\s*=', test_line)
-        if m_var and not '+cpp' in test_line:
+        m_var = re.search(r'\b(Str|Int|Dec|Bool)\s+([a-zA-Z0-9_]+)\s*=', stripped)
+        if m_var and not '+cpp' in stripped:
             var_type = m_var.group(1)
             var_name = m_var.group(2)
             print(f"Syntax Error in {filename}:{line_num}:")
-            print(f"  {line}")
-            print(f"  {'^' * len(line)}")
+            print(f"  {original_line}")
+            print(f"  {'^' * len(original_line)}")
             print(f"  Detail: Variables in Viss must start with a '@' prefix. Did you mean '{var_type} @{var_name}'?")
             sys.exit(1)
 

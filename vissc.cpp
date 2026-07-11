@@ -49,6 +49,76 @@ size_t countChar(const std::string& str, char c) {
     return std::count(str.begin(), str.end(), c);
 }
 
+std::string sanitizeCode(const std::string& code) {
+    std::string clean = code;
+    bool inString = false;
+    bool inLineComment = false;
+    bool inBlockComment = false;
+    
+    for (size_t i = 0; i < clean.length(); ++i) {
+        if (inBlockComment) {
+            if (i + 1 < clean.length() && clean[i] == '*' && clean[i+1] == '/') {
+                clean[i] = ' ';
+                clean[i+1] = ' ';
+                inBlockComment = false;
+                i++;
+                continue;
+            }
+            if (clean[i] != '\n' && clean[i] != '\r') {
+                clean[i] = ' ';
+            }
+            continue;
+        }
+        if (inLineComment) {
+            if (clean[i] == '\n' || clean[i] == '\r') {
+                inLineComment = false;
+            } else {
+                clean[i] = ' ';
+            }
+            continue;
+        }
+        if (inString) {
+            if (clean[i] == '\\' && i + 1 < clean.length()) {
+                clean[i] = ' ';
+                if (clean[i+1] != '\n' && clean[i+1] != '\r') {
+                    clean[i+1] = ' ';
+                }
+                i++;
+                continue;
+            }
+            if (clean[i] == '"') {
+                clean[i] = ' ';
+                inString = false;
+                continue;
+            }
+            if (clean[i] != '\n' && clean[i] != '\r') {
+                clean[i] = ' ';
+            }
+            continue;
+        }
+        if (i + 1 < clean.length() && clean[i] == '/' && clean[i+1] == '*') {
+            clean[i] = ' ';
+            clean[i+1] = ' ';
+            inBlockComment = true;
+            i++;
+            continue;
+        }
+        if (i + 1 < clean.length() && clean[i] == '/' && clean[i+1] == '/') {
+            clean[i] = ' ';
+            clean[i+1] = ' ';
+            inLineComment = true;
+            i++;
+            continue;
+        }
+        if (clean[i] == '"') {
+            clean[i] = ' ';
+            inString = true;
+            continue;
+        }
+    }
+    return clean;
+}
+
 // Validation function for Viss syntax
 void validateVissSyntax(const std::string& code, const std::string& filename) {
     // 1. Check unbalanced curly braces
@@ -61,8 +131,10 @@ void validateVissSyntax(const std::string& code, const std::string& filename) {
         std::exit(1);
     }
 
-    std::istringstream stream(code);
-    std::string line;
+    std::string sanitized = sanitizeCode(code);
+    std::istringstream originalStream(code);
+    std::istringstream sanitizedStream(sanitized);
+    std::string originalLine, sanitizedLine;
     size_t lineNum = 0;
 
     std::regex ifRegex(R"(\bif\s*\()");
@@ -71,59 +143,57 @@ void validateVissSyntax(const std::string& code, const std::string& filename) {
     std::regex loopRegex(R"(\bloop\s*\()");
     std::regex varDeclRegex(R"(\b(Str|Int|Dec|Bool)\s+([a-zA-Z0-9_]+)\s*=)");
 
-    while (std::getline(stream, line)) {
+    while (std::getline(sanitizedStream, sanitizedLine)) {
+        std::getline(originalStream, originalLine);
         lineNum++;
-        std::string stripped = trim(line);
+        std::string stripped = trim(sanitizedLine);
 
-        if (stripped.empty() || startsWith(stripped, "//")) {
+        if (stripped.empty()) {
             continue;
         }
 
-        // Remove string literals to prevent matching else/if/etc. inside strings
-        std::string testLine = std::regex_replace(stripped, std::regex(R"("(?:[^"\\]|\\.)*")"), "");
-
         // Check ? prefix on conditionals
-        if (std::regex_search(testLine, ifRegex) && !startsWith(stripped, "?if") && testLine.find("+cpp") == std::string::npos) {
+        if (std::regex_search(stripped, ifRegex) && !startsWith(stripped, "?if") && stripped.find("+cpp") == std::string::npos) {
             std::cerr << "Syntax Error in " << filename << ":" << lineNum << ":\n";
-            std::cerr << "  " << line << "\n";
-            std::cerr << "  " << std::string(line.length(), '^') << "\n";
+            std::cerr << "  " << originalLine << "\n";
+            std::cerr << "  " << std::string(originalLine.length(), '^') << "\n";
             std::cerr << "  Detail: Logical conditionals must be prefixed with '?'. Did you mean '?if'?\n";
             std::exit(1);
         }
 
-        if (std::regex_search(testLine, elseRegex) && stripped.find("?else") == std::string::npos && testLine.find("+cpp") == std::string::npos) {
+        if (std::regex_search(stripped, elseRegex) && stripped.find("?else") == std::string::npos && stripped.find("+cpp") == std::string::npos) {
             std::cerr << "Syntax Error in " << filename << ":" << lineNum << ":\n";
-            std::cerr << "  " << line << "\n";
-            std::cerr << "  " << std::string(line.length(), '^') << "\n";
+            std::cerr << "  " << originalLine << "\n";
+            std::cerr << "  " << std::string(originalLine.length(), '^') << "\n";
             std::cerr << "  Detail: Logical else statements must be prefixed with '?'. Did you mean '?else'?\n";
             std::exit(1);
         }
 
         // Check ! prefix on blocks
-        if (std::regex_search(testLine, funcRegex) && !startsWith(stripped, "!func") && testLine.find("+cpp") == std::string::npos && testLine.find("!") == std::string::npos) {
+        if (std::regex_search(stripped, funcRegex) && !startsWith(stripped, "!func") && stripped.find("+cpp") == std::string::npos && stripped.find("!") == std::string::npos) {
             std::cerr << "Syntax Error in " << filename << ":" << lineNum << ":\n";
-            std::cerr << "  " << line << "\n";
-            std::cerr << "  " << std::string(line.length(), '^') << "\n";
+            std::cerr << "  " << originalLine << "\n";
+            std::cerr << "  " << std::string(originalLine.length(), '^') << "\n";
             std::cerr << "  Detail: Function blocks must be prefixed with '!'. Did you mean '!func'?\n";
             std::exit(1);
         }
 
-        if (std::regex_search(testLine, loopRegex) && !startsWith(stripped, "!loop") && testLine.find("+cpp") == std::string::npos) {
+        if (std::regex_search(stripped, loopRegex) && !startsWith(stripped, "!loop") && stripped.find("+cpp") == std::string::npos) {
             std::cerr << "Syntax Error in " << filename << ":" << lineNum << ":\n";
-            std::cerr << "  " << line << "\n";
-            std::cerr << "  " << std::string(line.length(), '^') << "\n";
+            std::cerr << "  " << originalLine << "\n";
+            std::cerr << "  " << std::string(originalLine.length(), '^') << "\n";
             std::cerr << "  Detail: Loop blocks must be prefixed with '!'. Did you mean '!loop'?\n";
             std::exit(1);
         }
 
         // Check @ prefix on variable declarations
         std::smatch varMatch;
-        if (std::regex_search(testLine, varMatch, varDeclRegex) && testLine.find("+cpp") == std::string::npos) {
+        if (std::regex_search(stripped, varMatch, varDeclRegex) && stripped.find("+cpp") == std::string::npos) {
             std::string varType = varMatch[1].str();
             std::string varName = varMatch[2].str();
             std::cerr << "Syntax Error in " << filename << ":" << lineNum << ":\n";
-            std::cerr << "  " << line << "\n";
-            std::cerr << "  " << std::string(line.length(), '^') << "\n";
+            std::cerr << "  " << originalLine << "\n";
+            std::cerr << "  " << std::string(originalLine.length(), '^') << "\n";
             std::cerr << "  Detail: Variables in Viss must start with a '@' prefix. Did you mean '" << varType << " @" << varName << "'?\n";
             std::exit(1);
         }
