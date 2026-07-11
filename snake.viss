@@ -1,0 +1,122 @@
+@use <IOstream> for *
+
+!func main() {
+    sys.seed();
+
+    gfx.init(400, 400, "Viss Snake Game 🐍");
+
+    Int @snakeX = 200;
+    Int @snakeY = 200;
+    Int @dirX = 20;
+    Int @dirY = 0;
+    Int @foodX = 100;
+    Int @foodY = 100;
+    Int @score = 0;
+
+    List<Point> @body = {};
+    @body.add(Point{ 200, 200 });
+    @body.add(Point{ 180, 200 });
+    @body.add(Point{ 160, 200 });
+
+    !loop (gfx.isOpen()) {
+        gfx.clear(RGB(20, 20, 30));
+
+        // Read arrow keys (VK_LEFT=37, VK_UP=38, VK_RIGHT=39, VK_DOWN=40)
+        ?if (gfx.getKey(37)) {
+            ?if (@dirX != 20) {
+                @dirX = -20;
+                @dirY = 0;
+            }
+        }
+        ?if (gfx.getKey(38)) {
+            ?if (@dirY != 20) {
+                @dirX = 0;
+                @dirY = -20;
+            }
+        }
+        ?if (gfx.getKey(39)) {
+            ?if (@dirX != -20) {
+                @dirX = 20;
+                @dirY = 0;
+            }
+        }
+        ?if (gfx.getKey(40)) {
+            ?if (@dirY != -20) {
+                @dirX = 0;
+                @dirY = 20;
+            }
+        }
+
+        // Move head
+        @snakeX = @snakeX + @dirX;
+        @snakeY = @snakeY + @dirY;
+
+        // Screen wrapping
+        ?if (@snakeX < 0) { @snakeX = 380; }
+        ?if (@snakeX >= 400) { @snakeX = 0; }
+        ?if (@snakeY < 0) { @snakeY = 380; }
+        ?if (@snakeY >= 400) { @snakeY = 0; }
+
+        // Check food collision
+        Bool @eat = false;
+        ?if (@snakeX == @foodX) {
+            ?if (@snakeY == @foodY) {
+                @eat = true;
+                @score = @score + 10;
+                @foodX = sys.random(0, 20) * 20;
+                @foodY = sys.random(0, 20) * 20;
+            }
+        }
+
+        // Update body coordinates
+        @body.insert(0, Point{ @snakeX, @snakeY });
+        ?if (!@eat) {
+            @body.removeLast();
+        }
+
+        // Self collision check
+        Int @i = 1;
+        !loop (@i < @body.size()) {
+            Point @head = @body.get(0);
+            Point @segment = @body.get(@i);
+            ?if (@head.x == @segment.x) {
+                ?if (@head.y == @segment.y) {
+                    // Reset game state
+                    @body.clear();
+                    @body.add(Point{ 200, 200 });
+                    @body.add(Point{ 180, 200 });
+                    @body.add(Point{ 160, 200 });
+                    @snakeX = 200;
+                    @snakeY = 200;
+                    @dirX = 20;
+                    @dirY = 0;
+                    @score = 0;
+                    @i = 999999; // break loop
+                }
+            }
+            @i = @i + 1;
+        }
+
+        // Draw food (Red)
+        gfx.drawRect(@foodX, @foodY, 20, 20, RGB(255, 60, 60));
+
+        // Draw snake (Green)
+        Int @j = 0;
+        !loop (@j < @body.size()) {
+            Point @pt = @body.get(@j);
+            gfx.drawRect(@pt.x, @pt.y, 20, 20, RGB(60, 255, 60));
+            @j = @j + 1;
+        }
+
+        // Draw Score (White)
+        gfx.drawText(10, 10, "Score: " + toStr(@score), RGB(255, 255, 255));
+
+        gfx.update();
+    }
+
+    gfx.close();
+
+    using main {
+        return 0;
+    }
+}

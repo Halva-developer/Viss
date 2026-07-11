@@ -1,0 +1,12 @@
+@use IOstream for *
+@use math for sin, PI
+@use net for *
+
+!func main() {
+    Dec @s = sin(PI / 2)
+    io.println("Sin is: " + toStr(@s))
+    
+    using main {
+        return 0
+    }
+}
