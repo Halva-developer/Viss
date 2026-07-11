@@ -11,6 +11,7 @@
 #include <sstream>
 #include <algorithm>
 #include <exception>
+#include <memory>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -45,41 +46,46 @@ namespace viss {
     template<typename T>
     class List {
     private:
-        std::vector<T> data;
+        std::shared_ptr<std::vector<T>> data;
     public:
-        List() = default;
-        List(std::initializer_list<T> init) : data(init) {}
+        List() : data(std::make_shared<std::vector<T>>()) {}
+        List(std::initializer_list<T> init) : data(std::make_shared<std::vector<T>>(init)) {}
         
         inline void add(const T& item) {
-            data.push_back(item);
+            data->push_back(item);
         }
         inline void insert(Int index, const T& item) {
-            if (index >= 0 && index <= (Int)data.size()) {
-                data.insert(data.begin() + index, item);
+            if (index >= 0 && index <= (Int)data->size()) {
+                data->insert(data->begin() + index, item);
             }
         }
         inline void removeAt(Int index) {
-            if (index >= 0 && index < (Int)data.size()) {
-                data.erase(data.begin() + index);
+            if (index >= 0 && index < (Int)data->size()) {
+                data->erase(data->begin() + index);
             }
         }
         inline void removeLast() {
-            if (!data.empty()) {
-                data.pop_back();
+            if (!data->empty()) {
+                data->pop_back();
             }
         }
         inline T get(Int index) const {
-            if (index >= 0 && index < (Int)data.size()) {
-                return data[index];
+            if (index >= 0 && index < (Int)data->size()) {
+                return (*data)[index];
             }
             return T();
         }
         inline Int size() const {
-            return (Int)data.size();
+            return (Int)data->size();
         }
         inline void clear() {
-            data.clear();
+            data->clear();
         }
+
+        typename std::vector<T>::iterator begin() { return data->begin(); }
+        typename std::vector<T>::iterator end() { return data->end(); }
+        typename std::vector<T>::const_iterator begin() const { return data->begin(); }
+        typename std::vector<T>::const_iterator end() const { return data->end(); }
     };
 
     class Error : public std::exception {
@@ -98,35 +104,35 @@ namespace viss {
     template<typename K, typename V>
     class Map {
     private:
-        std::unordered_map<K, V> data;
+        std::shared_ptr<std::unordered_map<K, V>> data;
     public:
-        Map() = default;
+        Map() : data(std::make_shared<std::unordered_map<K, V>>()) {}
         
         inline void set(const K& key, const V& val) {
-            data[key] = val;
+            (*data)[key] = val;
         }
         inline V get(const K& key) const {
-            auto it = data.find(key);
-            if (it != data.end()) {
+            auto it = data->find(key);
+            if (it != data->end()) {
                 return it->second;
             }
             return V();
         }
         inline Bool has(const K& key) const {
-            return data.find(key) != data.end();
+            return data->find(key) != data->end();
         }
         inline void remove(const K& key) {
-            data.erase(key);
+            data->erase(key);
         }
         inline Int size() const {
-            return (Int)data.size();
+            return (Int)data->size();
         }
         inline void clear() {
-            data.clear();
+            data->clear();
         }
         inline List<K> keys() const {
             List<K> kList;
-            for (const auto& pair : data) {
+            for (const auto& pair : *data) {
                 kList.add(pair.first);
             }
             return kList;
@@ -340,6 +346,7 @@ namespace viss {
         }
     }
 
+#ifdef _WIN32
     namespace gfx {
         inline HWND hwnd = nullptr;
         inline HDC hdc = nullptr;
@@ -393,21 +400,23 @@ namespace viss {
             if (hwnd) {
                 ShowWindow(hwnd, SW_SHOW);
                 hdc = GetDC(hwnd);
-                memDC = CreateCompatibleDC(hdc);
-                hbm = CreateCompatibleBitmap(hdc, width, height);
+
+                HDC winDC = GetDC(hwnd);
+                memDC = CreateCompatibleDC(winDC);
+                hbm = CreateCompatibleBitmap(winDC, width, height);
                 SelectObject(memDC, hbm);
+                ReleaseDC(hwnd, winDC);
+
                 running = true;
             }
         }
 
         inline Bool isOpen() {
+            if (!running) return false;
             MSG msg;
             while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
                 TranslateMessage(&msg);
                 DispatchMessage(&msg);
-                if (msg.message == WM_QUIT) {
-                    running = false;
-                }
             }
             return running;
         }
@@ -432,7 +441,7 @@ namespace viss {
             if (!memDC) return;
             SetTextColor(memDC, color);
             SetBkMode(memDC, TRANSPARENT);
-            TextOut(memDC, x, y, text.c_str(), text.length());
+            TextOut(memDC, x, y, text.c_str(), (int)text.length());
         }
 
         inline Bool getKey(Int keyCode) {
@@ -455,6 +464,20 @@ namespace viss {
             running = false;
         }
     }
+#else
+    namespace gfx {
+        inline void init(Int w, Int h, const Str& title) {
+            std::cout << "[Viss Gfx] Graphics window initialization is only supported on Windows GDI.\n";
+        }
+        inline Bool isOpen() { return false; }
+        inline void clear(Int color) {}
+        inline void drawRect(Int x, Int y, Int w, Int h, Int color) {}
+        inline void drawText(Int x, Int y, const Str& text, Int color) {}
+        inline Bool getKey(Int keyCode) { return false; }
+        inline void update() {}
+        inline void close() {}
+    }
+#endif
 
     inline Int toInt(const Str& s) {
         try {

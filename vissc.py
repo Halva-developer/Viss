@@ -78,6 +78,30 @@ def transpile_line(line, line_num, filename, string_literals):
 
     return line
 
+def needs_semicolon(line):
+    s = line.strip()
+    if not s or s.startswith("//"):
+        return False
+    
+    last_char = s[-1]
+    if last_char in ('{', '}', ';', ',', ':'):
+        return False
+        
+    if (s.startswith("@use") or s.startswith("&vcm") or 
+        s.startswith("+cpp") or s.startswith("using") or 
+        s.startswith("#")):
+        return False
+        
+    if (s.startswith("!func") or s.startswith("!loop") or 
+        s.startswith("!class") or s.startswith("!space")):
+        return False
+        
+    if (s.startswith("?if") or s.startswith("?else") or 
+        s.startswith("?try") or s.startswith("?catch")):
+        return False
+        
+    return True
+
 def transpile(viss_code, filename):
     # State machine to extract string literals first (to prevent replacing contents of strings)
     string_literals = []
@@ -101,6 +125,8 @@ def transpile(viss_code, filename):
     block_stack = []
 
     for idx, line in enumerate(lines):
+        if needs_semicolon(line):
+            line += ";"
         # Check if this line opens a class definition
         stripped = line.strip()
         is_class_open = re.search(r'!class\s+[a-zA-Z0-9_]+', stripped) is not None

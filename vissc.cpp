@@ -127,6 +127,21 @@ void validateVissSyntax(const std::string& code, const std::string& filename) {
     }
 }
 
+bool needsSemicolon(const std::string& line) {
+    std::string s = trim(line);
+    if (s.empty()) return false;
+    if (startsWith(s, "//")) return false;
+    
+    char lastChar = s.back();
+    if (lastChar == '{' || lastChar == '}' || lastChar == ';' || lastChar == ',' || lastChar == ':') return false;
+    
+    if (startsWith(s, "@use") || startsWith(s, "&vcm") || startsWith(s, "+cpp") || startsWith(s, "using") || startsWith(s, "#")) return false;
+    if (startsWith(s, "!func") || startsWith(s, "!loop") || startsWith(s, "!class") || startsWith(s, "!space")) return false;
+    if (startsWith(s, "?if") || startsWith(s, "?else") || startsWith(s, "?try") || startsWith(s, "?catch")) return false;
+    
+    return true;
+}
+
 // Transpilation for a single line of Viss code
 std::string transpileLine(std::string line, int lineNum, const std::string& filename) {
     std::string stripped = trim(line);
@@ -235,6 +250,9 @@ std::string transpile(const std::string& vissCode, const std::string& filename) 
 
     while (std::getline(stream, line)) {
         lineIndex++;
+        if (needsSemicolon(line)) {
+            line += ";";
+        }
         std::string stripped = trim(line);
         
         bool isClassOpen = std::regex_search(stripped, classDefRegex);
