@@ -76,8 +76,11 @@ Viss wraps standard types into unified high-level types with clean naming conven
 * `Int` -> 64-bit Integer type (`long long`)
 * `Dec` -> Double-precision Float type (`double`)
 * `Bool` -> Boolean type (`bool`)
-* `List<T>` -> Dynamic array template (`viss::List<T>`, wrapper around `std::vector`)
-* `Map<K, V>` -> Hash map template (`viss::Map<K, V>`, wrapper around `std::unordered_map`)
+* `List<T>` -> Dynamic array template (`viss::List<T>`, wrapped in `std::shared_ptr` to provide automatic reference-counted memory sharing and fast O(1) assignments without cloning).
+* `Map<K, V>` -> Hash map template (`viss::Map<K, V>`, wrapped in `std::shared_ptr` to provide automatic reference-counted memory sharing and fast O(1) assignments without cloning).
+
+### C. Automatic Semicolon Insertion (ASI)
+Viss does not require semicolons `;` at the end of statements. The compiler automatically analyzes lines and appends semicolons during transpilation, keeping Viss code modern, clean, and minimal. You can still use semicolons if you prefer.
 
 ### Code Example:
 ```viss
