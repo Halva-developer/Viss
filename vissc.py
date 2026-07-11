@@ -72,6 +72,7 @@ def transpile_line(line, line_num, filename, string_literals):
     line = re.sub(r'\btime\.', 'viss::time::', line)
     line = re.sub(r'\bstr\.', 'viss::str::', line)
     line = re.sub(r'\benv\.', 'viss::env::', line)
+    line = re.sub(r'\bwebviss\.', 'viss::webviss::', line)
 
     # 9. Type conversion helpers
     line = re.sub(r'\btoInt\b', 'viss::toInt', line)

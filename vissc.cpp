@@ -285,6 +285,7 @@ std::string transpileLine(std::string line, int lineNum, const std::string& file
     line = std::regex_replace(line, std::regex(R"(\btime\.)"), "viss::time::");
     line = std::regex_replace(line, std::regex(R"(\bstr\.)"), "viss::str::");
     line = std::regex_replace(line, std::regex(R"(\benv\.)"), "viss::env::");
+    line = std::regex_replace(line, std::regex(R"(\bwebviss\.)"), "viss::webviss::");
 
     // 9. Conversions
     line = std::regex_replace(line, std::regex(R"(\btoInt\b)"), "viss::toInt");
