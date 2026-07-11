@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <exception>
 #include <memory>
+#include <future>
 
 #ifdef _WIN32
 #include <winsock2.h>

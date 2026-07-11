@@ -171,7 +171,8 @@ std::string transpileLine(std::string line, int lineNum, const std::string& file
 
     // 2. Block definitions starting with !
     line = std::regex_replace(line, std::regex(R"(!func\s+main\s*\(\s*\))"), "int main()");
-    line = std::regex_replace(line, std::regex(R"(!func\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\))"), "auto $1($2)");
+    line = std::regex_replace(line, std::regex(R"(!\$func\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)\s*\{)"), "inline auto $1($2) { return std::async(std::launch::async, [=]() {");
+    line = std::regex_replace(line, std::regex(R"(!func\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\))"), "inline auto $1($2)");
     line = std::regex_replace(line, std::regex(R"(!loop\s*\(([^)]+)\))"), "while ($1)");
     line = std::regex_replace(line, std::regex(R"(!class\s+([a-zA-Z0-9_]+))"), "struct $1");
     line = std::regex_replace(line, std::regex(R"(!space\s+([a-zA-Z0-9_]+))"), "namespace $1");
@@ -182,6 +183,7 @@ std::string transpileLine(std::string line, int lineNum, const std::string& file
     line = std::regex_replace(line, std::regex(R"(\?try)"), "try");
     line = std::regex_replace(line, std::regex(R"(\?catch\s*\(\s*Error\s+@([a-zA-Z0-9_]+)\s*\)\s*\{)"), "catch (const std::exception& _std_err) { viss::Error $1(_std_err.what());");
     line = std::regex_replace(line, std::regex(R"(\?catch\s*\{)"), "catch (...) {");
+    line = std::regex_replace(line, std::regex(R"(\$await\s+([a-zA-Z0-9_\.\(\):]+))"), "($1).get()");
 
     // 4. Pure C++ block prefix
     line = std::regex_replace(line, std::regex(R"(\+cpp)"), "");
@@ -247,6 +249,7 @@ std::string transpile(const std::string& vissCode, const std::string& filename) 
     int lineIndex = 0;
 
     std::regex classDefRegex(R"(!class\s+[a-zA-Z0-9_]+)");
+    std::regex asyncFuncDefRegex(R"(!\$func\s+[a-zA-Z0-9_]+)");
 
     while (std::getline(stream, line)) {
         lineIndex++;
@@ -256,6 +259,7 @@ std::string transpile(const std::string& vissCode, const std::string& filename) 
         std::string stripped = trim(line);
         
         bool isClassOpen = std::regex_search(stripped, classDefRegex);
+        bool isAsyncFuncOpen = std::regex_search(stripped, asyncFuncDefRegex);
         size_t openBraces = countChar(stripped, '{');
         size_t closeBraces = countChar(stripped, '}');
 
@@ -263,6 +267,9 @@ std::string transpile(const std::string& vissCode, const std::string& filename) 
             if (isClassOpen) {
                 blockStack.push_back("class");
                 isClassOpen = false;
+            } else if (isAsyncFuncOpen) {
+                blockStack.push_back("async_func");
+                isAsyncFuncOpen = false;
             } else {
                 blockStack.push_back("other");
             }
@@ -278,6 +285,11 @@ std::string transpile(const std::string& vissCode, const std::string& filename) 
                     size_t pos = transpiled.rfind('}');
                     if (pos != std::string::npos) {
                         transpiled.replace(pos, 1, "};");
+                    }
+                } else if (type == "async_func") {
+                    size_t pos = transpiled.rfind('}');
+                    if (pos != std::string::npos) {
+                        transpiled.replace(pos, 1, "}); }");
                     }
                 }
             }

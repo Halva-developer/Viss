@@ -26,7 +26,8 @@ def transpile_line(line, line_num, filename, string_literals):
     # Main function
     line = re.sub(r'!func\s+main\s*\(\s*\)', 'int main()', line)
     # Normal functions (deduced return type via auto)
-    line = re.sub(r'!func\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)', r'auto \1(\2)', line)
+    line = re.sub(r'!\$func\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)\s*\{', r'inline auto \1(\2) { return std::async(std::launch::async, [=]() {', line)
+    line = re.sub(r'!func\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)', r'inline auto \1(\2)', line)
     # Loop block
     line = re.sub(r'!loop\s*\(([^)]+)\)', r'while (\1)', line)
     # Classes
@@ -40,6 +41,7 @@ def transpile_line(line, line_num, filename, string_literals):
     line = re.sub(r'\?try', 'try', line)
     line = re.sub(r'\?catch\s*\(\s*Error\s+@([a-zA-Z0-9_]+)\s*\)\s*\{', r'catch (const std::exception& _std_err) { viss::Error \1(_std_err.what());', line)
     line = re.sub(r'\?catch\s*\{', 'catch (...) {', line)
+    line = re.sub(r'\$await\s+([a-zA-Z0-9_\.\(\):]+)', r'(\1).get()', line)
 
     # 4. Handle pure C++ block prefix +cpp
     line = re.sub(r'\+cpp', '', line)
@@ -130,6 +132,7 @@ def transpile(viss_code, filename):
         # Check if this line opens a class definition
         stripped = line.strip()
         is_class_open = re.search(r'!class\s+[a-zA-Z0-9_]+', stripped) is not None
+        is_async_func_open = re.search(r'!\$func\s+[a-zA-Z0-9_]+', stripped) is not None
 
         # Count open and close braces to track block structures
         # (Very simple but effective for Viss to C++ translation)
@@ -140,21 +143,29 @@ def transpile(viss_code, filename):
             if is_class_open:
                 block_stack.append('class')
                 is_class_open = False # Only push once per class definition line
+            elif is_async_func_open:
+                block_stack.append('async_func')
+                is_async_func_open = False
             else:
                 block_stack.append('other')
 
         # Transpile this line
         transpiled = transpile_line(line, idx + 1, filename, string_literals)
 
-        # Handle class closing semicolon on close braces
+        # Handle class and async function closing braces
         for _ in range(close_braces):
             if block_stack:
                 block_type = block_stack.pop()
                 if block_type == 'class':
-                    # Append semicolon to class closing brace
+                    # Append a semicolon to the last close brace of a class
                     if '}' in transpiled:
                         parts = transpiled.rsplit('}', 1)
                         transpiled = '};'.join(parts)
+                elif block_type == 'async_func':
+                    # Append '}); }' to close the async task lambda
+                    if '}' in transpiled:
+                        parts = transpiled.rsplit('}', 1)
+                        transpiled = '}); }'.join(parts)
         
         # Add #line directive for debugging (points back to .viss file!)
         if transpiled.strip() and not transpiled.startswith('#include') and not transpiled.startswith('using namespace'):
