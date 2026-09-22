@@ -1,0 +1,57 @@
+$import lib "asyncIO" as async // Импорт модуля асинхронности
+$import lib "iostream" as io  // Импорт модуля консольного ввода/вывода
+
+!async.func main() { // Главная точка входа
+    ?try {
+        // Создание объекта класса с явным указанием | class
+        @player = Player("Halva", 100) | class;
+        @rank = get_rank(@player.score);
+        io.println(i"Player: @player.name, Rank: @rank");
+
+        // Асинхронное получение бонуса
+        @bonus = await load_bonus_points(@player.name);
+        @player.score += @bonus;
+        io.println(i"New score: @player.score");
+
+        // Работа со списками и цикл !for
+        @inventory = ["Sword", "Shield", "Elixir"] | list;
+        !for item in @inventory {
+            @player.add_item(item);
+        }
+        io.println(i"Inventory count: {@player.items.len}, Last: {@player.items.last}");
+    }
+    ?expect Exception as @e {
+        io.println(i"Critical error: @e");
+    }
+}
+
+!class Player {
+    !func main(name as str, score as int) {
+        @me.name = name | str;
+        @me.score = score | int;
+        @me.items = [] | list;
+    }
+
+    !func add_item(item as str) {
+        @me.items.append(item);
+    }
+}
+
+!func get_rank(score as int) to str {
+    ?match score {
+        case 100 {
+            return "Champion";
+        }
+        case 50 {
+            return "Warrior";
+        }
+        else {
+            return "Recruit";
+        }
+    }
+}
+
+!async.func load_bonus_points(name as str) to int {
+    await async.sleep(100);
+    return 25;
+}

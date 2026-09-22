@@ -223,25 +223,7 @@ std::string transpileLine(std::string line, int lineNum, const std::string& file
         return line;
     }
 
-    // 1. Imports and standard libraries
-    line = std::regex_replace(line, std::regex(R"(@use\s+<?IOstream>?\s+for\s+\*)"), "#include \"libs/vissrt.hpp\"\nusing namespace viss;");
-    
-    // Custom use lists
-    std::smatch useListMatch;
-    std::regex useListRegex(R"(@use\s+([a-zA-Z0-9_]+)\s+for\s+([a-zA-Z0-9_,\s]+))");
-    if (std::regex_search(line, useListMatch, useListRegex)) {
-        std::string lib = useListMatch[1].str();
-        std::vector<std::string> funcs = split(useListMatch[2].str(), ',');
-        std::string replacement = "";
-        for (const auto& f : funcs) {
-            replacement += "using viss::" + lib + "::" + f + "; ";
-        }
-        line = std::regex_replace(line, useListRegex, replacement);
-    }
-    
-    line = std::regex_replace(line, std::regex(R"(@use\s+([a-zA-Z0-9_]+)\s+for\s+\*)"), "using namespace viss::$1;");
-    line = std::regex_replace(line, std::regex(R"(@use\s+\+cpp\s+<([^>]+)>)"), "#include <$1>");
-    line = std::regex_replace(line, std::regex(R"(@use\s+\+cpp\s+"([^"]+)")"), "#include \"$1\"");
+    // 1. Imports and standard libraries (Moved to end to prevent namespace replacements on header filenames)
 
     // 2. Block definitions starting with !
     line = std::regex_replace(line, std::regex(R"(!func\s+main\s*\(\s*\))"), "int main()");
@@ -273,27 +255,42 @@ std::string transpileLine(std::string line, int lineNum, const std::string& file
     line = std::regex_replace(line, std::regex(R"(\b([a-zA-Z0-9_<>\*&]+)\s+@([a-zA-Z0-9_]+))"), "$1 $2");
 
     // 6. Leftover variable references
-    line = std::regex_replace(line, std::regex(R"(@([a-zA-Z0-9_]+))"), "$1");
+    line = std::regex_replace(line, std::regex(R"(@(?!(?:use)\b)([a-zA-Z0-9_]+))"), "$1");
 
     // 8. Namespace mappings
-    line = std::regex_replace(line, std::regex(R"(\bio\.)"), "viss::io::");
-    line = std::regex_replace(line, std::regex(R"(\bfs\.)"), "viss::fs::");
-    line = std::regex_replace(line, std::regex(R"(\bgfx\.)"), "viss::gfx::");
-    line = std::regex_replace(line, std::regex(R"(\bsys\.)"), "viss::sys::");
-    line = std::regex_replace(line, std::regex(R"(\bgl\.)"), "viss::gl::");
-    line = std::regex_replace(line, std::regex(R"(\bvk\.)"), "viss::vk::");
-    line = std::regex_replace(line, std::regex(R"(\bnet\.)"), "viss::net::");
-    line = std::regex_replace(line, std::regex(R"(\bthread\.)"), "viss::thread::");
-    line = std::regex_replace(line, std::regex(R"(\bmath\.)"), "viss::math::");
-    line = std::regex_replace(line, std::regex(R"(\btime\.)"), "viss::time::");
-    line = std::regex_replace(line, std::regex(R"(\bstr\.)"), "viss::str::");
-    line = std::regex_replace(line, std::regex(R"(\benv\.)"), "viss::env::");
-    line = std::regex_replace(line, std::regex(R"(\bwebviss\.)"), "viss::webviss::");
+    line = std::regex_replace(line, std::regex(R"(([^/"<]|^)\bio\.)"), "$1viss::io::");
+    line = std::regex_replace(line, std::regex(R"(([^/"<]|^)\bfs\.)"), "$1viss::fs::");
+    line = std::regex_replace(line, std::regex(R"(([^/"<]|^)\bgfx\.)"), "$1viss::gfx::");
+    line = std::regex_replace(line, std::regex(R"(([^/"<]|^)\bsys\.)"), "$1viss::sys::");
+    line = std::regex_replace(line, std::regex(R"(([^/"<]|^)\bgl\.)"), "$1viss::gl::");
+    line = std::regex_replace(line, std::regex(R"(([^/"<]|^)\bvk\.)"), "$1viss::vk::");
+    line = std::regex_replace(line, std::regex(R"(([^/"<]|^)\bnet\.)"), "$1viss::net::");
+    line = std::regex_replace(line, std::regex(R"(([^/"<]|^)\bthread\.)"), "$1viss::thread::");
+    line = std::regex_replace(line, std::regex(R"(([^/"<]|^)\bmath\.)"), "$1viss::math::");
+    line = std::regex_replace(line, std::regex(R"(([^/"<]|^)\btime\.)"), "$1viss::time::");
+    line = std::regex_replace(line, std::regex(R"(([^/"<]|^)\bstr\.)"), "$1viss::str::");
+    line = std::regex_replace(line, std::regex(R"(([^/"<]|^)\benv\.)"), "$1viss::env::");
+    line = std::regex_replace(line, std::regex(R"(([^/"<]|^)\bwebviss\.)"), "$1viss::webviss::");
 
-    // 9. Conversions
-    line = std::regex_replace(line, std::regex(R"(\btoInt\b)"), "viss::toInt");
-    line = std::regex_replace(line, std::regex(R"(\btoDec\b)"), "viss::toDec");
-    line = std::regex_replace(line, std::regex(R"(\btoStr\b)"), "viss::toStr");
+    // 10. Imports and standard libraries
+    line = std::regex_replace(line, std::regex(R"(@use\s+<?IOstream>?\s+for\s+\*)"), "#include \"libs/vissrt.hpp\"\nusing namespace viss;");
+    
+    // Custom use lists
+    std::smatch useListMatch;
+    std::regex useListRegex(R"(@use\s+([a-zA-Z0-9_]+)\s+for\s+([a-zA-Z0-9_,\s]+))");
+    if (std::regex_search(line, useListMatch, useListRegex)) {
+        std::string lib = useListMatch[1].str();
+        std::vector<std::string> funcs = split(useListMatch[2].str(), ',');
+        std::string replacement = "#include \"libs/std/" + lib + ".hpp\"\n";
+        for (const auto& f : funcs) {
+            replacement += "using viss::" + lib + "::" + f + "; ";
+        }
+        line = std::regex_replace(line, useListRegex, replacement);
+    }
+    
+    line = std::regex_replace(line, std::regex(R"(@use\s+([a-zA-Z0-9_]+)\s+for\s+\*)"), "#include \"libs/std/$1.hpp\"\nusing namespace viss::$1;");
+    line = std::regex_replace(line, std::regex(R"(@use\s+\+cpp\s+<([^>]+)>)"), "#include <$1>");
+    line = std::regex_replace(line, std::regex(R"(@use\s+\+cpp\s+"([^"]+)")"), "#include \"$1\"");
 
     return line;
 }

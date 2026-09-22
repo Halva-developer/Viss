@@ -15,12 +15,20 @@
 #include <future>
 #include <queue>
 #include <condition_variable>
+#include <any>
 
 namespace viss {
     using Str = std::string;
     using Int = long long;
     using Dec = double;
     using Bool = bool;
+    
+    // Viss 2.0 type aliases
+    using str = Str;
+    using int_t = Int;
+    using dec = Dec;
+    using bool_t = Bool;
+    using any_t = std::any;
 
     class ThreadPool {
     private:
@@ -101,8 +109,9 @@ namespace viss {
             return message.c_str();
         }
     };
+    using Exception = Error;
 
-    template<typename T>
+    template<typename T = std::string>
     class List {
     private:
         std::shared_ptr<std::vector<T>> data;
@@ -114,6 +123,9 @@ namespace viss {
         inline void add(const T& item) {
             std::lock_guard<std::mutex> lock(*mtx);
             data->push_back(item);
+        }
+        inline void append(const T& item) {
+            add(item);
         }
         inline void insert(Int index, const T& item) {
             std::lock_guard<std::mutex> lock(*mtx);
@@ -144,9 +156,38 @@ namespace viss {
             std::lock_guard<std::mutex> lock(*mtx);
             return (Int)data->size();
         }
+        inline Int get_len() const {
+            return size();
+        }
+        __declspec(property(get = get_len)) Int len;
+
+        inline T get_first() const {
+            std::lock_guard<std::mutex> lock(*mtx);
+            if (!data->empty()) return (*data).front();
+            return T();
+        }
+        __declspec(property(get = get_first)) T first;
+
+        inline T get_last() const {
+            std::lock_guard<std::mutex> lock(*mtx);
+            if (!data->empty()) return (*data).back();
+            return T();
+        }
+        __declspec(property(get = get_last)) T last;
+
         inline void clear() {
             std::lock_guard<std::mutex> lock(*mtx);
             data->clear();
+        }
+
+        inline T& operator[](Int index) {
+            std::lock_guard<std::mutex> lock(*mtx);
+            return (*data)[index];
+        }
+
+        inline const T& operator[](Int index) const {
+            std::lock_guard<std::mutex> lock(*mtx);
+            return (*data)[index];
         }
 
         // Iterator support
@@ -156,13 +197,16 @@ namespace viss {
         inline auto end() const { return data->end(); }
     };
 
-    template<typename K, typename V>
+    template<typename K = Str, typename V = Str>
     class Map {
     private:
         std::shared_ptr<std::unordered_map<K, V>> data;
         std::shared_ptr<std::mutex> mtx;
     public:
         Map() : data(std::make_shared<std::unordered_map<K, V>>()), mtx(std::make_shared<std::mutex>()) {}
+        Map(std::initializer_list<std::pair<K, V>> init) : data(std::make_shared<std::unordered_map<K, V>>()), mtx(std::make_shared<std::mutex>()) {
+            for (const auto& p : init) (*data)[p.first] = p.second;
+        }
         
         inline void set(const K& key, const V& val) {
             std::lock_guard<std::mutex> lock(*mtx);
@@ -188,6 +232,11 @@ namespace viss {
             std::lock_guard<std::mutex> lock(*mtx);
             return (Int)data->size();
         }
+        inline Int get_len() const {
+            return size();
+        }
+        __declspec(property(get = get_len)) Int len;
+
         inline void clear() {
             std::lock_guard<std::mutex> lock(*mtx);
             data->clear();
@@ -199,6 +248,48 @@ namespace viss {
                 kList.add(pair.first);
             }
             return kList;
+        }
+
+        inline V& operator[](const K& key) {
+            std::lock_guard<std::mutex> lock(*mtx);
+            return (*data)[key];
+        }
+    };
+
+    // Inf: Dynamic Table / Expando Bag for infinite variables
+    class Inf {
+    private:
+        std::shared_ptr<std::unordered_map<Str, Str>> data;
+        std::shared_ptr<std::mutex> mtx;
+    public:
+        Inf() : data(std::make_shared<std::unordered_map<Str, Str>>()), mtx(std::make_shared<std::mutex>()) {}
+        Inf(std::initializer_list<std::pair<Str, Str>> init) : data(std::make_shared<std::unordered_map<Str, Str>>()), mtx(std::make_shared<std::mutex>()) {
+            for (const auto& p : init) (*data)[p.first] = p.second;
+        }
+
+        inline void write(const Str& key, const Str& val) {
+            std::lock_guard<std::mutex> lock(*mtx);
+            (*data)[key] = val;
+        }
+        inline Str read(const Str& key) const {
+            std::lock_guard<std::mutex> lock(*mtx);
+            auto it = data->find(key);
+            if (it != data->end()) return it->second;
+            return "";
+        }
+        inline Bool has(const Str& key) const {
+            std::lock_guard<std::mutex> lock(*mtx);
+            return data->find(key) != data->end();
+        }
+        inline List<Str> keys() const {
+            std::lock_guard<std::mutex> lock(*mtx);
+            List<Str> k;
+            for (const auto& p : *data) k.add(p.first);
+            return k;
+        }
+        inline Str& operator[](const Str& key) {
+            std::lock_guard<std::mutex> lock(*mtx);
+            return (*data)[key];
         }
     };
 
@@ -223,6 +314,74 @@ namespace viss {
     inline Str toStr(const Str& val) {
         return val;
     }
+    inline Str toStr(const char* val) {
+        return Str(val);
+    }
+
+    template<typename T>
+    inline std::ostream& operator<<(std::ostream& os, const List<T>& list) {
+        os << "[";
+        for (Int i = 0; i < list.size(); ++i) {
+            os << list.get(i);
+            if (i + 1 < list.size()) os << ", ";
+        }
+        os << "]";
+        return os;
+    }
+
+    template<typename K, typename V>
+    inline std::ostream& operator<<(std::ostream& os, const Map<K, V>& map) {
+        os << "{";
+        auto keys = map.keys();
+        for (Int i = 0; i < keys.size(); ++i) {
+            auto k = keys.get(i);
+            os << k << ": " << map.get(k);
+            if (i + 1 < keys.size()) os << ", ";
+        }
+        os << "}";
+        return os;
+    }
+
+    inline std::ostream& operator<<(std::ostream& os, const Inf& inf) {
+        os << "{";
+        auto keys = inf.keys();
+        for (Int i = 0; i < keys.size(); ++i) {
+            auto k = keys.get(i);
+            os << k << ": " << inf.read(k);
+            if (i + 1 < keys.size()) os << ", ";
+        }
+        os << "}";
+        return os;
+    }
+
+    template<typename T>
+    inline Str toStr(const List<T>& list) {
+        std::stringstream ss;
+        ss << list;
+        return ss.str();
+    }
+    template<typename K, typename V>
+    inline Str toStr(const Map<K, V>& map) {
+        std::stringstream ss;
+        ss << map;
+        return ss.str();
+    }
+    inline Str toStr(const Inf& inf) {
+        std::stringstream ss;
+        ss << inf;
+        return ss.str();
+    }
+
+    template<typename T>
+    List(std::initializer_list<T>) -> List<T>;
+    List(std::initializer_list<const char*>) -> List<Str>;
+
+    namespace async {
+        inline void sleep(Int milliseconds) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
+        }
+    }
+    namespace asyncIO = async;
 }
 
 // Automatically include lightweight standard library modules

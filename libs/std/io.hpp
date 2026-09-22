@@ -7,15 +7,38 @@
 
 namespace viss {
     namespace io {
-        inline void println(const Str& value) { std::cout << value << "\n"; }
-        inline void println(Int value) { std::cout << value << "\n"; }
-        inline void println(Dec value) { std::cout << value << "\n"; }
-        inline void println(Bool value) { std::cout << (value ? "true" : "false") << "\n"; }
+        template<typename T>
+        inline void print_single(const T& value) {
+            std::cout << value;
+        }
+        inline void print_single(Bool value) {
+            std::cout << (value ? "true" : "false");
+        }
+        inline void print_single(const std::exception& e) {
+            std::cout << e.what();
+        }
 
-        inline void print(const Str& value) { std::cout << value; }
-        inline void print(Int value) { std::cout << value; }
-        inline void print(Dec value) { std::cout << value; }
-        inline void print(Bool value) { std::cout << (value ? "true" : "false"); }
+        inline void println() { std::cout << "\n"; }
+
+        template<typename First, typename... Rest>
+        inline void println(const First& first, const Rest&... rest) {
+            print_single(first);
+            if constexpr (sizeof...(rest) > 0) {
+                std::cout << " ";
+                println(rest...);
+            } else {
+                std::cout << "\n";
+            }
+        }
+
+        template<typename First, typename... Rest>
+        inline void print(const First& first, const Rest&... rest) {
+            print_single(first);
+            if constexpr (sizeof...(rest) > 0) {
+                std::cout << " ";
+                print(rest...);
+            }
+        }
 
         inline void eprint(const Str& value) { std::cerr << value; }
         inline void eprintln(const Str& value) { std::cerr << value << "\n"; }

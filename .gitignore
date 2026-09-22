@@ -1,0 +1,12 @@
+# Intermediate compilation targets
+*.exe
+*.obj
+*.o
+*.pdb
+*.ilk
+*.tmp
+__pycache__/
+
+# Keep source cpp files in src/ but ignore generated root cpp files
+*.cpp
+!src/*.cpp
