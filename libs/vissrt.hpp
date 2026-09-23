@@ -16,6 +16,9 @@
 #include <queue>
 #include <condition_variable>
 #include <any>
+#include <cstdint>
+#include <iomanip>
+#include <functional>
 
 namespace viss {
     using Str = std::string;
@@ -24,9 +27,8 @@ namespace viss {
     using Bool = bool;
     
     // Viss 2.0 type aliases
-    using str = Str;
     using int_t = Int;
-    using dec = Dec;
+    using dec_t = Dec;
     using bool_t = Bool;
     using any_t = std::any;
 
@@ -111,6 +113,13 @@ namespace viss {
     };
     using Exception = Error;
 
+    inline Str toStr(const Error& e) {
+        return e.what();
+    }
+    inline Str toStr(const std::exception& e) {
+        return e.what();
+    }
+
     template<typename T = std::string>
     class List {
     private:
@@ -119,6 +128,13 @@ namespace viss {
     public:
         List() : data(std::make_shared<std::vector<T>>()), mtx(std::make_shared<std::mutex>()) {}
         List(std::initializer_list<T> init) : data(std::make_shared<std::vector<T>>(init)), mtx(std::make_shared<std::mutex>()) {}
+
+        template<typename U, typename = std::enable_if_t<std::is_constructible_v<T, U>>>
+        List(std::initializer_list<U> init) : data(std::make_shared<std::vector<T>>()), mtx(std::make_shared<std::mutex>()) {
+            for (const auto& item : init) {
+                data->push_back(item);
+            }
+        }
         
         inline void add(const T& item) {
             std::lock_guard<std::mutex> lock(*mtx);
@@ -126,6 +142,15 @@ namespace viss {
         }
         inline void append(const T& item) {
             add(item);
+        }
+        inline T pop() {
+            std::lock_guard<std::mutex> lock(*mtx);
+            if (!data->empty()) {
+                T val = data->back();
+                data->pop_back();
+                return val;
+            }
+            return T();
         }
         inline void insert(Int index, const T& item) {
             std::lock_guard<std::mutex> lock(*mtx);
@@ -137,6 +162,13 @@ namespace viss {
             std::lock_guard<std::mutex> lock(*mtx);
             if (index >= 0 && index < (Int)data->size()) {
                 data->erase(data->begin() + index);
+            }
+        }
+        inline void remove(const T& item) {
+            std::lock_guard<std::mutex> lock(*mtx);
+            auto it = std::find(data->begin(), data->end(), item);
+            if (it != data->end()) {
+                data->erase(it);
             }
         }
         inline void removeLast() {
@@ -152,6 +184,42 @@ namespace viss {
             }
             return T();
         }
+        inline Bool contains(const T& item) const {
+            std::lock_guard<std::mutex> lock(*mtx);
+            return std::find(data->begin(), data->end(), item) != data->end();
+        }
+        inline Int index_of(const T& item) const {
+            std::lock_guard<std::mutex> lock(*mtx);
+            auto it = std::find(data->begin(), data->end(), item);
+            if (it != data->end()) return (Int)(it - data->begin());
+            return -1;
+        }
+        inline List<T> slice(Int start, Int count) const {
+            std::lock_guard<std::mutex> lock(*mtx);
+            List<T> res;
+            if (start < 0) start = 0;
+            for (Int i = start; i < start + count && i < (Int)data->size(); ++i) {
+                res.add((*data)[i]);
+            }
+            return res;
+        }
+        inline void reverse() {
+            std::lock_guard<std::mutex> lock(*mtx);
+            std::reverse(data->begin(), data->end());
+        }
+        inline void sort() {
+            std::lock_guard<std::mutex> lock(*mtx);
+            std::sort(data->begin(), data->end());
+        }
+        inline Str join(const Str& sep = ", ") const {
+            std::lock_guard<std::mutex> lock(*mtx);
+            std::stringstream ss;
+            for (size_t i = 0; i < data->size(); ++i) {
+                ss << (*data)[i];
+                if (i + 1 < data->size()) ss << sep;
+            }
+            return ss.str();
+        }
         inline Int size() const {
             std::lock_guard<std::mutex> lock(*mtx);
             return (Int)data->size();
@@ -159,21 +227,18 @@ namespace viss {
         inline Int get_len() const {
             return size();
         }
-        __declspec(property(get = get_len)) Int len;
 
         inline T get_first() const {
             std::lock_guard<std::mutex> lock(*mtx);
             if (!data->empty()) return (*data).front();
             return T();
         }
-        __declspec(property(get = get_first)) T first;
 
         inline T get_last() const {
             std::lock_guard<std::mutex> lock(*mtx);
             if (!data->empty()) return (*data).back();
             return T();
         }
-        __declspec(property(get = get_last)) T last;
 
         inline void clear() {
             std::lock_guard<std::mutex> lock(*mtx);
@@ -190,12 +255,12 @@ namespace viss {
             return (*data)[index];
         }
 
-        // Iterator support
         inline auto begin() { return data->begin(); }
         inline auto end() { return data->end(); }
         inline auto begin() const { return data->begin(); }
         inline auto end() const { return data->end(); }
     };
+
 
     template<typename K = Str, typename V = Str>
     class Map {
@@ -235,7 +300,6 @@ namespace viss {
         inline Int get_len() const {
             return size();
         }
-        __declspec(property(get = get_len)) Int len;
 
         inline void clear() {
             std::lock_guard<std::mutex> lock(*mtx);
@@ -248,6 +312,14 @@ namespace viss {
                 kList.add(pair.first);
             }
             return kList;
+        }
+        inline List<V> values() const {
+            std::lock_guard<std::mutex> lock(*mtx);
+            List<V> vList;
+            for (const auto& pair : *data) {
+                vList.add(pair.second);
+            }
+            return vList;
         }
 
         inline V& operator[](const K& key) {
@@ -293,9 +365,139 @@ namespace viss {
         }
     };
 
+    // Bytes: High-Performance Hardware-Level Memory Buffer
+    class Bytes {
+    private:
+        std::shared_ptr<std::vector<uint8_t>> data;
+    public:
+        static const size_t DEFAULT_MAX_SIZE = 1024; // 1 KB maximum default
+
+        Bytes(size_t size = DEFAULT_MAX_SIZE, uint8_t fill = 0)
+            : data(std::make_shared<std::vector<uint8_t>>(size, fill)) {}
+        Bytes(std::initializer_list<uint8_t> init)
+            : data(std::make_shared<std::vector<uint8_t>>(init)) {}
+
+        inline size_t size() const { return data ? data->size() : 0; }
+        inline Int get_len() const { return (Int)size(); }
+
+        inline uint8_t& operator[](size_t index) {
+            if (index >= data->size()) data->resize(index + 1, 0);
+            return (*data)[index];
+        }
+        inline const uint8_t& operator[](size_t index) const {
+            return (*data)[index];
+        }
+        inline uint8_t get(size_t index) const {
+            if (index < data->size()) return (*data)[index];
+            return 0;
+        }
+        inline void set(size_t index, uint8_t val) {
+            if (index >= data->size()) data->resize(index + 1, 0);
+            (*data)[index] = val;
+        }
+        inline void set_bit(size_t byte_idx, uint8_t bit_idx, bool val) {
+            if (byte_idx >= data->size()) data->resize(byte_idx + 1, 0);
+            if (bit_idx < 8) {
+                if (val) (*data)[byte_idx] |= (1 << bit_idx);
+                else (*data)[byte_idx] &= ~(1 << bit_idx);
+            }
+        }
+        inline bool get_bit(size_t byte_idx, uint8_t bit_idx) const {
+            if (byte_idx < data->size() && bit_idx < 8) {
+                return ((*data)[byte_idx] >> bit_idx) & 1;
+            }
+            return false;
+        }
+        inline bool has_bit(size_t byte_idx, uint8_t bit_idx) const {
+            return get_bit(byte_idx, bit_idx);
+        }
+        inline void fill(uint8_t val) {
+            std::fill(data->begin(), data->end(), val);
+        }
+        inline void clear() {
+            std::fill(data->begin(), data->end(), 0);
+        }
+        inline void resize(size_t new_size, uint8_t fill_val = 0) {
+            data->resize(new_size, fill_val);
+        }
+        inline Bytes slice(size_t start, size_t count) const {
+            Bytes res(count, 0);
+            for (size_t i = 0; i < count && start + i < data->size(); ++i) {
+                res.set(i, (*data)[start + i]);
+            }
+            return res;
+        }
+        inline void copy_to(Bytes& dest, size_t dest_offset = 0) const {
+            for (size_t i = 0; i < data->size(); ++i) {
+                dest.set(dest_offset + i, (*data)[i]);
+            }
+        }
+        inline uint16_t get_u16(size_t idx) const {
+            if (idx + 1 < data->size()) {
+                return (uint16_t)((*data)[idx] | ((*data)[idx + 1] << 8));
+            }
+            return 0;
+        }
+        inline void set_u16(size_t idx, uint16_t val) {
+            set(idx, (uint8_t)(val & 0xFF));
+            set(idx + 1, (uint8_t)((val >> 8) & 0xFF));
+        }
+        inline uint32_t get_u32(size_t idx) const {
+            if (idx + 3 < data->size()) {
+                return (uint32_t)((*data)[idx] | ((*data)[idx + 1] << 8) | ((*data)[idx + 2] << 16) | ((*data)[idx + 3] << 24));
+            }
+            return 0;
+        }
+        inline void set_u32(size_t idx, uint32_t val) {
+            set(idx, (uint8_t)(val & 0xFF));
+            set(idx + 1, (uint8_t)((val >> 8) & 0xFF));
+            set(idx + 2, (uint8_t)((val >> 16) & 0xFF));
+            set(idx + 3, (uint8_t)((val >> 24) & 0xFF));
+        }
+        inline Str to_hex() const {
+            std::stringstream ss;
+            ss << std::hex << std::setfill('0');
+            for (size_t i = 0; i < data->size(); ++i) {
+                ss << std::setw(2) << (int)(*data)[i] << " ";
+            }
+            return ss.str();
+        }
+        inline uint8_t* raw() { return data->data(); }
+        inline const uint8_t* raw() const { return data->data(); }
+    };
+
+    // Bits: Compact Bitfield Buffer
+    class Bits : public Bytes {
+    public:
+        static const size_t DEFAULT_MAX_BITS = 8192; // 8192 bits = 1024 bytes
+        size_t total_bits;
+
+        Bits(size_t num_bits = DEFAULT_MAX_BITS) 
+            : Bytes((num_bits + 7) / 8), total_bits(num_bits) {}
+
+        inline bool get(size_t bit_idx) const {
+            return get_bit(bit_idx / 8, bit_idx % 8);
+        }
+        inline void set(size_t bit_idx, bool val) {
+            set_bit(bit_idx / 8, bit_idx % 8, val);
+        }
+        inline Int count_ones() const {
+            Int count = 0;
+            for (size_t i = 0; i < total_bits; ++i) {
+                if (get(i)) count++;
+            }
+            return count;
+        }
+        inline size_t size() const { return total_bits; }
+        inline Int get_len() const { return (Int)total_bits; }
+    };
+
+    using bytes_t = Bytes;
+    using bits_t = Bits;
+
     inline Int toInt(const Str& s) {
         try {
-            return std::stoll(s);
+            return std::stoll(s, nullptr, 0);
         } catch (...) {
             return 0;
         }
@@ -316,6 +518,24 @@ namespace viss {
     }
     inline Str toStr(const char* val) {
         return Str(val);
+    }
+    inline Str toStr(Bool val) {
+        return val ? "true" : "false";
+    }
+    inline Str toHex(Int val) {
+        std::stringstream ss;
+        ss << "0x" << std::hex << std::uppercase << val;
+        return ss.str();
+    }
+    inline Str toBin(Int val) {
+        if (val == 0) return "0b0";
+        std::string s = "";
+        long long v = val;
+        while (v > 0) {
+            s = ((v & 1) ? "1" : "0") + s;
+            v >>= 1;
+        }
+        return "0b" + s;
     }
 
     template<typename T>
@@ -352,6 +572,14 @@ namespace viss {
         }
         os << "}";
         return os;
+    }
+
+    inline std::ostream& operator<<(std::ostream& os, const Bytes& b) {
+        os << "[Bytes: " << b.size() << " B]";
+        return os;
+    }
+    inline Str toStr(const Bytes& b) {
+        return "[Bytes: " + std::to_string(b.size()) + " B]";
     }
 
     template<typename T>
@@ -392,3 +620,4 @@ namespace viss {
 #include "std/time.hpp"
 #include "std/str.hpp"
 #include "std/thread.hpp"
+#include "std/retrotech.hpp"

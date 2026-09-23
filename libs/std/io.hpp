@@ -1,8 +1,13 @@
 #pragma once
 #include "../vissrt.hpp"
 #include <iostream>
+#include <fstream>
 #ifdef _WIN32
 #include <windows.h>
+#include <conio.h>
+#else
+#include <termios.h>
+#include <unistd.h>
 #endif
 
 namespace viss {
@@ -49,6 +54,33 @@ namespace viss {
             return s;
         }
 
+        inline Str read_char() {
+            #ifdef _WIN32
+            char ch = (char)_getch();
+            return Str(1, ch);
+            #else
+            struct termios oldt, newt;
+            tcgetattr(STDIN_FILENO, &oldt);
+            newt = oldt;
+            newt.c_lflag &= ~(ICANON | ECHO);
+            tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+            char ch = getchar();
+            tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+            return Str(1, ch);
+            #endif
+        }
+
+        inline void write_file(const Str& path, const Str& text) {
+            std::ofstream f(path);
+            if (f.is_open()) f << text;
+        }
+
+        inline Str read_file(const Str& path) {
+            std::ifstream f(path);
+            if (!f.is_open()) return "";
+            return Str((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        }
+
         inline void color(Int colorCode) {
             #ifdef _WIN32
             SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), (WORD)colorCode);
@@ -75,6 +107,7 @@ namespace viss {
             std::cout << "\033[" << ansiCode << "m";
             #endif
         }
+
         inline void clear() {
             #ifdef _WIN32
             COORD topLeft  = { 0, 0 };
@@ -89,6 +122,7 @@ namespace viss {
             std::cout << "\033[2J\033[1;1H";
             #endif
         }
+
         inline void cursor(Int x, Int y) {
             #ifdef _WIN32
             COORD pos = { (SHORT)x, (SHORT)y };

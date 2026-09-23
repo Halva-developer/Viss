@@ -3,6 +3,12 @@
 Viss Compiler (vissc) - Version 0.0.1.2
 Full compiler for the Viss 2.0 language specification.
 Transforms Viss code into high-performance, native C++17.
+Features:
+- Full standard library (io, sys, fs, math, time, str, retrotech, async)
+- Native primitive namespaces (int.*, double.*, dec.*, str.*, bytes.*, bits.*, list.*)
+- Low-level raw memory buffers & bit manipulation (&grid create | bytes/bits)
+- Industrial-grade syntax validator & diagnostic checker
+- Subcommands: run, compile, check, init, version
 """
 
 import sys
@@ -10,6 +16,7 @@ import os
 import re
 import subprocess
 import shutil
+import json
 
 VERSION = "0.0.1.2"
 
@@ -79,19 +86,104 @@ def sanitize_code(code):
         i += 1
     return "".join(clean)
 
+def check_syntax(viss_code, filename="<file.viss>"):
+    """
+    Comprehensive linter and syntax diagnostics checker for Viss 2.0.
+    Returns a list of diagnostic dictionaries:
+    [{ "line": int, "col": int, "message": str, "severity": "error"|"warning" }]
+    """
+    diagnostics = []
+    lines = viss_code.split('\n')
+
+    # 1. Structural balance checks
+    stack = []
+    for line_idx, line in enumerate(lines):
+        in_str = False
+        escaped = False
+        for col_idx, ch in enumerate(line):
+            if in_str:
+                if escaped:
+                    escaped = False
+                elif ch == '\\':
+                    escaped = True
+                elif ch == '"':
+                    in_str = False
+                continue
+            else:
+                if ch == '"':
+                    in_str = True
+                    continue
+                if ch == '#' or (col_idx + 1 < len(line) and line[col_idx:col_idx+2] == '//'):
+                    break
+                if ch in '{[(':
+                    stack.append((ch, line_idx + 1, col_idx + 1))
+                elif ch in '}])':
+                    if not stack:
+                        diagnostics.append({
+                            "line": line_idx + 1,
+                            "col": col_idx + 1,
+                            "message": f"Unmatched closing delimiter '{ch}'",
+                            "severity": "error"
+                        })
+                    else:
+                        top, open_line, open_col = stack.pop()
+                        matches = { '}': '{', ']': '[', ')': '(' }
+                        if matches[ch] != top:
+                            diagnostics.append({
+                                "line": line_idx + 1,
+                                "col": col_idx + 1,
+                                "message": f"Mismatched closing delimiter '{ch}', expected match for '{top}' from line {open_line}",
+                                "severity": "error"
+                            })
+
+    for top, open_line, open_col in stack:
+        diagnostics.append({
+            "line": open_line,
+            "col": open_col,
+            "message": f"Unclosed delimiter '{top}'",
+            "severity": "error"
+        })
+
+    # 2. Syntax pattern checks
+    for line_idx, line in enumerate(lines):
+        stripped = line.strip()
+        # Skip empty lines and comments
+        if not stripped or stripped.startswith('#') or stripped.startswith('//') or stripped.startswith('/*'):
+            continue
+
+        # Check raw buffer create syntax
+        if stripped.startswith('&') and 'create' in stripped:
+            if not re.search(r'^\s*&[a-zA-Z0-9_]+\s+create\s*\|\s*(bytes|bits)', stripped):
+                diagnostics.append({
+                    "line": line_idx + 1,
+                    "col": 1,
+                    "message": "Malformed raw buffer creation. Expected: &name create | bytes[, size];",
+                    "severity": "warning"
+                })
+
+        # Check pipe declaration syntax
+        if '=' in stripped and '|' in stripped and not stripped.startswith('//'):
+            if not re.search(r'(@[a-zA-Z0-9_.]+|this->[a-zA-Z0-9_]+)\s*=\s*.+?\|\s*[a-zA-Z0-9_]+', stripped):
+                if not stripped.startswith('&'):
+                    diagnostics.append({
+                        "line": line_idx + 1,
+                        "col": 1,
+                        "message": "Malformed pipe declaration. Expected: @var = value | type;",
+                        "severity": "warning"
+                    })
+
+    return diagnostics
+
 def validate_viss_syntax(viss_code, filename):
-    open_count = viss_code.count('{')
-    close_count = viss_code.count('}')
-    if open_count != close_count:
-        print(f"Error in {filename}: Unbalanced curly braces detected.")
-        print(f"Details: Found {open_count} open braces '{{' and {close_count} close braces '}}'.")
+    diags = check_syntax(viss_code, filename)
+    errors = [d for d in diags if d['severity'] == 'error']
+    if errors:
+        print(f"Error in {filename}: Syntax check failed with {len(errors)} error(s):")
+        for err in errors:
+            print(f"  Line {err['line']}, Col {err['col']}: {err['message']}")
         sys.exit(1)
 
 def translate_interpolation(code):
-    """
-    Translates i"Hello @player.name, Rank: @rank, count: {@items.len}"
-    into C++ string concatenation.
-    """
     pattern = r'i"((?:[^"\\]|\\.)*)"'
     
     def replacer(match):
@@ -107,7 +199,10 @@ def translate_interpolation(code):
                 parts.append(f'viss::Str("{plain_text}")')
             
             expr = m.group(1) if m.group(1) is not None else m.group(2)
-            expr_clean = expr.replace('@', '')
+            expr_clean = expr.replace('@', '').replace('&', '')
+            expr_clean = re.sub(r'\.len\b', '.size()', expr_clean)
+            expr_clean = re.sub(r'\.first\b', '.get_first()', expr_clean)
+            expr_clean = re.sub(r'\.last\b', '.get_last()', expr_clean)
             parts.append(f'viss::toStr({expr_clean})')
             last_end = end
             
@@ -121,12 +216,13 @@ def translate_interpolation(code):
 
     return re.sub(pattern, replacer, code)
 
-def transpile_params(params_str):
+def transpile_params_and_template(params_str):
     if not params_str.strip():
-        return ""
+        return "", ""
     params = params_str.split(',')
     res = []
-    for p in params:
+    template_types = []
+    for idx, p in enumerate(params):
         p = p.strip()
         if not p:
             continue
@@ -144,10 +240,14 @@ def transpile_params(params_str):
                 'str': 'viss::Str',
                 'int': 'viss::Int',
                 'dec': 'viss::Dec',
+                'double': 'viss::Dec',
+                'float': 'viss::Dec',
                 'bool': 'viss::Bool',
+                'bytes': 'viss::Bytes',
+                'bits': 'viss::Bits',
                 'any': 'auto',
-                'list': 'viss::List',
-                'map': 'viss::Map',
+                'list': 'viss::List<viss::Str>',
+                'map': 'viss::Map<viss::Str, viss::Str>',
                 'inf': 'viss::Inf'
             }.get(ptype, ptype)
             
@@ -156,12 +256,78 @@ def transpile_params(params_str):
                 decl += f" = {default_val}"
             res.append(decl)
         else:
-            p_clean = p.replace('@', '')
-            decl = f"auto {p_clean}"
+            p_clean = p.replace('@', '').replace('&', '')
+            tname = f"_T{idx}_{p_clean}"
+            template_types.append(f"typename {tname}")
+            decl = f"{tname} {p_clean}"
             if default_val:
                 decl += f" = {default_val}"
             res.append(decl)
-    return ", ".join(res)
+    t_clause = f"template<{', '.join(template_types)}> " if template_types else ""
+    return ", ".join(res), t_clause
+
+def transpile_params(params_str):
+    params_decl, _ = transpile_params_and_template(params_str)
+    return params_decl
+
+def apply_primitive_static_transforms(text):
+    """
+    Translates high-level static namespace methods:
+    int.*, double.*, dec.*, str.*, bytes.*, bits.*
+    """
+    res = text
+    # int.*
+    res = re.sub(r'\bint\.random\(', 'viss::math::random_int(', res)
+    res = re.sub(r'\bint\.parse\(', 'viss::toInt(', res)
+    res = re.sub(r'\bint\.to_hex\(', 'viss::toHex(', res)
+    res = re.sub(r'\bint\.to_bin\(', 'viss::toBin(', res)
+    res = re.sub(r'\bint\.abs\(', 'std::abs(', res)
+    res = re.sub(r'\bint\.min\(', 'std::min(', res)
+    res = re.sub(r'\bint\.max\(', 'std::max(', res)
+    res = re.sub(r'\bint\.clamp\(', 'viss::math::clamp(', res)
+
+    # double.* / dec.*
+    res = re.sub(r'\b(?:double|dec)\.sqrt\(', 'std::sqrt(', res)
+    res = re.sub(r'\b(?:double|dec)\.cbrt\(', 'std::cbrt(', res)
+    res = re.sub(r'\b(?:double|dec)\.pow\(', 'std::pow(', res)
+    res = re.sub(r'\b(?:double|dec)\.sin\(', 'std::sin(', res)
+    res = re.sub(r'\b(?:double|dec)\.cos\(', 'std::cos(', res)
+    res = re.sub(r'\b(?:double|dec)\.tan\(', 'std::tan(', res)
+    res = re.sub(r'\b(?:double|dec)\.asin\(', 'std::asin(', res)
+    res = re.sub(r'\b(?:double|dec)\.acos\(', 'std::acos(', res)
+    res = re.sub(r'\b(?:double|dec)\.atan\(', 'std::atan(', res)
+    res = re.sub(r'\b(?:double|dec)\.atan2\(', 'std::atan2(', res)
+    res = re.sub(r'\b(?:double|dec)\.abs\(', 'std::abs(', res)
+    res = re.sub(r'\b(?:double|dec)\.round\(', 'std::round(', res)
+    res = re.sub(r'\b(?:double|dec)\.floor\(', 'std::floor(', res)
+    res = re.sub(r'\b(?:double|dec)\.ceil\(', 'std::ceil(', res)
+    res = re.sub(r'\b(?:double|dec)\.min\(', 'std::min(', res)
+    res = re.sub(r'\b(?:double|dec)\.max\(', 'std::max(', res)
+    res = re.sub(r'\b(?:double|dec)\.clamp\(', 'viss::math::clamp(', res)
+    res = re.sub(r'\b(?:double|dec)\.random\(', 'viss::math::random_dec(', res)
+    res = re.sub(r'\b(?:double|dec)\.parse\(', 'viss::toDec(', res)
+
+    # str.*
+    res = re.sub(r'\bstr\.from\(', 'viss::toStr(', res)
+    res = re.sub(r'\bstr\.len\(', 'viss::str::len(', res)
+    res = re.sub(r'\bstr\.split\(', 'viss::str::split(', res)
+    res = re.sub(r'\bstr\.join\(', 'viss::str::join(', res)
+    res = re.sub(r'\bstr\.trim\(', 'viss::str::trim(', res)
+    res = re.sub(r'\bstr\.lower\(', 'viss::str::lower(', res)
+    res = re.sub(r'\bstr\.upper\(', 'viss::str::upper(', res)
+    res = re.sub(r'\bstr\.contains\(', 'viss::str::contains(', res)
+    res = re.sub(r'\bstr\.replace\(', 'viss::str::replace(', res)
+    res = re.sub(r'\bstr\.starts_with\(', 'viss::str::starts_with(', res)
+    res = re.sub(r'\bstr\.ends_with\(', 'viss::str::ends_with(', res)
+    res = re.sub(r'\bstr\.sub\(', 'viss::str::sub(', res)
+    res = re.sub(r'\bstr\.repeat\(', 'viss::str::repeat(', res)
+    res = re.sub(r'\bstr\.pad_left\(', 'viss::str::pad_left(', res)
+    res = re.sub(r'\bstr\.pad_right\(', 'viss::str::pad_right(', res)
+
+    # bytes.* and bits.*
+    res = re.sub(r'\bbytes\.alloc\(', 'viss::Bytes(', res)
+    res = re.sub(r'\bbits\.alloc\(', 'viss::Bits(', res)
+    return res
 
 def transpile(viss_code, filename):
     # Step 1: Pre-process string interpolation
@@ -170,6 +336,7 @@ def transpile(viss_code, filename):
     # Step 2: Pre-process imports before hiding string literals
     includes_section = ['#include "libs/vissrt.hpp"']
     clean_lines = []
+    imported_aliases = {"io", "async", "rt", "sys", "fs", "math", "time", "str"}
     
     for raw_line in processed_code.split('\n'):
         line = raw_line
@@ -184,17 +351,21 @@ def transpile(viss_code, filename):
         m_import_sys = re.match(r'^\s*\$import\s+lib\s+from\s+"system"(?:\s*\[[^\]]*\])?\s+as\s+([a-zA-Z0-9_]+)', stripped)
         if m_import_sys:
             alias = m_import_sys.group(1)
+            imported_aliases.add(alias)
             includes_section.append(f'#include "libs/std/sys.hpp"\nnamespace {alias} = viss::sys;')
             continue
 
-        m_import_lib = re.match(r'^\s*\$import\s+lib\s+"([a-zA-Z0-9_]+)"\s+as\s+([a-zA-Z0-9_]+)', stripped)
+        m_import_lib = re.match(r'^\s*\$impo(?:rt|er)\s+lib\s+"([a-zA-Z0-9_]+)"\s+as\s+([a-zA-Z0-9_]+)', stripped)
         if m_import_lib:
             lib = m_import_lib.group(1)
             alias = m_import_lib.group(2)
+            imported_aliases.add(alias)
             if lib in ("asyncIO", "async"):
                 includes_section.append(f'namespace {alias} = viss::async;')
             elif lib in ("iostream", "io"):
                 includes_section.append(f'#include "libs/std/io.hpp"\nnamespace {alias} = viss::io;')
+            elif lib in ("retrotech", "rt"):
+                includes_section.append(f'#include "libs/std/retrotech.hpp"\nnamespace {alias} = viss::retrotech;')
             else:
                 includes_section.append(f'#include "libs/std/{lib}.hpp"\nnamespace {alias} = viss::{lib};')
             continue
@@ -202,6 +373,7 @@ def transpile(viss_code, filename):
         m_import_cpp = re.match(r'^\s*\$import\s+cpp\s+<([^>]+)>\s+as\s+([a-zA-Z0-9_]+)', stripped)
         if m_import_cpp:
             header, alias = m_import_cpp.group(1), m_import_cpp.group(2)
+            imported_aliases.add(alias)
             includes_section.append(f'#include <{header}>')
             continue
 
@@ -224,6 +396,13 @@ def transpile(viss_code, filename):
 
     lines = processed_code.split('\n')
     
+    # Pre-scan for all declared classes to resolve naming and static calls
+    known_classes = set()
+    for l in lines:
+        m_c = re.match(r'^\s*!class\s+([a-zA-Z0-9_]+)', l.strip())
+        if m_c:
+            known_classes.add(m_c.group(1))
+
     # Buckets for C++ order: includes -> classes -> functions -> main
     classes_section = []
     functions_section = []
@@ -233,6 +412,7 @@ def transpile(viss_code, filename):
     block_stack = []
     current_class_name = None
     class_fields = {}
+
     for idx, line in enumerate(lines):
         orig_line = line
         
@@ -257,7 +437,7 @@ def transpile(viss_code, filename):
             class_fields[current_class_name] = {}
             block_stack.append(('class', cname))
             current_target = classes_section
-            current_target.append(f"struct {cname} : public {pnames} {{")
+            current_target.append(f"struct _cls_{cname} : public {pnames} {{")
             continue
 
         m_class = re.match(r'^\s*!class\s+([a-zA-Z0-9_]+)\s*\{', stripped)
@@ -267,7 +447,7 @@ def transpile(viss_code, filename):
             class_fields[current_class_name] = {}
             block_stack.append(('class', cname))
             current_target = classes_section
-            current_target.append(f"struct {cname} {{")
+            current_target.append(f"struct _cls_{cname} {{")
             continue
 
         # 3. Functions
@@ -276,20 +456,21 @@ def transpile(viss_code, filename):
         if m_ctor and current_class_name:
             params = transpile_params(m_ctor.group(1))
             block_stack.append(('func', 'ctor'))
-            current_target.append(f"    {current_class_name}({params}) {{")
+            current_target.append(f"    _cls_{current_class_name}({params}) {{")
             continue
 
         # !async.func main() { or !func main() {
-        if re.match(r'^\s*!async\.func\s+main\s*\(\s*\)\s*\{', stripped) or re.match(r'^\s*!func\s+main\s*\(\s*\)\s*\{', stripped):
+        if re.match(r'^\s*!async\.func\s+main\s*\(\s*\)\s*\{', stripped) or re.match(r'^\s*!func\s+main\s*\(\s*\)\s*\{', stripped) or stripped == "!main {":
             block_stack.append(('func', 'main'))
             current_target = main_section
             current_target.append("int main() {")
             continue
 
         # !async.func name(params) to return_type {
-        m_async_func = re.match(r'^\s*!async\.func\s+([a-zA-Z0-9_?]+)\s*\(([^)]*)\)(?:\s+to\s+([a-zA-Z0-9_<>]+))?\s*\{', stripped)
+        m_async_func = re.match(r'^\s*!async\.func\s+([a-zA-Z0-9_?!]+)\s*\(([^)]*)\)(?:\s+to\s+([a-zA-Z0-9_<>]+))?\s*\{', stripped)
         if m_async_func:
-            fname = m_async_func.group(1).replace('?', '_q')
+            raw_fname = m_async_func.group(1)
+            fname = raw_fname.replace('?', '_q').replace('!', '_bang')
             params = transpile_params(m_async_func.group(2))
             block_stack.append(('async_func', fname))
             current_target = functions_section
@@ -297,19 +478,24 @@ def transpile(viss_code, filename):
             continue
 
         # !func name(params) to return_type {
-        m_func = re.match(r'^\s*!func\s+([a-zA-Z0-9_?]+)\s*\(([^)]*)\)(?:\s+to\s+([a-zA-Z0-9_<>]+))?\s*\{', stripped)
+        m_func = re.match(r'^\s*!func\s+([a-zA-Z0-9_?!]+)\s*\(([^)]*)\)(?:\s+to\s+([a-zA-Z0-9_<>]+))?\s*\{', stripped)
         if m_func:
-            fname = m_func.group(1).replace('?', '_q')
-            params = transpile_params(m_func.group(2))
+            raw_fname = m_func.group(1)
+            fname = raw_fname.replace('?', '_q').replace('!', '_bang')
+            params, t_clause = transpile_params_and_template(m_func.group(2))
             ret_type = m_func.group(3)
             if ret_type:
                 cpp_ret = {
                     'str': 'viss::Str',
                     'int': 'viss::Int',
                     'dec': 'viss::Dec',
+                    'double': 'viss::Dec',
+                    'float': 'viss::Dec',
                     'bool': 'viss::Bool',
-                    'list': 'viss::List',
-                    'map': 'viss::Map',
+                    'bytes': 'viss::Bytes',
+                    'bits': 'viss::Bits',
+                    'list': 'viss::List<viss::Str>',
+                    'map': 'viss::Map<viss::Str, viss::Str>',
                     'inf': 'viss::Inf'
                 }.get(ret_type, ret_type)
                 ret_decl = f" -> {cpp_ret}"
@@ -318,13 +504,25 @@ def transpile(viss_code, filename):
             block_stack.append(('func', fname))
             if not current_class_name:
                 current_target = functions_section
-            current_target.append(f"inline auto {fname}({params}){ret_decl} {{")
+                current_target.append(f"{t_clause}inline auto {fname}({params}){ret_decl} {{")
+            else:
+                uses_me = False
+                depth = 1
+                for future_line in lines[idx+1:]:
+                    if '{' in future_line: depth += future_line.count('{')
+                    if '}' in future_line: depth -= future_line.count('}')
+                    if '@me' in future_line:
+                        uses_me = True
+                    if depth <= 0:
+                        break
+                static_mod = "static " if not uses_me else ""
+                current_target.append(f"    {t_clause}{static_mod}inline auto {fname}({params}){ret_decl} {{")
             continue
 
         # 4. Pattern Matching ?match expr {
         m_match = re.match(r'^\s*\?match\s+([^\{]+)\{', stripped)
         if m_match:
-            expr = m_match.group(1).strip().replace('@', '')
+            expr = m_match.group(1).strip().replace('@', '').replace('&', '')
             block_stack.append(('match', expr))
             current_target.append(f"switch ({expr}) {{")
             continue
@@ -342,17 +540,20 @@ def transpile(viss_code, filename):
             current_target.append("default: {")
             continue
 
-        # 5. Loops !for
-        m_for_range = re.match(r'^\s*!for\s+@?([a-zA-Z0-9_]+)\s+in\s+([0-9]+)\.\.([0-9]+)\s*\{', stripped)
+        # 5. Loops !for and for
+        m_for_range = re.match(r'^\s*!?for\s+@?([a-zA-Z0-9_]+)\s+in\s+([^.]+)\.\.([^\{]+)\s*\{', stripped)
         if m_for_range:
-            vname, start, end = m_for_range.group(1), m_for_range.group(2), m_for_range.group(3)
+            vname = m_for_range.group(1)
+            start = m_for_range.group(2).strip().replace('@', '').replace('&', '')
+            end = m_for_range.group(3).strip().replace('@', '').replace('&', '')
             block_stack.append(('for', vname))
-            current_target.append(f"for (viss::Int {vname} = {start}; {vname} < {end}; ++{vname}) {{")
+            current_target.append(f"for (viss::Int {vname} = ({start}); {vname} < ({end}); ++{vname}) {{")
             continue
 
-        m_for_in = re.match(r'^\s*!for\s+@?([a-zA-Z0-9_]+)\s+in\s+([^\{]+)\{', stripped)
+        m_for_in = re.match(r'^\s*!?for\s+@?([a-zA-Z0-9_]+)\s+in\s+([^\{]+)\{', stripped)
         if m_for_in:
-            vname, coll = m_for_in.group(1), m_for_in.group(2).strip().replace('@', '')
+            vname = m_for_in.group(1)
+            coll = m_for_in.group(2).strip().replace('@', '').replace('&', '')
             block_stack.append(('for', vname))
             current_target.append(f"for (auto& {vname} : {coll}) {{")
             continue
@@ -376,7 +577,7 @@ def transpile(viss_code, filename):
             cond = re.sub(r'\bnot\b', '!', cond)
             cond = re.sub(r'\band\b', '&&', cond)
             cond = re.sub(r'\bor\b', '||', cond)
-            cond = cond.replace('@', '')
+            cond = cond.replace('@', '').replace('&', '')
             cond = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', cond)
             block_stack.append(('if', 'if'))
             current_target.append(f"if ({cond}) {{")
@@ -398,8 +599,10 @@ def transpile(viss_code, filename):
             if block_stack:
                 btype, bdata = block_stack.pop()
                 if btype == 'class':
+                    cname = bdata
                     current_class_name = None
                     current_target.append("};")
+                    current_target.append(f"using {cname} = _cls_{cname};")
                     current_target = functions_section
                     continue
                 elif btype == 'async_func':
@@ -411,7 +614,48 @@ def transpile(viss_code, filename):
             current_target.append("}")
             continue
 
-        # 8. Variable assignments & declarations with pipe
+        # 8. Raw buffer creation: &name create | bytes, <size>; or &name create | bytes;
+        m_raw_create = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+create\s*\|\s*(bytes|bits)(?:\s*,\s*([^;]+))?\s*;?\s*$', stripped)
+        if m_raw_create:
+            vname = m_raw_create.group(1)
+            btype = m_raw_create.group(2)
+            sz = m_raw_create.group(3)
+            if btype == 'bytes':
+                size_val = sz.strip() if sz else "1024" # Default maximum size 1024 bytes (1 KB)
+                current_target.append(f"viss::Bytes {vname}({size_val});")
+            elif btype == 'bits':
+                size_val = sz.strip() if sz else "8192" # Default maximum size 8192 bits (1024 bytes)
+                current_target.append(f"viss::Bits {vname}({size_val});")
+            continue
+
+        # 9. Raw buffer index assignment: &name[idx] = val;
+        m_raw_idx = re.match(r'^\s*&([a-zA-Z0-9_]+)\[([^\]]+)\]\s*=\s*(.+?)\s*;?\s*$', stripped)
+        if m_raw_idx:
+            vname = m_raw_idx.group(1)
+            idx_expr = m_raw_idx.group(2).strip().replace('@', '').replace('&', '')
+            val_expr = m_raw_idx.group(3).strip().replace('@', '').replace('&', '')
+            val_expr = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', val_expr)
+            val_expr = apply_primitive_static_transforms(val_expr)
+            current_target.append(f"{vname}[{idx_expr}] = {val_expr};")
+            continue
+
+        # 10. Raw buffer assignment: &name = val;
+        m_raw_assign = re.match(r'^\s*&([a-zA-Z0-9_]+)\s*=\s*(.+?)\s*;?\s*$', stripped)
+        if m_raw_assign:
+            vname = m_raw_assign.group(1)
+            val_expr = m_raw_assign.group(2).strip()
+            val_clean = val_expr.replace('@', '').replace('&', '')
+            for c in known_classes:
+                val_clean = re.sub(r'\b' + c + r'\.([a-zA-Z0-9_!]+)\(', r'_cls_' + c + r'::\1(', val_clean)
+            for imp in imported_aliases:
+                val_clean = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', val_clean)
+            val_clean = re.sub(r'([a-zA-Z0-9_]+)!\(', r'\1_bang(', val_clean)
+            val_clean = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', val_clean)
+            val_clean = apply_primitive_static_transforms(val_clean)
+            current_target.append(f"{vname} = {val_clean};")
+            continue
+
+        # 11. Variable assignments & declarations with pipe
         transpiled_line = line
 
         # Replace @me.field
@@ -428,9 +672,13 @@ def transpile(viss_code, filename):
                 'str': 'viss::Str',
                 'int': 'viss::Int',
                 'dec': 'viss::Dec',
+                'double': 'viss::Dec',
+                'float': 'viss::Dec',
                 'bool': 'viss::Bool',
-                'list': 'viss::List',
-                'map': 'viss::Map',
+                'bytes': 'viss::Bytes',
+                'bits': 'viss::Bits',
+                'list': 'viss::List<viss::Str>',
+                'map': 'viss::Map<viss::Str, viss::Str>',
                 'inf': 'viss::Inf'
             }.get(ptype, 'viss::any_t')
             class_fields[current_class_name][field_name] = cpp_type
@@ -448,7 +696,7 @@ def transpile(viss_code, filename):
         m_pipe_const = re.match(r'^\s*@([a-zA-Z0-9_]+)\s*=\s*(.+?)\s*\|\s*([a-zA-Z0-9_]+)\s*,\s*const\s*;?\s*$', transpiled_line)
         if m_pipe_const:
             vname, val, ptype = m_pipe_const.group(1), m_pipe_const.group(2), m_pipe_const.group(3)
-            val = val.replace('@', '').replace('await ', '')
+            val = val.replace('@', '').replace('&', '').replace('await ', '')
             val = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', val)
             current_target.append(f"const auto {vname} = {val};")
             continue
@@ -457,9 +705,16 @@ def transpile(viss_code, filename):
         m_pipe = re.match(r'^\s*@([a-zA-Z0-9_]+)\s*=\s*(.+?)\s*\|\s*([a-zA-Z0-9_]+)\s*;?\s*$', transpiled_line)
         if m_pipe:
             vname, val, ptype = m_pipe.group(1), m_pipe.group(2), m_pipe.group(3)
-            val = val.replace('@', '')
+            val = val.replace('@', '').replace('&', '')
             val = re.sub(r'\bawait\s+([a-zA-Z0-9_.]+)\(([^)]*)\)', r'(\1(\2)).get()', val)
             val = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', val)
+            for c in known_classes:
+                val = re.sub(r'\b' + c + r'\.([a-zA-Z0-9_!]+)\(', r'_cls_' + c + r'::\1(', val)
+            for imp in imported_aliases:
+                val = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', val)
+            val = re.sub(r'([a-zA-Z0-9_]+)!\(', r'\1_bang(', val)
+            val = apply_primitive_static_transforms(val)
+
             if ptype == 'list':
                 if val.startswith('[') and val.endswith(']'):
                     val = '{' + val[1:-1] + '}'
@@ -468,10 +723,18 @@ def transpile(viss_code, filename):
                 current_target.append(f"viss::Map {vname} = {val};")
             elif ptype == 'inf':
                 current_target.append(f"viss::Inf {vname} = {val};")
+            elif ptype == 'bytes':
+                current_target.append(f"viss::Bytes {vname} = {val};")
+            elif ptype == 'bits':
+                current_target.append(f"viss::Bits {vname} = {val};")
             elif ptype == 'str':
                 current_target.append(f"viss::Str {vname} = viss::toStr({val});")
             elif ptype == 'int':
                 current_target.append(f"viss::Int {vname} = (viss::Int)({val});")
+            elif ptype in ('dec', 'double', 'float'):
+                current_target.append(f"viss::Dec {vname} = (viss::Dec)({val});")
+            elif ptype == 'bool':
+                current_target.append(f"viss::Bool {vname} = (viss::Bool)({val});")
             elif ptype == 'class':
                 current_target.append(f"auto {vname} = {val};")
             else:
@@ -482,16 +745,24 @@ def transpile(viss_code, filename):
         m_assign = re.match(r'^\s*@([a-zA-Z0-9_]+)\s*=\s*(.+?)\s*;?\s*$', transpiled_line)
         if m_assign:
             vname, val = m_assign.group(1), m_assign.group(2)
-            val = val.replace('@', '')
+            val = val.replace('@', '').replace('&', '')
             val = re.sub(r'\bawait\s+([a-zA-Z0-9_.]+)\(([^)]*)\)', r'(\1(\2)).get()', val)
             val = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', val)
+            for c in known_classes:
+                val = re.sub(r'\b' + c + r'\.([a-zA-Z0-9_!]+)\(', r'_cls_' + c + r'::\1(', val)
+            for imp in imported_aliases:
+                val = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', val)
+            val = re.sub(r'([a-zA-Z0-9_]+)!\(', r'\1_bang(', val)
+            val = apply_primitive_static_transforms(val)
             current_target.append(f"auto {vname} = {val};")
             continue
 
         # Await standalone call: await async.sleep(100);
         m_await_call = re.match(r'^\s*await\s+([a-zA-Z0-9_.]+)\(([^)]*)\)\s*;?', transpiled_line)
         if m_await_call:
-            fn, args = m_await_call.group(1), m_await_call.group(2).replace('@', '')
+            fn, args = m_await_call.group(1), m_await_call.group(2).replace('@', '').replace('&', '')
+            for imp in imported_aliases:
+                fn = re.sub(r'\b' + imp + r'\.', imp + r'::', fn)
             current_target.append(f"{fn}({args});")
             continue
 
@@ -503,8 +774,32 @@ def transpile(viss_code, filename):
         transpiled_line = re.sub(r'\bor\b', '||', transpiled_line)
         transpiled_line = re.sub(r'\bNull\b', 'nullptr', transpiled_line)
 
-        # Strip leftover @
+        # In-place clamp: target.clamp(min, max) -> viss::math::clamp_in_place(target, min, max)
+        transpiled_line = re.sub(r'([a-zA-Z0-9_@&]+)\.clamp\(([^)]+)\)', r'viss::math::clamp_in_place(\1, \2)', transpiled_line)
+
+        # Property getters (.len, .first, .last)
+        transpiled_line = re.sub(r'([a-zA-Z0-9_@&]+)\.len\b', r'\1.size()', transpiled_line)
+        transpiled_line = re.sub(r'([a-zA-Z0-9_@&]+)\.first\b', r'\1.get_first()', transpiled_line)
+        transpiled_line = re.sub(r'([a-zA-Z0-9_@&]+)\.last\b', r'\1.get_last()', transpiled_line)
+
+        # Apply static primitive helpers
+        transpiled_line = apply_primitive_static_transforms(transpiled_line)
+
+        # Class static calls
+        for c in known_classes:
+            transpiled_line = re.sub(r'\b' + c + r'\.([a-zA-Z0-9_!]+)\(', r'_cls_' + c + r'::\1(', transpiled_line)
+
+        # Imported modules alias.func( -> alias::func(
+        for imp in imported_aliases:
+            transpiled_line = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', transpiled_line)
+
+        # Transform function calls with ! in name: func!(...) -> func_bang(...)
+        transpiled_line = re.sub(r'([a-zA-Z0-9_]+)!\(', r'\1_bang(', transpiled_line)
+
+        # Strip leftover & and @
+        transpiled_line = re.sub(r'&([a-zA-Z0-9_]+)', r'\1', transpiled_line)
         transpiled_line = re.sub(r'@([a-zA-Z0-9_]+)', r'\1', transpiled_line)
+
         # Function question marks
         transpiled_line = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', transpiled_line)
 
@@ -520,7 +815,7 @@ def transpile(viss_code, filename):
     for line in classes_section:
         final_classes_lines.append(line)
         for cname, fields in class_fields.items():
-            if line.strip() == f"struct {cname} {{" or line.strip().startswith(f"struct {cname} :"):
+            if line.strip() == f"struct _cls_{cname} {{" or line.strip().startswith(f"struct _cls_{cname} :"):
                 for fname, ftype in sorted(fields.items()):
                     final_classes_lines.append(f"    {ftype} {fname};")
 
@@ -544,14 +839,66 @@ def transpile(viss_code, filename):
 
 def main():
     if len(sys.argv) < 2:
-        print(f"Viss Compiler (vissc) v{VERSION}")
-        print("Usage: python src/vissc.py <file.viss> [-r / -run]")
-        sys.exit(1)
+        print_help()
+        sys.exit(0)
 
-    viss_file = sys.argv[1]
-    run_after = "-r" in sys.argv or "-run" in sys.argv
+    cmd = sys.argv[1]
 
-    if not os.path.exists(viss_file):
+    if cmd in ("-v", "--version", "version"):
+        print(f"Viss Programming Language Compiler & Toolchain v{VERSION}")
+        print("Architecture: Viss 2.0 Native Pipeline -> C++17")
+        sys.exit(0)
+
+    if cmd in ("-h", "--help", "help"):
+        print_help()
+        sys.exit(0)
+
+    if cmd == "check":
+        if len(sys.argv) < 3:
+            print("Usage: viss check <file.viss> [--json]")
+            sys.exit(1)
+        viss_file = sys.argv[2]
+        as_json = "--json" in sys.argv
+        if not os.path.exists(viss_file):
+            print(f"Error: File '{viss_file}' not found.")
+            sys.exit(1)
+        with open(viss_file, 'r', encoding='utf-8') as f:
+            code = f.read()
+        diags = check_syntax(code, os.path.basename(viss_file))
+        if as_json:
+            print(json.dumps(diags, indent=2))
+        else:
+            if not diags:
+                print(f"[Viss Checker] No issues found in '{viss_file}'. Everything is clean! ^_^")
+            else:
+                print(f"[Viss Checker] Found {len(diags)} diagnostic issue(s) in '{viss_file}':")
+                for d in diags:
+                    sev = d['severity'].upper()
+                    print(f"  [{sev}] Line {d['line']}, Col {d['col']}: {d['message']}")
+        sys.exit(0)
+
+    if cmd == "init":
+        pname = sys.argv[2] if len(sys.argv) > 2 else "my_viss_app"
+        os.makedirs(pname, exist_ok=True)
+        main_viss = os.path.join(pname, "main.viss")
+        with open(main_viss, 'w', encoding='utf-8') as f:
+            f.write('$import lib "iostream" as io\n\n!func main() {\n    io.println("Hello, Viss 2.0!");\n}\n')
+        print(f"Initialized new Viss project in '{pname}/'.")
+        print(f"Run it with: viss run {pname}/main.viss")
+        sys.exit(0)
+
+    # If first argument is 'run' or 'compile'
+    if cmd == "run":
+        viss_file = sys.argv[2] if len(sys.argv) > 2 else ""
+        run_after = True
+    elif cmd == "compile":
+        viss_file = sys.argv[2] if len(sys.argv) > 2 else ""
+        run_after = False
+    else:
+        viss_file = cmd
+        run_after = "-r" in sys.argv or "-run" in sys.argv or "run" in sys.argv
+
+    if not viss_file or not os.path.exists(viss_file):
         print(f"Error: File '{viss_file}' not found.")
         sys.exit(1)
 
@@ -574,9 +921,16 @@ def main():
 
     # Check for C++ compiler
     cxx = shutil.which("g++") or shutil.which("clang++") or shutil.which("cl")
+    if not cxx:
+        candidate = r"C:\AGY\TOOLS\w64devkit\bin\g++.exe"
+        if os.path.exists(candidate):
+            cxx = candidate
     if cxx:
+        cxx_dir = os.path.dirname(os.path.abspath(cxx))
+        env = os.environ.copy()
+        env["PATH"] = cxx_dir + os.pathsep + env.get("PATH", "")
         print(f"[Viss Compiler v{VERSION}] Compiling binary using {os.path.basename(cxx)}...")
-        res = subprocess.run([cxx, "-std=c++17", cpp_file, "-o", exe_file])
+        res = subprocess.run([cxx, "-std=c++17", cpp_file, "-o", exe_file], env=env)
         if res.returncode == 0:
             print(f"[Viss Compiler v{VERSION}] Build successful: {exe_file}")
             if run_after:
@@ -587,7 +941,16 @@ def main():
             sys.exit(res.returncode)
     else:
         print(f"[Viss Compiler v{VERSION}] Note: No C++ compiler found in PATH.")
-        print(f"You can compile manually: g++ -std=c++17 {cpp_file} -o {exe_file}")
+        print(f"To compile binary: g++ -std=c++17 {cpp_file} -o {exe_file}")
+
+def print_help():
+    print(f"Viss Programming Language CLI (v{VERSION})")
+    print("Usage:")
+    print("  viss run <file.viss>          Compile and run Viss file")
+    print("  viss compile <file.viss>      Transpile and compile to executable")
+    print("  viss check <file.viss>        Check syntax and lint diagnostics")
+    print("  viss init [project_name]      Create starter project")
+    print("  viss version                  Display version info")
 
 if __name__ == "__main__":
     main()

@@ -37,6 +37,7 @@ Every token in Viss clearly defines its semantic intent via prefixes:
 | **`!`** | **Flow & Action** | `!func`, `!async.func`, `!class`, `!struct`, `!for`, `!break;`, `!continue;` |
 | **`?`** | **Logic & Error Boundaries** | `?if`, `?else`, `?match`, `?try`, `?expect`, `?error`, `??` |
 | **`@`** | **State & Data Identifiers** | `@player`, `@score`, `@inventory`, `@me` *(instance context)* |
+| **`&`** | **Raw Buffers & Hardware Memory** | `&map create \| bytes, 1024;`, `&flags create \| bits;`, `&buf[0] = 213;` |
 | **`$`** | **Compiler & Environment Directives** | `$import lib "..." as ...`, `$import cpp <...> as ...`, `$kernel` |
 
 ---
@@ -181,6 +182,40 @@ defer @file.close(); // Guaranteed execution on function exit
 @file.write("{\"status\": \"ok\"}");
 ```
 
+### 10. Low-Level Memory Buffers & Retro Gamedev (`&buffer create | bytes`)
+For microcontrollers, retro games, and zero-latency simulations where memory is strictly budgeted (e.g. 1 KB levels), Viss provides raw hardware-level memory buffers (`bytes` and `bits`) using the **`&`** sigil. If no size is specified, it automatically allocates the maximum default capacity (1024 bytes / 8192 bits):
+
+```viss
+$import lib "iostream" as io
+$import lib "retrotech" as rt
+
+!func main() {
+    &colormask create | bytes, 3; // RGB tint mask (3 bytes)
+    &colormask[0] = 213; // Red
+    &colormask[1] = 6;   // Green
+    &colormask[2] = 31;  // Blue
+
+    &map create | bytes; // 1 KB level grid (defaults to max 1024 bytes)
+    &map = map.fill_map!(map, 100);
+
+    rt.DrawRawPixels(&map, 32, 32);  // Blit raw 32x32 pixel grid
+    rt.ColorScreen(&colormask, &map); // Color screen with mask
+    rt.UpdateScreen();               // Truecolor ANSI retro display!
+}
+
+!class map {
+    !func fill_map!(map, pattern) {
+        pattern.clamp(100, 350);
+        for @i in 0..map.size() {
+            @block = int.random(pattern - double.sqrt(pattern), pattern + double.sqrt(pattern + 3)) | int;
+            @block.clamp(0, 255);
+            &map[@i] = @block;
+        }
+        return(&map);
+    }
+}
+```
+
 ---
 
 ## 📄 Canonical Code Reference (`preview.viss`)
@@ -251,32 +286,49 @@ $import lib "iostream" as io  // Import console I/O
 
 ## 🛠️ CLI Usage & Toolchain
 
-The Viss toolchain provides compilation, validation, and direct execution out of the box:
+The Viss toolchain provides subcommands for compilation, instant execution, and syntax diagnostics:
 
 ```bash
-# Transpile and build native binary:
-viss preview.viss
+# Check syntax and diagnostics:
+viss check oldgame.viss
 
-# Build and immediately execute:
-viss preview.viss -r
+# Transpile and compile to native executable:
+viss compile oldgame.viss
 
-# Or run directly via Python bootstrap:
-python viss.py preview.viss -r
+# Compile and immediately run:
+viss run oldgame.viss
+
+# Initialize a new Viss project:
+viss init my_game
+
+# Display toolchain version & architecture:
+viss version
 ```
 
 ---
 
 ## 📦 Standard Library Modules (`libs/std`)
 
-* `iostream` (`io`): Formatted variadic console I/O, colors, cursor management.
-* `asyncIO` (`async`): High-performance thread pool, timers, async task dispatching.
-* `system` (`sys`): File system access, process execution (`sys.bash`, `sys.cmd`), platform detection.
-* `math`: Trigonometry, rounding, constants (`PI`, `E`).
-* `str`: Slicing, trim, upper, lower, split, string formatting.
-* `net`: Fast cross-platform TCP/UDP sockets.
-* `json`: JSON parsing and serialization.
-* `audio`: Zero-dependency cross-platform audio engine (powered by `miniaudio`).
-* `raylib`: Hardware-accelerated 2D/3D windowing, shaders, and game input.
+* **`iostream` (`io`)**: Formatted variadic console I/O, truecolor ANSI, cursor control, interactive single-key input (`io.read_char()`), file I/O.
+* **`retrotech` (`rt`)**: Virtual retro graphics display engine (`DrawRawPixels`, `ColorScreen`, `UpdateScreen`), palette modulation, system sound (`Beep`).
+* **`system` (`sys`)**: Process spawning (`sys.command`, `sys.exec`), environment variables (`sys.env`), CPU core detection (`sys.cpu_count`), OS detection (`sys.os`).
+* **`fs`**: File system manipulation (`read_bytes`, `write_bytes`, `exists`, `mkdir`, `list_dir`, `size`, `remove`).
+* **`math`**: Complete mathematical functions (`sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sqrt`, `cbrt`, `pow`, `abs`, `round`, `floor`, `ceil`, `clamp`, `random_int`, `random_dec`, `PI`, `E`).
+* **`time`**: Timestamps (`time.now_ms()`, `time.now_secs()`), high-resolution sleep, timestamp formatting.
+* **`str`**: Complete string manipulation (`split`, `join`, `trim`, `lower`, `upper`, `contains`, `replace`, `starts_with`, `ends_with`, `pad_left`, `pad_right`, `repeat`).
+* **`asyncIO` (`async`)**: High-performance thread pool, timers, async task dispatching.
+
+---
+
+## 💻 VS Code Extension (`viss-vscode`)
+
+Viss features a complete Visual Studio Code extension located in `.vscode/extensions/viss-vscode`:
+* **Syntax Highlighting**: Full TextMate grammar for all Viss 2.0 constructs, raw memory sigils `&`, interpolation `i"..."`, and pipeline typings.
+* **Diagnostics & Linter**: Instant on-save syntax error detection and bracket balancing with line/column markers.
+* **Hover Documentation**: Detailed documentation popups for all primitives (`bytes`, `bits`, `inf`), keywords, and standard library modules.
+* **IntelliSense Completions**: Contextual autocompletion for keywords, collections, and standard methods (`.len`, `.append`, `.set_bit`, `.to_hex`).
+* **Snippets**: Pre-built templates for functions, classes, raw byte buffers, retro screens, and loops.
+* **One-Click Run**: Press the Run button in the editor header or trigger `Viss: Run Program`.
 
 ---
 

@@ -1,0 +1,11 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Viss: Run Current File (F5)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "python \"${workspaceFolder}/viss.py\" run \"${file}\""
+    }
+  ]
+}

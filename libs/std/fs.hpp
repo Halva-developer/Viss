@@ -2,6 +2,7 @@
 #include "../vissrt.hpp"
 #include <fstream>
 #include <cstdio>
+#include <filesystem>
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -42,6 +43,39 @@ namespace viss {
             #else
             ::mkdir(path.c_str(), 0777);
             #endif
+        }
+        inline Int size(const Str& path) {
+            std::ifstream f(path, std::ifstream::ate | std::ifstream::binary);
+            if (f.is_open()) {
+                return (Int)f.tellg();
+            }
+            return 0;
+        }
+        inline Bytes read_bytes(const Str& path) {
+            std::ifstream f(path, std::ios::binary | std::ios::ate);
+            if (!f.is_open()) return Bytes(0);
+            std::streamsize sz = f.tellg();
+            f.seekg(0, std::ios::beg);
+            Bytes b((size_t)sz);
+            if (sz > 0) {
+                f.read(reinterpret_cast<char*>(b.raw()), sz);
+            }
+            return b;
+        }
+        inline void write_bytes(const Str& path, const Bytes& b) {
+            std::ofstream f(path, std::ios::binary);
+            if (f.is_open() && b.size() > 0) {
+                f.write(reinterpret_cast<const char*>(b.raw()), b.size());
+            }
+        }
+        inline List<Str> list_dir(const Str& path) {
+            List<Str> files;
+            try {
+                for (const auto& entry : std::filesystem::directory_iterator(path)) {
+                    files.add(entry.path().string());
+                }
+            } catch (...) {}
+            return files;
         }
     }
 }

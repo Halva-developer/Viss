@@ -1,6 +1,8 @@
 #pragma once
 #include "../vissrt.hpp"
 #include <cmath>
+#include <random>
+#include <algorithm>
 
 namespace viss {
     namespace math {
@@ -17,5 +19,35 @@ namespace viss {
         inline Dec round(Dec x) { return std::round(x); }
         inline Dec floor(Dec x) { return std::floor(x); }
         inline Dec ceil(Dec x) { return std::ceil(x); }
+
+        template<typename T, typename MinT, typename MaxT>
+        inline T& clamp_in_place(T& val, MinT min_v, MaxT max_v) {
+            if (val < (T)min_v) val = (T)min_v;
+            if (val > (T)max_v) val = (T)max_v;
+            return val;
+        }
+
+        template<typename T, typename MinT, typename MaxT>
+        inline T clamp(T val, MinT min_v, MaxT max_v) {
+            if (val < (T)min_v) return (T)min_v;
+            if (val > (T)max_v) return (T)max_v;
+            return val;
+        }
+
+        inline Int random_int(Int min_v, Int max_v) {
+            if (min_v > max_v) std::swap(min_v, max_v);
+            static std::random_device rd;
+            static std::mt19937_64 gen(rd());
+            std::uniform_int_distribution<long long> dis(min_v, max_v);
+            return dis(gen);
+        }
+
+        inline Dec random_dec(Dec min_v, Dec max_v) {
+            if (min_v > max_v) std::swap(min_v, max_v);
+            static std::random_device rd;
+            static std::mt19937_64 gen(rd());
+            std::uniform_real_distribution<double> dis(min_v, max_v);
+            return dis(gen);
+        }
     }
 }
