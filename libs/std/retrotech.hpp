@@ -158,10 +158,25 @@ namespace retrotech {
             }
         }
 
+        bool compact_mode = false; // When true, uses ▀ half-block rendering (2 vertical pixels per char cell)
+
+        void set_compact(bool compact) {
+            compact_mode = compact;
+        }
+
+        void set_render_mode(const std::string& mode) {
+            if (mode == "compact" || mode == "halfblock" || mode == "small" || mode == "highres") {
+                compact_mode = true;
+            } else {
+                compact_mode = false;
+            }
+        }
+
         void update() {
             #ifdef _WIN32
             static bool vt_enabled = false;
             if (!vt_enabled) {
+                SetConsoleOutputCP(CP_UTF8);
                 HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
                 if (hOut != INVALID_HANDLE_VALUE) {
                     DWORD dwMode = 0;
@@ -178,35 +193,83 @@ namespace retrotech {
             #endif
 
             std::string frame = "\033[H";
-            frame.reserve(width * height * 24 + 128);
+            frame.reserve(width * height * 16 + 128);
 
-            int last_r = -1, last_g = -1, last_b = -1;
+            if (compact_mode) {
+                // Half-block rendering: 1 terminal char = 2 vertical pixels (top = FG, bottom = BG)
+                int last_fg_r = -1, last_fg_g = -1, last_fg_b = -1;
+                int last_bg_r = -1, last_bg_g = -1, last_bg_b = -1;
 
-            for (int y = 0; y < height; ++y) {
-                for (int x = 0; x < width; ++x) {
-                    int idx = y * width + x;
-                    uint8_t raw_val = (idx < (int)pixels.size()) ? pixels[idx] : 0;
-                    
-                    int r, g, b;
-                    if (use_palette) {
-                        const auto& col = palette[raw_val];
-                        r = col.r;
-                        g = col.g;
-                        b = col.b;
-                    } else {
-                        r = (int)((raw_val * mask_r) / 255);
-                        g = (int)((raw_val * mask_g) / 255);
-                        b = (int)((raw_val * mask_b) / 255);
+                for (int y = 0; y < height; y += 2) {
+                    for (int x = 0; x < width; ++x) {
+                        int top_idx = y * width + x;
+                        int bot_idx = (y + 1) * width + x;
+
+                        uint8_t top_val = (top_idx < (int)pixels.size()) ? pixels[top_idx] : 0;
+                        uint8_t bot_val = (y + 1 < height && bot_idx < (int)pixels.size()) ? pixels[bot_idx] : 0;
+
+                        int fg_r, fg_g, fg_b;
+                        int bg_r, bg_g, bg_b;
+
+                        if (use_palette) {
+                            const auto& tc = palette[top_val];
+                            fg_r = tc.r; fg_g = tc.g; fg_b = tc.b;
+                            const auto& bc = palette[bot_val];
+                            bg_r = bc.r; bg_g = bc.g; bg_b = bc.b;
+                        } else {
+                            fg_r = (int)((top_val * mask_r) / 255);
+                            fg_g = (int)((top_val * mask_g) / 255);
+                            fg_b = (int)((top_val * mask_b) / 255);
+                            bg_r = (int)((bot_val * mask_r) / 255);
+                            bg_g = (int)((bot_val * mask_g) / 255);
+                            bg_b = (int)((bot_val * mask_b) / 255);
+                        }
+
+                        if (fg_r != last_fg_r || fg_g != last_fg_g || fg_b != last_fg_b) {
+                            frame += "\033[38;2;" + std::to_string(fg_r) + ";" + std::to_string(fg_g) + ";" + std::to_string(fg_b) + "m";
+                            last_fg_r = fg_r; last_fg_g = fg_g; last_fg_b = fg_b;
+                        }
+                        if (bg_r != last_bg_r || bg_g != last_bg_g || bg_b != last_bg_b) {
+                            frame += "\033[48;2;" + std::to_string(bg_r) + ";" + std::to_string(bg_g) + ";" + std::to_string(bg_b) + "m";
+                            last_bg_r = bg_r; last_bg_g = bg_g; last_bg_b = bg_b;
+                        }
+
+                        // UTF-8 Upper Half Block: ▀ (\u2580)
+                        frame += "\xE2\x96\x80";
                     }
-
-                    if (r != last_r || g != last_g || b != last_b) {
-                        frame += "\033[48;2;" + std::to_string(r) + ";" + std::to_string(g) + ";" + std::to_string(b) + "m";
-                        last_r = r; last_g = g; last_b = b;
-                    }
-                    frame += "  ";
+                    frame += "\033[0m\n";
+                    last_fg_r = -1; last_fg_g = -1; last_fg_b = -1;
+                    last_bg_r = -1; last_bg_g = -1; last_bg_b = -1;
                 }
-                frame += "\033[0m\n";
-                last_r = -1; last_g = -1; last_b = -1;
+            } else {
+                int last_r = -1, last_g = -1, last_b = -1;
+
+                for (int y = 0; y < height; ++y) {
+                    for (int x = 0; x < width; ++x) {
+                        int idx = y * width + x;
+                        uint8_t raw_val = (idx < (int)pixels.size()) ? pixels[idx] : 0;
+                        
+                        int r, g, b;
+                        if (use_palette) {
+                            const auto& col = palette[raw_val];
+                            r = col.r;
+                            g = col.g;
+                            b = col.b;
+                        } else {
+                            r = (int)((raw_val * mask_r) / 255);
+                            g = (int)((raw_val * mask_g) / 255);
+                            b = (int)((raw_val * mask_b) / 255);
+                        }
+
+                        if (r != last_r || g != last_g || b != last_b) {
+                            frame += "\033[48;2;" + std::to_string(r) + ";" + std::to_string(g) + ";" + std::to_string(b) + "m";
+                            last_r = r; last_g = g; last_b = b;
+                        }
+                        frame += "  ";
+                    }
+                    frame += "\033[0m\n";
+                    last_r = -1; last_g = -1; last_b = -1;
+                }
             }
             std::cout << frame << std::flush;
         }
@@ -223,6 +286,14 @@ namespace retrotech {
 
     inline void DrawRawPixels(const viss::Bytes& map, int w = 32, int h = 32) {
         getScreen().draw_raw(map, w, h);
+    }
+
+    inline void SetCompact(Bool compact = true) {
+        getScreen().set_compact(compact);
+    }
+
+    inline void SetRenderMode(const Str& mode) {
+        getScreen().set_render_mode(mode);
     }
 
     inline void ColorScreen(const viss::Bytes& colormask, const viss::Bytes& map) {
