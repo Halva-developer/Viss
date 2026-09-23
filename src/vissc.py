@@ -624,6 +624,41 @@ def transpile(viss_code, filename):
             current_target.append(f"}} else if ({cond}) {{")
             continue
 
+        # Single-line if: ?if (cond) { body; }
+        m_single_if = re.match(r'^\s*(?:\?if|if)\s*\((.+?)\)\s*\{\s*(.+?)\s*\}\s*;?\s*$', stripped)
+        if m_single_if:
+            cond = m_single_if.group(1)
+            body = m_single_if.group(2)
+            cond = cond.replace('@', '')
+            cond = re.sub(r'&([a-zA-Z0-9_]+)', r'\1', cond)
+            cond = re.sub(r'\bnot\b', '!', cond)
+            cond = re.sub(r'\band\b', '&&', cond)
+            cond = re.sub(r'\bor\b', '||', cond)
+            cond = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', cond)
+            cond = apply_primitive_static_transforms(cond)
+            for imp in imported_aliases:
+                cond = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', cond)
+            
+            body = body.replace('@', '')
+            body = re.sub(r'&([a-zA-Z0-9_]+)', r'\1', body)
+            for imp in imported_aliases:
+                body = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', body)
+            if not body.endswith(';'): body += ';'
+            current_target.append(f"if ({cond}) {{ {body} }}")
+            continue
+
+        # Single-line else: ?else { body; }
+        m_single_else = re.match(r'^\s*(?:\?else|else)\s*\{\s*(.+?)\s*\}\s*;?\s*$', stripped)
+        if m_single_else:
+            body = m_single_else.group(1)
+            body = body.replace('@', '')
+            body = re.sub(r'&([a-zA-Z0-9_]+)', r'\1', body)
+            for imp in imported_aliases:
+                body = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', body)
+            if not body.endswith(';'): body += ';'
+            current_target.append(f"else {{ {body} }}")
+            continue
+
         m_if = re.match(r'^\s*(?:\?if|if)\s*\((.*)\)\s*\{', stripped)
         if m_if:
             cond = m_if.group(1)
