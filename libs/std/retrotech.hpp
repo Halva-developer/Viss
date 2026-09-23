@@ -17,8 +17,10 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <mmsystem.h>
 #include <conio.h>
 #endif
+
 
 namespace viss {
 namespace retrotech {

@@ -1,5 +1,13 @@
 #pragma once
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
+#include <windows.h>
+#endif
 #include <iostream>
+
 #include <string>
 #include <fstream>
 #include <vector>
@@ -622,15 +630,9 @@ namespace viss {
     List(std::initializer_list<T>) -> List<T>;
     List(std::initializer_list<const char*>) -> List<Str>;
 
-    namespace async {
-        inline void sleep(Int milliseconds) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
-        }
-    }
-    namespace asyncIO = async;
 }
 
-// Automatically include lightweight standard library modules
+// Automatically include standard library modules
 #include "std/sys.hpp"
 #include "std/io.hpp"
 #include "std/fs.hpp"
@@ -638,4 +640,16 @@ namespace viss {
 #include "std/time.hpp"
 #include "std/str.hpp"
 #include "std/thread.hpp"
+#include "std/async.hpp"
+#include "std/json.hpp"
+#include "std/crypto.hpp"
+#include "std/collections.hpp"
+#include "std/env.hpp"
+#include "std/net.hpp"
 #include "std/retrotech.hpp"
+
+namespace viss {
+    namespace asyncIO = async;
+}
+
+

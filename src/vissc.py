@@ -327,6 +327,10 @@ def apply_primitive_static_transforms(text):
     # bytes.* and bits.*
     res = re.sub(r'\bbytes\.alloc\(', 'viss::Bytes(', res)
     res = re.sub(r'\bbits\.alloc\(', 'viss::Bits(', res)
+
+    # time.*
+    res = re.sub(r'\btime\.([a-zA-Z0-9_]+)\(', r'viss::time::\1(', res)
+    res = re.sub(r'\btime\.Stopwatch\b', 'viss::time::Stopwatch', res)
     return res
 
 def transpile(viss_code, filename):
@@ -334,9 +338,25 @@ def transpile(viss_code, filename):
     processed_code = translate_interpolation(viss_code)
     
     # Step 2: Pre-process imports before hiding string literals
-    includes_section = ['#include "libs/vissrt.hpp"', 'namespace async = viss::async;']
+    includes_section = [
+        '#include "libs/vissrt.hpp"',
+        'using namespace viss;',
+        'namespace io = viss::io;',
+        'namespace sys = viss::sys;',
+        'namespace fs = viss::fs;',
+        'namespace math = viss::math;',
+        'namespace str = viss::str;',
+        'namespace rt = viss::retrotech;',
+        'namespace async = viss::async;',
+        'namespace json = viss::json;',
+        'namespace crypto = viss::crypto;',
+        'namespace collections = viss::collections;',
+        'namespace env = viss::env;',
+        'namespace net = viss::net;'
+    ]
     clean_lines = []
-    imported_aliases = {"io", "async", "rt", "sys", "fs", "math", "time", "str"}
+    imported_aliases = {"io", "async", "rt", "sys", "fs", "math", "str", "json", "crypto", "collections", "env", "net"}
+
     
     for raw_line in processed_code.split('\n'):
         line = raw_line
@@ -1000,6 +1020,20 @@ def main():
         print(f"Run it with: viss run {pname}/main.viss")
         sys.exit(0)
 
+    if cmd == "transpile":
+        if len(sys.argv) < 3:
+            print("Usage: viss transpile <input.viss> [output.cpp]")
+            sys.exit(1)
+        viss_file = sys.argv[2]
+        cpp_file = sys.argv[3] if len(sys.argv) > 3 else os.path.splitext(viss_file)[0] + ".cpp"
+        with open(viss_file, 'r', encoding='utf-8') as f:
+            viss_code = f.read()
+        validate_viss_syntax(viss_code, os.path.basename(viss_file))
+        cpp_code = transpile(viss_code, os.path.basename(viss_file))
+        with open(cpp_file, 'w', encoding='utf-8') as f:
+            f.write(cpp_code)
+        sys.exit(0)
+
     # If first argument is 'run' or 'compile'
     if cmd == "run":
         viss_file = sys.argv[2] if len(sys.argv) > 2 else ""
@@ -1043,7 +1077,10 @@ def main():
         env = os.environ.copy()
         env["PATH"] = cxx_dir + os.pathsep + env.get("PATH", "")
         print(f"[Viss Compiler v{VERSION}] Compiling binary using {os.path.basename(cxx)}...")
-        res = subprocess.run([cxx, "-std=c++17", cpp_file, "-o", exe_file], env=env)
+        flags = [cxx, "-std=c++17", "-O2", cpp_file, "-o", exe_file]
+        if os.name == 'nt':
+            flags.extend(["-lwinmm", "-lws2_32", "-lwininet"])
+        res = subprocess.run(flags, env=env)
         if res.returncode == 0:
             print(f"[Viss Compiler v{VERSION}] Build successful: {exe_file}")
             if run_after:
@@ -1062,8 +1099,10 @@ def print_help():
     print("  viss run <file.viss>          Compile and run Viss file")
     print("  viss compile <file.viss>      Transpile and compile to executable")
     print("  viss check <file.viss>        Check syntax and lint diagnostics")
+    print("  viss transpile <in> [out]     Transpile Viss source to C++")
     print("  viss init [project_name]      Create starter project")
     print("  viss version                  Display version info")
+
 
 if __name__ == "__main__":
     main()
