@@ -1,0 +1,101 @@
+$import lib "iostream" as io
+$import lib "retrotech" as rt
+
+!func main() {
+    // 1. Initialize screen (32x20)
+    rt.InitScreen(32, 20);
+
+    // 2. Play iconic NES Super Mario Overworld Theme in background (non-blocking!)
+    // Note format: NoteOctave:Duration (e.g. E5:8 = eighth note, G4:4 = quarter note, . = rest)
+    rt.PlayMusic("E5:8 E5:8 . E5:8 . C5:8 E5:4 G5:4 . G4:4 . C5:4 . G4:4 . E4:4", 140);
+
+    // 3. Clear Screen to Sky Blue (0)
+    rt.ClearScreen(0);
+
+    // 4. Draw Scenery: Clouds & Ground
+    rt.DrawRect(3, 2, 8, 2, 7);
+    rt.DrawRect(20, 3, 6, 2, 7);
+    rt.DrawRect(0, 17, 32, 1, 5); // Grass
+    rt.DrawRect(0, 18, 32, 2, 1); // Ground
+
+    // 5. Draw Symbols with Foreground & Background Colors!
+    // Question Blocks with genuine '?' symbol (Black text on Yellow 6 background!)
+    rt.DrawBlock(6, 7, 2, 2, "?", 8, 6);
+    rt.DrawBlock(14, 7, 2, 2, "?", 8, 6);
+
+    // Brick Blocks with '#' symbol (Dark Red 14 on Brick Brown 1 background!)
+    rt.DrawBlock(9, 7, 2, 2, "#", 14, 1);
+    rt.DrawBlock(11, 7, 2, 2, "#", 14, 1);
+
+    // Coin with '$' symbol (Gold 15 on Yellow 6 background!)
+    rt.DrawChar(19, 7, "$", 15, 6);
+
+    // Pipe with '||' symbol
+    rt.DrawBlock(24, 13, 4, 4, "||", 10, 5);
+
+    // Draw Title Text directly onto Retro Screen Buffer!
+    rt.DrawText(4, 4, "SUPER MARIO BROS", 7, 0);
+
+    // Draw HUD symbols directly on screen
+    rt.DrawText(2, 0, "MARIO 002500", 7, 0);
+    rt.DrawText(20, 0, "$x05  ♥x3", 15, 0);
+
+    // 6. Render screen to terminal
+    rt.UpdateScreen();
+
+    io.println("");
+    io.println("====================================================");
+    io.println("  VISS RETROTECH 2.0: 8-BIT AUDIO & SYMBOL ENGINE   ");
+    io.println("====================================================");
+    io.println("Playing chiptune background music (Square Wave APU)...");
+    io.println("");
+    io.println("Press keys to test 8-bit sound effects:");
+    io.println("  [1] Jump SFX (Square Sweep)");
+    io.println("  [2] Coin SFX (B5 -> E6 chime)");
+    io.println("  [3] Stomp SFX (Pitch drop)");
+    io.println("  [4] Super Mushroom Powerup Arpeggio");
+    io.println("  [5] Hurt / Explosion (Noise burst)");
+    io.println("  [S] Screen Shake Effect");
+    io.println("  [Q] Exit Demo");
+    io.println("");
+
+    @running = true | bool;
+
+    !while (@running) {
+        ?if (io.has_key?()) {
+            @key = io.get_key() | str;
+            ?if (@key == "q" or @key == "Q") {
+                @running = false;
+            }
+            ?if (@key == "1") {
+                io.println("-> SFX: Jump (Square Sweep)");
+                rt.PlaySfx("jump");
+            }
+            ?if (@key == "2") {
+                io.println("-> SFX: Coin (Two-Tone Square)");
+                rt.PlaySfx("coin");
+            }
+            ?if (@key == "3") {
+                io.println("-> SFX: Stomp");
+                rt.PlaySfx("stomp");
+            }
+            ?if (@key == "4") {
+                io.println("-> SFX: Powerup (Arpeggio)");
+                rt.PlaySfx("powerup");
+            }
+            ?if (@key == "5") {
+                io.println("-> SFX: Hurt (Noise channel)");
+                rt.PlaySfx("hurt");
+            }
+            ?if (@key == "s" or @key == "S") {
+                io.println("-> Screen Shake!");
+                rt.Shake(2, 6);
+                rt.UpdateScreen();
+            }
+        }
+        async.sleep(50);
+    }
+
+    rt.StopMusic();
+    io.println("Demo closed. ^_^");
+}

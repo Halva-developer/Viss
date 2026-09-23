@@ -94,7 +94,7 @@ $import lib "retrotech" as rt
             }
             ?if ((@key == "w" or @key == "W" or @key == " ") and @my >= 9) {
                 @mvy = -3;
-                rt.Beep(523, 50);
+                rt.SoundJump();
             }
         }
 
@@ -113,13 +113,15 @@ $import lib "retrotech" as rt
                 @q1_active = false;
                 @coins += 1;
                 @score += 100;
-                rt.Beep(988, 100);
+                rt.SoundCoin();
+                rt.Shake(1, 2);
             }
             ?if (@mx >= 15 and @mx <= 19 and @q2_active) {
                 @q2_active = false;
                 @coins += 1;
                 @score += 100;
-                rt.Beep(988, 100);
+                rt.SoundCoin();
+                rt.Shake(1, 2);
             }
         }
 
@@ -144,11 +146,12 @@ $import lib "retrotech" as rt
                     @g_alive = false;
                     @score += 200;
                     @mvy = -2;
-                    rt.Beep(440, 100);
+                    rt.SoundStomp();
                 } ?else {
                     ?if (@my >= 8) {
                         // Hurt by Goomba
-                        rt.Beep(220, 200);
+                        rt.SoundHurt();
+                        rt.Shake(2, 4);
                         @lives -= 1;
                         @mx = 2;
                         @my = 9;
@@ -169,16 +172,16 @@ $import lib "retrotech" as rt
         rt.DrawRect(4, 2, 6, 2, 7);
         rt.DrawRect(20, 3, 5, 2, 7);
 
-        // Interactive & Brick Blocks
+        // Interactive '?' Blocks and '#' Bricks with real symbols and background!
         ?if (@q1_active) {
-            rt.DrawRect(8, 6, 2, 2, 6);
+            rt.DrawBlock(8, 6, 2, 2, "?", 8, 6); // Black '?' on Yellow (6) background!
         } ?else {
             rt.DrawRect(8, 6, 2, 2, 12);
         }
-        rt.DrawRect(11, 6, 2, 2, 1);
-        rt.DrawRect(14, 6, 2, 2, 1);
+        rt.DrawBlock(11, 6, 2, 2, "#", 14, 1); // Dark-red '#' on Brown (1) brick!
+        rt.DrawBlock(14, 6, 2, 2, "#", 14, 1);
         ?if (@q2_active) {
-            rt.DrawRect(17, 6, 2, 2, 6);
+            rt.DrawBlock(17, 6, 2, 2, "?", 8, 6);
         } ?else {
             rt.DrawRect(17, 6, 2, 2, 12);
         }
