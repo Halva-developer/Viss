@@ -941,7 +941,9 @@ def transpile(viss_code, filename):
         if t_strip and not t_strip.endswith(('{', '}', ';', ':', ',')):
             transpiled_line += ";"
 
+        current_target.append(f'#line {line_num} "{filename}"')
         current_target.append(transpiled_line)
+
 
     # Insert auto field declarations into struct definitions
     final_classes_lines = []

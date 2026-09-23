@@ -61,6 +61,7 @@ namespace retrotech {
 
         std::mutex audio_mtx;
         bool music_playing = false;
+        std::atomic<int> active_sounds{0};
 
     public:
         RetroAudioEngine() {
@@ -71,6 +72,11 @@ namespace retrotech {
 
         ~RetroAudioEngine() {
             #ifdef _WIN32
+            // Wait for any active playing sounds to finish before shutting down audio
+            int max_wait = 250;
+            while (active_sounds.load() > 0 && max_wait-- > 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
             music_playing = false;
             if (hWaveOut && pWaveOutClose) {
                 pWaveOutClose(hWaveOut);
@@ -80,6 +86,7 @@ namespace retrotech {
             }
             #endif
         }
+
 
         void init_winmm() {
             #ifdef _WIN32
@@ -159,13 +166,15 @@ namespace retrotech {
         void play_async(const std::vector<uint8_t>& samples, int duration_ms, int fallback_freq = 800) {
             #ifdef _WIN32
             if (!pcm_ready) {
-                // Fallback to Beep
-                std::thread([fallback_freq, duration_ms]() {
+                active_sounds++;
+                std::thread([this, fallback_freq, duration_ms]() {
                     ::Beep((DWORD)fallback_freq, (DWORD)duration_ms);
+                    active_sounds--;
                 }).detach();
                 return;
             }
 
+            active_sounds++;
             std::thread([this, samples, duration_ms]() {
                 std::lock_guard<std::mutex> lock(audio_mtx);
                 WAVEHDR header;
@@ -175,13 +184,15 @@ namespace retrotech {
 
                 pWaveOutPrepareHeader(hWaveOut, &header, sizeof(WAVEHDR));
                 pWaveOutWrite(hWaveOut, &header, sizeof(WAVEHDR));
-                std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms + 10));
+                std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms + 15));
                 pWaveOutUnprepareHeader(hWaveOut, &header, sizeof(WAVEHDR));
+                active_sounds--;
             }).detach();
             #else
             std::cout << "\a" << std::flush;
             #endif
         }
+
 
         void tone(double freq, int ms, const std::string& wave_type = "square", double duty = 0.5, int vol = 90) {
             auto samples = generate_wave(freq, freq, ms, wave_type, duty, vol);
@@ -804,6 +815,20 @@ namespace retrotech {
     inline void Tone(Dec freq, Int duration_ms, const Str& wave_type = "square", Dec duty = 0.5, Int volume = 90) {
         getAudio().tone(freq, (int)duration_ms, wave_type, duty, (int)volume);
     }
+
+    inline void Tone(Dec freq, Int duration_ms, Int volume) {
+        getAudio().tone(freq, (int)duration_ms, "square", 0.5, (int)volume);
+    }
+
+    inline void Tone(Dec freq, Int duration_ms, Dec duty) {
+        getAudio().tone(freq, (int)duration_ms, "square", duty, 90);
+    }
+
+    inline void ToneSync(Dec freq, Int duration_ms, const Str& wave_type = "square", Dec duty = 0.5, Int volume = 90) {
+        Tone(freq, duration_ms, wave_type, duty, volume);
+        std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
+    }
+
 
     inline void Sweep(Dec start_freq, Dec end_freq, Int duration_ms, const Str& wave_type = "square", Dec duty = 0.5) {
         getAudio().sweep(start_freq, end_freq, (int)duration_ms, wave_type, duty);

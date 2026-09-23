@@ -227,10 +227,29 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    fs::path src_path(target_file);
-    fs::path base_path = src_path.parent_path() / src_path.stem();
-    fs::path cpp_path = base_path.string() + ".cpp";
-    fs::path exe_path = custom_output.empty() ? (base_path.string() + ".exe") : fs::path(custom_output);
+    fs::path src_path = fs::absolute(target_file);
+    
+    // Isolated Hidden Cache Directory
+    fs::path cache_root = fs::path(viss_root) / ".viss_cache";
+    fs::path cache_dir = cache_root / src_path.stem();
+    std::error_code ec;
+    fs::create_directories(cache_dir, ec);
+
+    // Intermediate build artifacts live strictly inside .viss_cache, never in the user's workspace
+    fs::path cpp_path = cache_dir / (src_path.stem().string() + ".cpp");
+
+    fs::path exe_path;
+    if (should_run) {
+        // In run mode, the executable is placed in cache to leave workspace clean
+        exe_path = cache_dir / (src_path.stem().string() + ".exe");
+    } else {
+        // In build mode, user requested a permanent binary in destination
+        if (!custom_output.empty()) {
+            exe_path = fs::absolute(custom_output);
+        } else {
+            exe_path = fs::current_path() / (src_path.stem().string() + ".exe");
+        }
+    }
 
     // Smart Cache: If .exe exists and is newer than .viss source, launch instantly!
     bool needs_rebuild = true;
@@ -240,17 +259,18 @@ int main(int argc, char* argv[]) {
 
     if (needs_rebuild) {
         auto t_start = std::chrono::high_resolution_clock::now();
-        std::cout << COLOR_CYAN << "⚡ [Viss] Transpiling " << COLOR_RESET << src_path.filename().string() << "...\n";
+        std::cout << COLOR_CYAN << "⚡ [Viss] Compiling " << COLOR_RESET << src_path.filename().string() << "...\n";
 
-        // Transpile to C++
+        // Transpile to internal cached target
         std::string trans_cmd = "\"" + python_bin + "\" \"" + vissc_script + "\" transpile \"" + src_path.string() + "\" \"" + cpp_path.string() + "\"";
         int trans_code = execute_cmd(trans_cmd);
         if (trans_code != 0) {
-            std::cerr << COLOR_RED << "✖ Transpilation failed!\n" << COLOR_RESET;
+            std::cerr << COLOR_RED << "✖ [Viss] Build error in " << src_path.filename().string() << "\n" << COLOR_RESET;
             return trans_code;
         }
 
-        std::cout << COLOR_CYAN << "⚙ [Viss] Compiling native binary (-O2)..." << COLOR_RESET << "\n";
+        std::cout << COLOR_CYAN << "⚙ [Viss] Optimizing native binary (-O2)..." << COLOR_RESET << "\n";
+
 
         // Build g++ command with include path to Viss root and necessary libraries
         std::string gxx_dir = fs::path(gxx_bin).parent_path().string();
