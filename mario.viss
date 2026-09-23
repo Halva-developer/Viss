@@ -1,0 +1,220 @@
+$import lib "iostream" as io
+$import lib "retrotech" as rt
+
+!func main() {
+    // 1. Initialize 32x20 Retro Display
+    rt.InitScreen(32, 20);
+
+    // 2. Setup 8x8 Sprites
+    // Palette indices:
+    // 0: Sky Blue (Transparent)
+    // 1: Ground/Shoe Brown
+    // 2: Mario Red (Cap / Shirt)
+    // 3: Overalls Blue
+    // 4: Peach Skin Tone
+    // 5: Pipe / Grass Green
+    // 6: Question Block Yellow
+    // 7: Cloud White
+    // 8: Black (Mustache / Eyes / Boots)
+    // 9: Goomba Dark Brown
+    // 10: Pipe Lip Dark Green
+    // 12: Empty Block Gray
+
+    &mario create | bytes, 64;
+    &mario = [
+        0, 0, 2, 2, 2, 2, 2, 0,
+        0, 2, 2, 2, 2, 2, 2, 2,
+        0, 1, 1, 4, 4, 8, 4, 0,
+        0, 1, 4, 4, 8, 8, 8, 0,
+        0, 2, 2, 3, 2, 2, 0, 0,
+        0, 4, 3, 3, 3, 4, 0, 0,
+        0, 0, 3, 0, 3, 0, 0, 0,
+        0, 1, 1, 0, 1, 1, 0, 0
+    ];
+
+    &goomba create | bytes, 64;
+    &goomba = [
+        0, 0, 9, 9, 9, 9, 0, 0,
+        0, 9, 9, 9, 9, 9, 9, 0,
+        9, 9, 7, 8, 8, 7, 9, 9,
+        9, 9, 7, 8, 8, 7, 9, 9,
+        9, 9, 9, 9, 9, 9, 9, 9,
+        0, 0, 4, 4, 4, 4, 0, 0,
+        0, 4, 4, 4, 4, 4, 4, 0,
+        8, 8, 8, 0, 0, 8, 8, 8
+    ];
+
+    // Mario state
+    @mx = 2 | int;
+    @my = 9 | int;
+    @mvy = 0 | int;
+    @facing_right = true | bool;
+    @score = 0 | int;
+    @coins = 0 | int;
+    @lives = 3 | int;
+
+    // Goomba state
+    @gx = 20 | int;
+    @gy = 9 | int;
+    @gdir = -1 | int;
+    @g_alive = true | bool;
+
+    // Interactive blocks
+    @q1_active = true | bool;
+    @q2_active = true | bool;
+
+    @running = true | bool;
+    @frame = 0 | int;
+
+    // Mario startup jingle
+    rt.Beep(659, 80);
+    rt.Beep(659, 80);
+    rt.Beep(659, 100);
+
+    !while (@running) {
+        @frame += 1;
+
+        // 1. Non-blocking Keyboard Input
+        ?if (io.has_key?()) {
+            @key = io.get_key() | str;
+            ?if (@key == "q" or @key == "Q") {
+                @running = false;
+            }
+            ?if (@key == "a" or @key == "A") {
+                @facing_right = false;
+                ?if (@mx > 0) {
+                    @mx -= 1;
+                }
+            }
+            ?if (@key == "d" or @key == "D") {
+                @facing_right = true;
+                ?if (@mx < 24) {
+                    @mx += 1;
+                }
+            }
+            ?if ((@key == "w" or @key == "W" or @key == " ") and @my >= 9) {
+                @mvy = -3;
+                rt.Beep(523, 50);
+            }
+        }
+
+        // 2. Physics & Gravity
+        @my += @mvy;
+        ?if (@my < 9) {
+            @mvy += 1;
+        } ?else {
+            @my = 9;
+            @mvy = 0;
+        }
+
+        // 3. Question Block Hitting from Below
+        ?if (@mvy < 0 and @my <= 8) {
+            ?if (@mx >= 6 and @mx <= 10 and @q1_active) {
+                @q1_active = false;
+                @coins += 1;
+                @score += 100;
+                rt.Beep(988, 100);
+            }
+            ?if (@mx >= 15 and @mx <= 19 and @q2_active) {
+                @q2_active = false;
+                @coins += 1;
+                @score += 100;
+                rt.Beep(988, 100);
+            }
+        }
+
+        // 4. Goomba Movement
+        ?if (@g_alive and (@frame % 2 == 0)) {
+            @gx += @gdir;
+            ?if (@gx <= 10) {
+                @gdir = 1;
+            }
+            ?if (@gx >= 22) {
+                @gdir = -1;
+            }
+        }
+
+        // 5. Mario vs Goomba Collision
+        ?if (@g_alive) {
+            @dx = @mx - @gx | int;
+            @abs_dx = int.abs(@dx) | int;
+            ?if (@abs_dx < 6) {
+                ?if (@mvy > 0 and @my < 9) {
+                    // Stomp on Goomba
+                    @g_alive = false;
+                    @score += 200;
+                    @mvy = -2;
+                    rt.Beep(440, 100);
+                } ?else {
+                    ?if (@my >= 8) {
+                        // Hurt by Goomba
+                        rt.Beep(220, 200);
+                        @lives -= 1;
+                        @mx = 2;
+                        @my = 9;
+                        @mvy = 0;
+                        ?if (@lives <= 0) {
+                            @running = false;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 6. Render Frame
+        // Sky Background (0)
+        rt.ClearScreen(0);
+
+        // Clouds (7)
+        rt.DrawRect(4, 2, 6, 2, 7);
+        rt.DrawRect(20, 3, 5, 2, 7);
+
+        // Interactive & Brick Blocks
+        ?if (@q1_active) {
+            rt.DrawRect(8, 6, 2, 2, 6);
+        } ?else {
+            rt.DrawRect(8, 6, 2, 2, 12);
+        }
+        rt.DrawRect(11, 6, 2, 2, 1);
+        rt.DrawRect(14, 6, 2, 2, 1);
+        ?if (@q2_active) {
+            rt.DrawRect(17, 6, 2, 2, 6);
+        } ?else {
+            rt.DrawRect(17, 6, 2, 2, 12);
+        }
+
+        // Pipe
+        rt.DrawRect(25, 13, 5, 4, 5);
+        rt.DrawRect(24, 13, 7, 1, 10);
+
+        // Ground: row 17 green grass, rows 18-19 brown earth
+        rt.DrawRect(0, 17, 32, 1, 5);
+        rt.DrawRect(0, 18, 32, 2, 1);
+
+        // Draw Goomba if alive
+        ?if (@g_alive) {
+            rt.DrawSprite(&goomba, @gx, @gy, 8, 8, 0);
+        }
+
+        // Draw Mario (direction facing)
+        ?if (@facing_right) {
+            rt.DrawSprite(&mario, @mx, @my, 8, 8, 0);
+        } ?else {
+            rt.DrawSpriteFlipped(&mario, @mx, @my, 8, 8, true, 0);
+        }
+
+        // Fast Flicker-Free ANSI Render
+        rt.UpdateScreen();
+
+        // Print HUD
+        io.println(i"MARIO   SCORE: @score   COINS: @coins   LIVES: @lives");
+        io.println("Controls: [A] Left  [D] Right  [W/Space] Jump  [Q] Quit");
+
+        // Game speed ~25 FPS
+        async.sleep(40);
+    }
+
+    io.println("");
+    io.println("=== GAME OVER ===");
+    io.println(i"Final Score: @score, Coins: @coins");
+}

@@ -2,9 +2,9 @@ $import lib "iostream" as io
 $impoer lib "retrotech" as rt
 !func main() {
     &colormask create | bytes, 3;  // создал маску цвета, кол-во байтов 3
-    &colormask[0] = 213; // красный
-    &colormask[1] = 6;   // зеленый
-    &colormask[2] = 31; // синий
+    &colormask[0] = 50; // красный
+    &colormask[1] = 61;   // зеленый
+    &colormask[2] = 70; // синий
     &map create | bytes; // создал сетку карты, количество байтов 1024
     &map = map.fill_map!(map, 100) // построил карту с паттерном 100
 

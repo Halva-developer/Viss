@@ -376,6 +376,24 @@ namespace viss {
             : data(std::make_shared<std::vector<uint8_t>>(size, fill)) {}
         Bytes(std::initializer_list<uint8_t> init)
             : data(std::make_shared<std::vector<uint8_t>>(init)) {}
+        template<typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
+        Bytes(std::initializer_list<T> init)
+            : data(std::make_shared<std::vector<uint8_t>>()) {
+            data->reserve(init.size());
+            for (auto v : init) data->push_back((uint8_t)v);
+        }
+
+        inline Bytes& operator=(std::initializer_list<uint8_t> init) {
+            data = std::make_shared<std::vector<uint8_t>>(init);
+            return *this;
+        }
+        template<typename T>
+        inline Bytes& operator=(std::initializer_list<T> init) {
+            data = std::make_shared<std::vector<uint8_t>>();
+            data->reserve(init.size());
+            for (auto v : init) data->push_back((uint8_t)v);
+            return *this;
+        }
 
         inline size_t size() const { return data ? data->size() : 0; }
         inline Int get_len() const { return (Int)size(); }

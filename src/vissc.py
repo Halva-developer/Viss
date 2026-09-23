@@ -334,7 +334,7 @@ def transpile(viss_code, filename):
     processed_code = translate_interpolation(viss_code)
     
     # Step 2: Pre-process imports before hiding string literals
-    includes_section = ['#include "libs/vissrt.hpp"']
+    includes_section = ['#include "libs/vissrt.hpp"', 'namespace async = viss::async;']
     clean_lines = []
     imported_aliases = {"io", "async", "rt", "sys", "fs", "math", "time", "str"}
     
@@ -394,6 +394,23 @@ def transpile(viss_code, filename):
     processed_code = re.sub(r'"""[\s\S]*?"""', save_string, code_without_imports)
     processed_code = re.sub(r'"(?:[^"\\]|\\.)*"', save_string, processed_code)
 
+    def collapse_multiline_brackets(text):
+        out = []
+        depth = 0
+        for ch in text:
+            if ch == '[':
+                depth += 1
+                out.append(ch)
+            elif ch == ']':
+                if depth > 0: depth -= 1
+                out.append(ch)
+            elif depth > 0 and ch == '\n':
+                out.append(' ')
+            else:
+                out.append(ch)
+        return "".join(out)
+    processed_code = collapse_multiline_brackets(processed_code)
+
     lines = processed_code.split('\n')
     
     # Pre-scan for all declared classes to resolve naming and static calls
@@ -412,6 +429,7 @@ def transpile(viss_code, filename):
     block_stack = []
     current_class_name = None
     class_fields = {}
+    declared_vars = set()
 
     for idx, line in enumerate(lines):
         orig_line = line
@@ -558,6 +576,23 @@ def transpile(viss_code, filename):
             current_target.append(f"for (auto& {vname} : {coll}) {{")
             continue
 
+        # 5b. While loop: !while (cond) { or while (cond) {
+        m_while = re.match(r'^\s*!?while\s*\((.*)\)\s*\{', stripped)
+        if m_while:
+            cond = m_while.group(1)
+            cond = cond.replace('@', '')
+            cond = re.sub(r'&([a-zA-Z0-9_]+)', r'\1', cond)
+            cond = re.sub(r'\bnot\b', '!', cond)
+            cond = re.sub(r'\band\b', '&&', cond)
+            cond = re.sub(r'\bor\b', '||', cond)
+            cond = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', cond)
+            cond = apply_primitive_static_transforms(cond)
+            for imp in imported_aliases:
+                cond = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', cond)
+            block_stack.append(('while', 'while'))
+            current_target.append(f"while ({cond}) {{")
+            continue
+
         # 6. Logic: ?if, ?else, ?try, ?expect, ?error
         if stripped.startswith('?try') and '{' in stripped:
             block_stack.append(('try', 'try'))
@@ -571,21 +606,46 @@ def transpile(viss_code, filename):
             current_target.append(f"catch (const std::exception& _err) {{ viss::Exception {ename}(_err.what());")
             continue
 
-        m_if = re.match(r'^\s*\?if\s*\(([^)]+)\)\s*\{', stripped)
-        if m_if:
-            cond = m_if.group(1)
+        m_else_if = re.match(r'^\s*(?:\}\s*)?(?:\?else\s+if|else\s+if)\s*\((.*)\)\s*\{', stripped)
+        if m_else_if:
+            cond = m_else_if.group(1)
+            cond = cond.replace('@', '')
+            cond = re.sub(r'&([a-zA-Z0-9_]+)', r'\1', cond)
             cond = re.sub(r'\bnot\b', '!', cond)
             cond = re.sub(r'\band\b', '&&', cond)
             cond = re.sub(r'\bor\b', '||', cond)
-            cond = cond.replace('@', '').replace('&', '')
             cond = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', cond)
+            cond = apply_primitive_static_transforms(cond)
+            for imp in imported_aliases:
+                cond = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', cond)
+            if block_stack and block_stack[-1][0] in ('if', 'else_if'):
+                block_stack.pop()
+            block_stack.append(('else_if', 'else_if'))
+            current_target.append(f"}} else if ({cond}) {{")
+            continue
+
+        m_if = re.match(r'^\s*(?:\?if|if)\s*\((.*)\)\s*\{', stripped)
+        if m_if:
+            cond = m_if.group(1)
+            cond = cond.replace('@', '')
+            cond = re.sub(r'&([a-zA-Z0-9_]+)', r'\1', cond)
+            cond = re.sub(r'\bnot\b', '!', cond)
+            cond = re.sub(r'\band\b', '&&', cond)
+            cond = re.sub(r'\bor\b', '||', cond)
+            cond = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', cond)
+            cond = apply_primitive_static_transforms(cond)
+            for imp in imported_aliases:
+                cond = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', cond)
             block_stack.append(('if', 'if'))
             current_target.append(f"if ({cond}) {{")
             continue
 
-        if stripped.startswith('?else') and '{' in stripped:
+        m_else = re.match(r'^\s*(?:\}\s*)?(?:\?else|else)\s*\{', stripped)
+        if m_else and (not block_stack or block_stack[-1][0] != 'match'):
+            if block_stack and block_stack[-1][0] in ('if', 'else_if'):
+                block_stack.pop()
             block_stack.append(('else', 'else'))
-            current_target.append("else {")
+            current_target.append("} else {")
             continue
 
         m_error = re.match(r'^\s*\?error\s+([^;]+);?', stripped)
@@ -652,6 +712,8 @@ def transpile(viss_code, filename):
             val_clean = re.sub(r'([a-zA-Z0-9_]+)!\(', r'\1_bang(', val_clean)
             val_clean = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', val_clean)
             val_clean = apply_primitive_static_transforms(val_clean)
+            if val_clean.startswith('[') and val_clean.endswith(']'):
+                val_clean = '{' + val_clean[1:-1] + '}'
             current_target.append(f"{vname} = {val_clean};")
             continue
 
@@ -698,6 +760,7 @@ def transpile(viss_code, filename):
             vname, val, ptype = m_pipe_const.group(1), m_pipe_const.group(2), m_pipe_const.group(3)
             val = val.replace('@', '').replace('&', '').replace('await ', '')
             val = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', val)
+            declared_vars.add(vname)
             current_target.append(f"const auto {vname} = {val};")
             continue
 
@@ -715,6 +778,7 @@ def transpile(viss_code, filename):
             val = re.sub(r'([a-zA-Z0-9_]+)!\(', r'\1_bang(', val)
             val = apply_primitive_static_transforms(val)
 
+            declared_vars.add(vname)
             if ptype == 'list':
                 if val.startswith('[') and val.endswith(']'):
                     val = '{' + val[1:-1] + '}'
@@ -741,6 +805,16 @@ def transpile(viss_code, filename):
                 current_target.append(f"auto {vname} = {val};")
             continue
 
+        # Assignment operators: @var += value; @var -= value; etc.
+        m_assign_op = re.match(r'^\s*@([a-zA-Z0-9_]+)\s*(\+=|-=|\*=|/=|%=)\s*(.+?)\s*;?\s*$', transpiled_line)
+        if m_assign_op:
+            vname, op, val = m_assign_op.group(1), m_assign_op.group(2), m_assign_op.group(3)
+            val = val.replace('@', '').replace('&', '')
+            val = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', val)
+            val = apply_primitive_static_transforms(val)
+            current_target.append(f"{vname} {op} {val};")
+            continue
+
         # Generic assignment: @var = value;
         m_assign = re.match(r'^\s*@([a-zA-Z0-9_]+)\s*=\s*(.+?)\s*;?\s*$', transpiled_line)
         if m_assign:
@@ -754,7 +828,11 @@ def transpile(viss_code, filename):
                 val = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', val)
             val = re.sub(r'([a-zA-Z0-9_]+)!\(', r'\1_bang(', val)
             val = apply_primitive_static_transforms(val)
-            current_target.append(f"auto {vname} = {val};")
+            if vname in declared_vars:
+                current_target.append(f"{vname} = {val};")
+            else:
+                declared_vars.add(vname)
+                current_target.append(f"auto {vname} = {val};")
             continue
 
         # Await standalone call: await async.sleep(100);

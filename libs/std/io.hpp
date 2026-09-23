@@ -70,6 +70,22 @@ namespace viss {
             #endif
         }
 
+        inline Bool has_key() {
+            #ifdef _WIN32
+            return _kbhit() != 0;
+            #else
+            return false;
+            #endif
+        }
+        inline Bool has_key_q() { return has_key(); }
+
+        inline Str get_key() {
+            if (has_key()) {
+                return read_char();
+            }
+            return "";
+        }
+
         inline void write_file(const Str& path, const Str& text) {
             std::ofstream f(path);
             if (f.is_open()) f << text;
