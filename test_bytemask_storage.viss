@@ -1,0 +1,39 @@
+!main {
+    &mask create | bytemask, 64;
+
+    // Write serialized data sequentially into bytemask stream
+    &mask write str "VissEngine";
+    &mask write int 2026;
+    &mask write dec 3.14159;
+    &mask write bool true;
+
+    // Rewind stream cursor to 0 and read sequentially
+    &mask rewind;
+    @name = &mask read str;
+    @year = &mask read int;
+    @pi = &mask read dec;
+    @flag = &mask read bool;
+
+    io.println(i"Read string: {@name}");
+    io.println(i"Read int: {@year}");
+    io.println(i"Read dec: {@pi}");
+    io.println(i"Read bool: {@flag}");
+
+    // Random-access read at explicit offset
+    @name_at_0 = &mask read str at 0;
+    io.println(i"Random access at 0: {@name_at_0}");
+
+    // Bitfields manipulation
+    &mask bitfield set 0, 4, 15;
+    @bf = &mask bitfield get 0, 4;
+    io.println(i"Bitfield (first 4 bits): {@bf}");
+
+    // Checksum
+    @crc = &mask.crc32();
+    io.println(i"CRC32: {@crc}");
+
+    // Hex dump inspection
+    &mask dump;
+
+    io.println("BYTEMASK STORAGE TEST PASSED!");
+}

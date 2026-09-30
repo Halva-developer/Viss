@@ -56,7 +56,7 @@ namespace viss {
             return std::sqrt(dx * dx + dy * dy);
         }
 
-        inline Int random_int(Int min_v, Int max_v) {
+        inline Int random_int(Int min_v = 0, Int max_v = 100) {
             if (min_v > max_v) std::swap(min_v, max_v);
             static std::random_device rd;
             static std::mt19937_64 gen(rd());
@@ -64,7 +64,7 @@ namespace viss {
             return dis(gen);
         }
 
-        inline Dec random_dec(Dec min_v, Dec max_v) {
+        inline Dec random_dec(Dec min_v = 0.0, Dec max_v = 1.0) {
             if (min_v > max_v) std::swap(min_v, max_v);
             static std::random_device rd;
             static std::mt19937_64 gen(rd());

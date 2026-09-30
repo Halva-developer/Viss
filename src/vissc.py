@@ -153,11 +153,11 @@ def check_syntax(viss_code, filename="<file.viss>"):
 
         # Check raw buffer create syntax
         if stripped.startswith('&') and 'create' in stripped:
-            if not re.search(r'^\s*&[a-zA-Z0-9_]+\s+create\s*\|\s*(bytes|bits)', stripped):
+            if not re.search(r'^\s*&[a-zA-Z0-9_]+\s+create\s*\|\s*(bytes|bits|bites|hybrid|grid|bytemask|colormask|mask)', stripped, re.IGNORECASE):
                 diagnostics.append({
                     "line": line_idx + 1,
                     "col": 1,
-                    "message": "Malformed raw buffer creation. Expected: &name create | bytes[, size];",
+                    "message": "Malformed raw buffer creation. Expected: &name create | bytes|bits|bytemask|colormask|grid|hybrid ...;",
                     "severity": "warning"
                 })
 
@@ -215,6 +215,12 @@ def translate_interpolation(code):
         return '(' + ' + '.join(parts) + ')'
 
     return re.sub(pattern, replacer, code)
+
+def replace_module_calls(text, imported_aliases):
+    for imp in imported_aliases:
+        text = re.sub(r'(?<![@&a-zA-Z0-9_])' + imp + r'\.([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\(', imp + r'::\1::\2(', text)
+        text = re.sub(r'(?<![@&a-zA-Z0-9_])' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', text)
+    return text
 
 def transpile_params_and_template(params_str):
     if not params_str.strip():
@@ -340,6 +346,7 @@ def transpile(viss_code, filename):
     # Step 2: Pre-process imports before hiding string literals
     includes_section = [
         '#include "libs/vissrt.hpp"',
+        '#include "libs/std/mask.hpp"',
         'using namespace viss;',
         'namespace io = viss::io;',
         'namespace sys = viss::sys;',
@@ -352,10 +359,13 @@ def transpile(viss_code, filename):
         'namespace crypto = viss::crypto;',
         'namespace collections = viss::collections;',
         'namespace env = viss::env;',
-        'namespace net = viss::net;'
+        'namespace net = viss::net;',
+        'namespace mask = viss::bytemask;',
+        'namespace bytemask = viss::bytemask;',
+        'namespace colormask = viss::bytemask;'
     ]
     clean_lines = []
-    imported_aliases = {"io", "async", "rt", "sys", "fs", "math", "str", "json", "crypto", "collections", "env", "net"}
+    imported_aliases = {"io", "async", "rt", "sys", "fs", "math", "str", "json", "crypto", "collections", "env", "net", "mask", "bytemask", "colormask"}
 
     
     for raw_line in processed_code.split('\n'):
@@ -385,7 +395,9 @@ def transpile(viss_code, filename):
             elif lib in ("iostream", "io"):
                 includes_section.append(f'#include "libs/std/io.hpp"\nnamespace {alias} = viss::io;')
             elif lib in ("retrotech", "rt"):
-                includes_section.append(f'#include "libs/std/retrotech.hpp"\nnamespace {alias} = viss::retrotech;')
+                includes_section.append(f'#include "libs/std/retrotech.hpp"\nnamespace {alias} = viss::retrotech;\nnamespace draw = viss::retrotech::draw;\nnamespace screen = viss::retrotech::screen;')
+            elif lib in ("mask", "bytemask", "colormask"):
+                includes_section.append(f'#include "libs/std/mask.hpp"\nnamespace {alias} = viss::bytemask;')
             else:
                 includes_section.append(f'#include "libs/std/{lib}.hpp"\nnamespace {alias} = viss::{lib};')
             continue
@@ -415,9 +427,15 @@ def transpile(viss_code, filename):
     processed_code = re.sub(r'"(?:[^"\\]|\\.)*"', save_string, processed_code)
 
     def collapse_multiline_brackets(text):
+        # Strip single-line comments so they don't comment out collapsed multi-line lists
+        lines = []
+        for l in text.split('\n'):
+            lines.append(re.sub(r'//.*$', '', l))
+        text_clean = '\n'.join(lines)
+
         out = []
         depth = 0
-        for ch in text:
+        for ch in text_clean:
             if ch == '[':
                 depth += 1
                 out.append(ch)
@@ -467,6 +485,38 @@ def transpile(viss_code, filename):
         if not stripped:
             continue
 
+        # Grid edit block collection
+        if block_stack and block_stack[-1][0] == 'grid_edit':
+            if stripped == '}' or stripped.startswith('}'):
+                binfo = block_stack.pop()
+                vname = binfo[1]
+                rows = binfo[2]
+                pre_brace = stripped[:stripped.index('}')].strip()
+                if pre_brace:
+                    clean_row = pre_brace.rstrip(':;,').strip()
+                    tokens = [t.strip() for t in clean_row.split(',') if t.strip()]
+                    if tokens:
+                        rows.append(tokens)
+                rows_cpp = []
+                for r in rows:
+                    row_tokens = []
+                    for t in r:
+                        clean_t = t.replace('@', '')
+                        clean_t = re.sub(r'&([a-zA-Z0-9_]+)', r'\1', clean_t)
+                        clean_t = apply_primitive_static_transforms(clean_t)
+                        row_tokens.append(clean_t)
+                    rows_cpp.append("{" + ", ".join(row_tokens) + "}")
+                all_rows = ",\n        ".join(rows_cpp)
+                current_target.append(f"{vname}.grid_edit({{\n        {all_rows}\n    }});")
+                continue
+            else:
+                clean_row = stripped.rstrip(':;,').strip()
+                if clean_row:
+                    tokens = [t.strip() for t in clean_row.split(',') if t.strip()]
+                    if tokens:
+                        block_stack[-1][2].append(tokens)
+                continue
+
         # 2. Classes
         m_class_inherits = re.match(r'^\s*!class\s+([a-zA-Z0-9_]+)\s*::\s*([a-zA-Z0-9_]+)\s*\{', stripped)
         if m_class_inherits:
@@ -502,6 +552,40 @@ def transpile(viss_code, filename):
             block_stack.append(('func', 'main'))
             current_target = main_section
             current_target.append("int main() {")
+            continue
+
+        # Single-line !async.func: !async.func name(params) { body; }
+        m_single_async = re.match(r'^\s*!async\.func\s+([a-zA-Z0-9_?!]+)\s*\(([^)]*)\)(?:\s+to\s+([a-zA-Z0-9_<>]+))?\s*\{\s*(.+?)\s*\}\s*;?\s*$', stripped)
+        if m_single_async:
+            raw_fname = m_single_async.group(1)
+            fname = raw_fname.replace('?', '_q').replace('!', '_bang')
+            params = transpile_params(m_single_async.group(2))
+            body = m_single_async.group(4).strip()
+            body = body.replace('@', '')
+            body = re.sub(r'&([a-zA-Z0-9_]+)', r'\1', body)
+            body = apply_primitive_static_transforms(body)
+            body = replace_module_calls(body, imported_aliases)
+            if not body.endswith(';'): body += ';'
+            functions_section.append(f"inline auto {fname}({params}) {{ return viss::getGlobalThreadPool().enqueue([=]() {{ {body} }}); }}")
+            continue
+
+        # Single-line !func: !func name(params) { body; }
+        m_single_func = re.match(r'^\s*!func\s+([a-zA-Z0-9_?!]+)\s*\(([^)]*)\)(?:\s+to\s+([a-zA-Z0-9_<>]+))?\s*\{\s*(.+?)\s*\}\s*;?\s*$', stripped)
+        if m_single_func:
+            raw_fname = m_single_func.group(1)
+            fname = raw_fname.replace('?', '_q').replace('!', '_bang')
+            params, t_clause = transpile_params_and_template(m_single_func.group(2))
+            ret_type = m_single_func.group(3)
+            ret_decl = f" -> {ret_type}" if ret_type else ""
+            body = m_single_func.group(4).strip()
+            body = body.replace('@', '')
+            body = re.sub(r'&([a-zA-Z0-9_]+)', r'\1', body)
+            body = apply_primitive_static_transforms(body)
+            body = replace_module_calls(body, imported_aliases)
+            if not body.endswith(';'): body += ';'
+            target_sec = classes_section if current_class_name else functions_section
+            prefix = "    static " if current_class_name else ""
+            target_sec.append(f"{prefix}{t_clause}inline auto {fname}({params}){ret_decl} {{ {body} }}")
             continue
 
         # !async.func name(params) to return_type {
@@ -607,8 +691,7 @@ def transpile(viss_code, filename):
             cond = re.sub(r'\bor\b', '||', cond)
             cond = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', cond)
             cond = apply_primitive_static_transforms(cond)
-            for imp in imported_aliases:
-                cond = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', cond)
+            cond = replace_module_calls(cond, imported_aliases)
             block_stack.append(('while', 'while'))
             current_target.append(f"while ({cond}) {{")
             continue
@@ -636,8 +719,7 @@ def transpile(viss_code, filename):
             cond = re.sub(r'\bor\b', '||', cond)
             cond = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', cond)
             cond = apply_primitive_static_transforms(cond)
-            for imp in imported_aliases:
-                cond = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', cond)
+            cond = replace_module_calls(cond, imported_aliases)
             if block_stack and block_stack[-1][0] in ('if', 'else_if'):
                 block_stack.pop()
             block_stack.append(('else_if', 'else_if'))
@@ -656,13 +738,11 @@ def transpile(viss_code, filename):
             cond = re.sub(r'\bor\b', '||', cond)
             cond = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', cond)
             cond = apply_primitive_static_transforms(cond)
-            for imp in imported_aliases:
-                cond = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', cond)
+            cond = replace_module_calls(cond, imported_aliases)
             
             body = body.replace('@', '')
             body = re.sub(r'&([a-zA-Z0-9_]+)', r'\1', body)
-            for imp in imported_aliases:
-                body = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', body)
+            body = replace_module_calls(body, imported_aliases)
             if not body.endswith(';'): body += ';'
             current_target.append(f"if ({cond}) {{ {body} }}")
             continue
@@ -673,8 +753,7 @@ def transpile(viss_code, filename):
             body = m_single_else.group(1)
             body = body.replace('@', '')
             body = re.sub(r'&([a-zA-Z0-9_]+)', r'\1', body)
-            for imp in imported_aliases:
-                body = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', body)
+            body = replace_module_calls(body, imported_aliases)
             if not body.endswith(';'): body += ';'
             current_target.append(f"else {{ {body} }}")
             continue
@@ -689,8 +768,7 @@ def transpile(viss_code, filename):
             cond = re.sub(r'\bor\b', '||', cond)
             cond = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', cond)
             cond = apply_primitive_static_transforms(cond)
-            for imp in imported_aliases:
-                cond = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', cond)
+            cond = replace_module_calls(cond, imported_aliases)
             block_stack.append(('if', 'if'))
             current_target.append(f"if ({cond}) {{")
             continue
@@ -729,29 +807,345 @@ def transpile(viss_code, filename):
             current_target.append("}")
             continue
 
-        # 8. Raw buffer creation: &name create | bytes, <size>; or &name create | bytes;
-        m_raw_create = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+create\s*\|\s*(bytes|bits)(?:\s*,\s*([^;]+))?\s*;?\s*$', stripped)
+        # 8a. Hybrid buffer creation: &name create | bytes, 3, bits, 4; or &name create | bytes, 3, bites, 4;
+        m_hybrid = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+create\s*\|\s*(?:hybrid\s*,\s*)?bytes\s*,\s*(\d+)\s*,\s*bi(?:t|te)s\s*,\s*(\d+)\s*;?\s*$', stripped, re.IGNORECASE)
+        if m_hybrid:
+            vname = m_hybrid.group(1)
+            n_bytes = m_hybrid.group(2)
+            n_bits = m_hybrid.group(3)
+            current_target.append(f"viss::Hybrid {vname}({n_bytes}, {n_bits});")
+            continue
+
+        m_hybrid_rev = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+create\s*\|\s*(?:hybrid\s*,\s*)?bi(?:t|te)s\s*,\s*(\d+)\s*,\s*bytes\s*,\s*(\d+)\s*;?\s*$', stripped, re.IGNORECASE)
+        if m_hybrid_rev:
+            vname = m_hybrid_rev.group(1)
+            n_bits = m_hybrid_rev.group(2)
+            n_bytes = m_hybrid_rev.group(3)
+            current_target.append(f"viss::Hybrid {vname}({n_bytes}, {n_bits});")
+            continue
+
+        # 8b. Multi-layer grid creation: &name create | grid 4,2 3,1; or grid, 4,2, 3,1;
+        m_grid = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+create\s*\|\s*grid(?:\s*,\s*|\s+)([^;]+);?\s*$', stripped, re.IGNORECASE)
+        if m_grid:
+            vname = m_grid.group(1)
+            args_str = m_grid.group(2).strip()
+            nums = [int(n) for n in re.findall(r'\d+', args_str)]
+            pairs = []
+            for i in range(0, len(nums) - 1, 2):
+                pairs.append(f"{{{nums[i]}, {nums[i+1]}}}")
+            if len(nums) % 2 != 0:
+                pairs.append(f"{{{nums[-1]}, 1}}")
+            pairs_str = ", ".join(pairs)
+            current_target.append(f"viss::Grid {vname}({{{pairs_str}}});")
+            continue
+
+        # 8c. Standard Raw buffer creation: &name create | bytes, <size>; or &name create | bits, <size>; or &name create | bytemask, <size>;
+        m_raw_create = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+create\s*\|\s*(bytes|bits|bites|bytemask|colormask|mask)(?:\s*,\s*([^;]+))?\s*;?\s*$', stripped, re.IGNORECASE)
         if m_raw_create:
             vname = m_raw_create.group(1)
-            btype = m_raw_create.group(2)
+            declared_vars.add(vname)
+            btype = m_raw_create.group(2).lower()
             sz = m_raw_create.group(3)
-            if btype == 'bytes':
-                size_val = sz.strip() if sz else "1024" # Default maximum size 1024 bytes (1 KB)
+            if btype in ('bytes', 'bytemask', 'mask'):
+                if sz:
+                    parts = [p.strip() for p in sz.split(',')]
+                    if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                        size_val = str(int(parts[0]) * int(parts[1]))
+                    else:
+                        size_val = sz.strip()
+                else:
+                    size_val = "1024" # Default maximum size 1024 bytes (1 KB)
                 current_target.append(f"viss::Bytes {vname}({size_val});")
-            elif btype == 'bits':
+            elif btype == 'colormask':
+                if sz:
+                    sz_clean = sz.strip()
+                    if sz_clean.isdigit():
+                        size_val = str(int(sz_clean) * 3)
+                    else:
+                        size_val = f"({sz_clean}) * 3"
+                else:
+                    size_val = "48" # Default 16 colors = 48 bytes
+                current_target.append(f"viss::Bytes {vname}({size_val});")
+            elif btype in ('bits', 'bites'):
                 size_val = sz.strip() if sz else "8192" # Default maximum size 8192 bits (1024 bytes)
                 current_target.append(f"viss::Bits {vname}({size_val});")
             continue
 
-        # 9. Raw buffer index assignment: &name[idx] = val;
-        m_raw_idx = re.match(r'^\s*&([a-zA-Z0-9_]+)\[([^\]]+)\]\s*=\s*(.+?)\s*;?\s*$', stripped)
+        # 8d. Grid set: &name grid set 10,1 10,2; or &name grid set 10,1, 10,2;
+        m_grid_set = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+grid\s+set(?:\s*,\s*|\s+)([^;]+);?\s*$', stripped, re.IGNORECASE)
+        if m_grid_set:
+            vname = m_grid_set.group(1)
+            args_str = m_grid_set.group(2).strip()
+            nums = [int(n) for n in re.findall(r'\d+', args_str)]
+            pairs = []
+            for i in range(0, len(nums) - 1, 2):
+                pairs.append(f"{{{nums[i]}, {nums[i+1]}}}")
+            if len(nums) % 2 != 0:
+                pairs.append(f"{{{nums[-1]}, 1}}")
+            pairs_str = ", ".join(pairs)
+            current_target.append(f"{vname}.grid_set({{{pairs_str}}});")
+            continue
+
+        # 8e. Single-line grid edit: &name grid edit { 1, 2: 3, 4; }
+        m_single_grid_edit = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+grid\s+edit\s*\{\s*(.+?)\s*\}\s*;?\s*$', stripped, re.IGNORECASE)
+        if m_single_grid_edit:
+            vname = m_single_grid_edit.group(1)
+            body = m_single_grid_edit.group(2).strip()
+            raw_rows = re.split(r'[:;]\s*', body)
+            rows_cpp = []
+            for r in raw_rows:
+                r_clean = r.strip()
+                if not r_clean: continue
+                tokens = [t.strip().replace('@', '') for t in r_clean.split(',') if t.strip()]
+                clean_tokens = [re.sub(r'&([a-zA-Z0-9_]+)', r'\1', apply_primitive_static_transforms(tok)) for tok in tokens]
+                rows_cpp.append("{" + ", ".join(clean_tokens) + "}")
+            all_rows = ", ".join(rows_cpp)
+            current_target.append(f"{vname}.grid_edit({{{all_rows}}});")
+            continue
+
+        # 8f. Multi-line grid edit: &name grid edit {
+        m_grid_edit = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+grid\s+edit\s*\{', stripped, re.IGNORECASE)
+        if m_grid_edit:
+            vname = m_grid_edit.group(1)
+            block_stack.append(('grid_edit', vname, []))
+            continue
+
+        # 8g. Grid commands: &name grid print/show/dump/clear/invert/flip_h/flip_v
+        m_grid_cmd = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+grid\s+(print|show|dump|clear|invert|flip_h|flip_v|flip\s+h|flip\s+v);?\s*$', stripped, re.IGNORECASE)
+        if m_grid_cmd:
+            vname = m_grid_cmd.group(1)
+            cmd = m_grid_cmd.group(2).lower().replace(' ', '_')
+            if cmd in ('print', 'show', 'dump'):
+                current_target.append(f"{vname}.grid_print();")
+            elif cmd == 'clear':
+                current_target.append(f"{vname}.grid_clear();")
+            elif cmd == 'invert':
+                current_target.append(f"{vname}.grid_invert();")
+            elif cmd in ('flip_h', 'flip_v'):
+                current_target.append(f"{vname}.{cmd}();")
+            continue
+
+        # 8h. Grid fill: &name grid fill <val>;
+        m_grid_fill = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+grid\s+fill\s+([^;]+);?\s*$', stripped, re.IGNORECASE)
+        if m_grid_fill:
+            vname = m_grid_fill.group(1)
+            val = m_grid_fill.group(2).strip().replace('@', '')
+            val = re.sub(r'&([a-zA-Z0-9_]+)', r'\1', val)
+            val = apply_primitive_static_transforms(val)
+            current_target.append(f"{vname}.grid_fill({val});")
+            continue
+
+        # 8i. Grid resize: &name grid resize <w>, <h>;
+        m_grid_resize = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+grid\s+resize\s+([^;]+);?\s*$', stripped, re.IGNORECASE)
+        if m_grid_resize:
+            vname = m_grid_resize.group(1)
+            args = m_grid_resize.group(2).strip().replace('@', '')
+            args = re.sub(r'&([a-zA-Z0-9_]+)', r'\1', args)
+            current_target.append(f"{vname}.grid_resize({args});")
+            continue
+
+        # 8j. Stream write: &name write <type> <val> [at <offset>];
+        m_write_typed = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+write\s+(str|string|int|dec|double|float|bool|byte|u8|i8|u16|i16|u32|i32|u64|i64|bytes)\s+(.+?)(?:\s+at\s+([^;]+))?;?\s*$', stripped, re.IGNORECASE)
+        if m_write_typed:
+            vname = m_write_typed.group(1)
+            wtype = m_write_typed.group(2).lower()
+            val = m_write_typed.group(3).strip()
+            val = re.sub(r'[@&]([a-zA-Z0-9_]+)', r'\1', val)
+            val = apply_primitive_static_transforms(val)
+            val = replace_module_calls(val, imported_aliases)
+            offset = m_write_typed.group(4)
+            offset_clean = re.sub(r'[@&]([a-zA-Z0-9_]+)', r'\1', offset.strip()) if offset else ""
+            offset_arg = f", {offset_clean}" if offset else ""
+
+            if wtype in ('str', 'string'):
+                current_target.append(f"{vname}.write_str({val}{offset_arg});")
+            elif wtype == 'int':
+                current_target.append(f"{vname}.write_int({val}{offset_arg});")
+            elif wtype in ('dec', 'double'):
+                current_target.append(f"{vname}.write_dec({val}{offset_arg});")
+            elif wtype == 'float':
+                current_target.append(f"{vname}.write_float({val}{offset_arg});")
+            elif wtype == 'bool':
+                current_target.append(f"{vname}.write_bool({val}{offset_arg});")
+            elif wtype in ('byte', 'u8'):
+                current_target.append(f"{vname}.write_u8({val}{offset_arg});")
+            elif wtype == 'i8':
+                current_target.append(f"{vname}.write_i8({val}{offset_arg});")
+            elif wtype == 'u16':
+                current_target.append(f"{vname}.write_u16({val}{offset_arg});")
+            elif wtype == 'i16':
+                current_target.append(f"{vname}.write_i16({val}{offset_arg});")
+            elif wtype == 'u32':
+                current_target.append(f"{vname}.write_u32({val}{offset_arg});")
+            elif wtype == 'i32':
+                current_target.append(f"{vname}.write_i32({val}{offset_arg});")
+            elif wtype == 'u64':
+                current_target.append(f"{vname}.write_u64({val}{offset_arg});")
+            elif wtype == 'i64':
+                current_target.append(f"{vname}.write_i64({val}{offset_arg});")
+            elif wtype == 'bytes':
+                current_target.append(f"{vname}.write_bytes({val}{offset_arg});")
+            continue
+
+        # 8k. Auto stream write: &name write <val> [at <offset>];
+        m_write_auto = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+write\s+(.+?)(?:\s+at\s+([^;]+))?;?\s*$', stripped, re.IGNORECASE)
+        if m_write_auto:
+            vname = m_write_auto.group(1)
+            val = m_write_auto.group(2).strip()
+            val_clean = re.sub(r'[@&]([a-zA-Z0-9_]+)', r'\1', val)
+            val_clean = apply_primitive_static_transforms(val_clean)
+            val_clean = replace_module_calls(val_clean, imported_aliases)
+            offset = m_write_auto.group(3)
+            offset_clean = re.sub(r'[@&]([a-zA-Z0-9_]+)', r'\1', offset.strip()) if offset else ""
+            offset_arg = f", {offset_clean}" if offset else ""
+            if val.startswith('"') or val.startswith('i"') or val.startswith('viss::Str('):
+                current_target.append(f"{vname}.write_str({val_clean}{offset_arg});")
+            elif val.lower() in ('true', 'false'):
+                current_target.append(f"{vname}.write_bool({val_clean}{offset_arg});")
+            elif re.match(r'^-?\d+\.\d+$', val):
+                current_target.append(f"{vname}.write_dec({val_clean}{offset_arg});")
+            else:
+                current_target.append(f"{vname}.write_int({val_clean}{offset_arg});")
+            continue
+
+        # 8l. Stream cursor and buffer commands: &name seek/rewind/dump/clear/invert/fill
+        m_stream_seek = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+seek\s+([^;]+);?\s*$', stripped, re.IGNORECASE)
+        if m_stream_seek:
+            vname = m_stream_seek.group(1)
+            pos = m_stream_seek.group(2).strip().replace('@', '').replace('&', '')
+            current_target.append(f"{vname}.seek({pos});")
+            continue
+
+        m_stream_rewind = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+rewind;?\s*$', stripped, re.IGNORECASE)
+        if m_stream_rewind:
+            vname = m_stream_rewind.group(1)
+            current_target.append(f"{vname}.rewind();")
+            continue
+
+        m_stream_dump = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+(?:dump|hexdump);?\s*$', stripped, re.IGNORECASE)
+        if m_stream_dump:
+            vname = m_stream_dump.group(1)
+            current_target.append(f"{vname}.dump();")
+            continue
+
+        m_buf_clear = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+clear;?\s*$', stripped, re.IGNORECASE)
+        if m_buf_clear:
+            vname = m_buf_clear.group(1)
+            current_target.append(f"{vname}.clear();")
+            continue
+
+        m_buf_invert = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+invert;?\s*$', stripped, re.IGNORECASE)
+        if m_buf_invert:
+            vname = m_buf_invert.group(1)
+            current_target.append(f"{vname}.invert();")
+            continue
+
+        m_buf_fill = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+fill\s+([^;]+);?\s*$', stripped, re.IGNORECASE)
+        if m_buf_fill:
+            vname = m_buf_fill.group(1)
+            val = m_buf_fill.group(2).strip().replace('@', '').replace('&', '')
+            val = apply_primitive_static_transforms(val)
+            current_target.append(f"{vname}.fill({val});")
+            continue
+
+        # 8m. Bitfield set: &name bitfield set <start>, <count>, <val>;
+        m_bitfield_set = re.match(r'^\s*&([a-zA-Z0-9_]+)\s+bitfield\s+set\s+([^,]+),\s*([^,]+),\s*([^;]+);?\s*$', stripped, re.IGNORECASE)
+        if m_bitfield_set:
+            vname = m_bitfield_set.group(1)
+            s_bit = m_bitfield_set.group(2).strip().replace('@', '').replace('&', '')
+            c_bit = m_bitfield_set.group(3).strip().replace('@', '').replace('&', '')
+            val = m_bitfield_set.group(4).strip().replace('@', '').replace('&', '')
+            val = apply_primitive_static_transforms(val)
+            current_target.append(f"{vname}.set_bitfield({s_bit}, {c_bit}, {val});")
+            continue
+
+        # 8n. Stream read: @var = &name read <type>[(<len>)] [at <offset>] [| <ptype>];
+        m_stream_read = re.match(
+            r'^\s*@([a-zA-Z0-9_]+)\s*=\s*&([a-zA-Z0-9_]+)\s+read\s+(str|string|int|dec|double|float|bool|byte|u8|i8|u16|i16|u32|i32|u64|i64|bytes)(?:\s*\(\s*([^)]*)\s*\)|\s+len\s+([a-zA-Z0-9_]+))?(?:\s+at\s+([^;|]+))?(?:\s*\|\s*([a-zA-Z0-9_]+))?;?\s*$',
+            stripped, re.IGNORECASE
+        )
+        if m_stream_read:
+            var_name = m_stream_read.group(1)
+            buf_name = m_stream_read.group(2)
+            rtype = m_stream_read.group(3).lower()
+            len_arg = m_stream_read.group(4) or m_stream_read.group(5)
+            at_arg = m_stream_read.group(6)
+            pipe_type = m_stream_read.group(7)
+
+            offset_clean = at_arg.strip().replace('@', '').replace('&', '') if at_arg else "-1"
+            len_clean = len_arg.strip().replace('@', '').replace('&', '') if len_arg else ""
+
+            call_expr = ""
+            cpp_type = "auto"
+
+            if rtype in ('str', 'string'):
+                l_param = len_clean if len_clean else "-1"
+                call_expr = f"{buf_name}.read_str({l_param}, {offset_clean})"
+                cpp_type = "viss::Str"
+            elif rtype == 'int':
+                call_expr = f"{buf_name}.read_int({offset_clean})"
+                cpp_type = "viss::Int"
+            elif rtype in ('dec', 'double'):
+                call_expr = f"{buf_name}.read_dec({offset_clean})"
+                cpp_type = "viss::Dec"
+            elif rtype == 'float':
+                call_expr = f"{buf_name}.read_float({offset_clean})"
+                cpp_type = "viss::Dec"
+            elif rtype == 'bool':
+                call_expr = f"{buf_name}.read_bool({offset_clean})"
+                cpp_type = "viss::Bool"
+            elif rtype in ('byte', 'u8'):
+                call_expr = f"(viss::Int){buf_name}.read_u8({offset_clean})"
+                cpp_type = "viss::Int"
+            elif rtype == 'i8':
+                call_expr = f"(viss::Int){buf_name}.read_i8({offset_clean})"
+                cpp_type = "viss::Int"
+            elif rtype in ('u16', 'i16', 'u32', 'i32', 'u64', 'i64'):
+                call_expr = f"(viss::Int){buf_name}.read_{rtype}({offset_clean})"
+                cpp_type = "viss::Int"
+            elif rtype == 'bytes':
+                l_param = len_clean if len_clean else "0"
+                call_expr = f"{buf_name}.read_bytes({l_param}, {offset_clean})"
+                cpp_type = "viss::Bytes"
+
+            if pipe_type:
+                if pipe_type == 'str': cpp_type = "viss::Str"
+                elif pipe_type == 'int': cpp_type = "viss::Int"
+                elif pipe_type in ('dec', 'double', 'float'): cpp_type = "viss::Dec"
+                elif pipe_type == 'bool': cpp_type = "viss::Bool"
+                elif pipe_type == 'bytes': cpp_type = "viss::Bytes"
+
+            if var_name in declared_vars:
+                current_target.append(f"{var_name} = {call_expr};")
+            else:
+                declared_vars.add(var_name)
+                current_target.append(f"{cpp_type} {var_name} = {call_expr};")
+            continue
+
+        # 8o. Bitfield get: @var = &name bitfield get <start>, <count> [| <ptype>];
+        m_bitfield_get = re.match(r'^\s*@([a-zA-Z0-9_]+)\s*=\s*&([a-zA-Z0-9_]+)\s+bitfield\s+get\s+([^,]+),\s*([^;|]+)(?:\s*\|\s*([a-zA-Z0-9_]+))?;?\s*$', stripped, re.IGNORECASE)
+        if m_bitfield_get:
+            var_name = m_bitfield_get.group(1)
+            buf_name = m_bitfield_get.group(2)
+            s_bit = m_bitfield_get.group(3).strip().replace('@', '').replace('&', '')
+            c_bit = m_bitfield_get.group(4).strip().replace('@', '').replace('&', '')
+            call_expr = f"(viss::Int){buf_name}.get_bitfield({s_bit}, {c_bit})"
+            if var_name in declared_vars:
+                current_target.append(f"{var_name} = {call_expr};")
+            else:
+                declared_vars.add(var_name)
+                current_target.append(f"viss::Int {var_name} = {call_expr};")
+            continue
+
+        # 9. Raw buffer index assignment: &name[idx] = val; or &name[0][10] = val;
+        m_raw_idx = re.match(r'^\s*&([a-zA-Z0-9_]+)((?:\[[^\]]+\])+)\s*=\s*(.+?)\s*;?\s*$', stripped)
         if m_raw_idx:
             vname = m_raw_idx.group(1)
-            idx_expr = m_raw_idx.group(2).strip().replace('@', '').replace('&', '')
+            idx_expr = m_raw_idx.group(2).replace('@', '').replace('&', '')
             val_expr = m_raw_idx.group(3).strip().replace('@', '').replace('&', '')
             val_expr = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', val_expr)
             val_expr = apply_primitive_static_transforms(val_expr)
-            current_target.append(f"{vname}[{idx_expr}] = {val_expr};")
+            current_target.append(f"{vname}{idx_expr} = {val_expr};")
             continue
 
         # 10. Raw buffer assignment: &name = val;
@@ -762,14 +1156,17 @@ def transpile(viss_code, filename):
             val_clean = val_expr.replace('@', '').replace('&', '')
             for c in known_classes:
                 val_clean = re.sub(r'\b' + c + r'\.([a-zA-Z0-9_!]+)\(', r'_cls_' + c + r'::\1(', val_clean)
-            for imp in imported_aliases:
-                val_clean = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', val_clean)
+            val_clean = replace_module_calls(val_clean, imported_aliases)
             val_clean = re.sub(r'([a-zA-Z0-9_]+)!\(', r'\1_bang(', val_clean)
             val_clean = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', val_clean)
             val_clean = apply_primitive_static_transforms(val_clean)
             if val_clean.startswith('[') and val_clean.endswith(']'):
                 val_clean = '{' + val_clean[1:-1] + '}'
-            current_target.append(f"{vname} = {val_clean};")
+            if vname in declared_vars:
+                current_target.append(f"{vname} = {val_clean};")
+            else:
+                declared_vars.add(vname)
+                current_target.append(f"auto {vname} = {val_clean};")
             continue
 
         # 11. Variable assignments & declarations with pipe
@@ -813,7 +1210,8 @@ def transpile(viss_code, filename):
         m_pipe_const = re.match(r'^\s*@([a-zA-Z0-9_]+)\s*=\s*(.+?)\s*\|\s*([a-zA-Z0-9_]+)\s*,\s*const\s*;?\s*$', transpiled_line)
         if m_pipe_const:
             vname, val, ptype = m_pipe_const.group(1), m_pipe_const.group(2), m_pipe_const.group(3)
-            val = val.replace('@', '').replace('&', '').replace('await ', '')
+            val = replace_module_calls(val, imported_aliases)
+            val = re.sub(r'[@&]([a-zA-Z0-9_]+)', r'\1', val).replace('await ', '')
             val = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', val)
             declared_vars.add(vname)
             current_target.append(f"const auto {vname} = {val};")
@@ -823,13 +1221,12 @@ def transpile(viss_code, filename):
         m_pipe = re.match(r'^\s*@([a-zA-Z0-9_]+)\s*=\s*(.+?)\s*\|\s*([a-zA-Z0-9_]+)\s*;?\s*$', transpiled_line)
         if m_pipe:
             vname, val, ptype = m_pipe.group(1), m_pipe.group(2), m_pipe.group(3)
-            val = val.replace('@', '').replace('&', '')
+            val = replace_module_calls(val, imported_aliases)
+            val = re.sub(r'[@&]([a-zA-Z0-9_]+)', r'\1', val)
             val = re.sub(r'\bawait\s+([a-zA-Z0-9_.]+)\(([^)]*)\)', r'(\1(\2)).get()', val)
             val = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', val)
             for c in known_classes:
                 val = re.sub(r'\b' + c + r'\.([a-zA-Z0-9_!]+)\(', r'_cls_' + c + r'::\1(', val)
-            for imp in imported_aliases:
-                val = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', val)
             val = re.sub(r'([a-zA-Z0-9_]+)!\(', r'\1_bang(', val)
             val = apply_primitive_static_transforms(val)
 
@@ -842,10 +1239,14 @@ def transpile(viss_code, filename):
                 current_target.append(f"viss::Map {vname} = {val};")
             elif ptype == 'inf':
                 current_target.append(f"viss::Inf {vname} = {val};")
-            elif ptype == 'bytes':
+            elif ptype in ('bytes', 'bytemask', 'mask'):
                 current_target.append(f"viss::Bytes {vname} = {val};")
-            elif ptype == 'bits':
+            elif ptype in ('bits', 'bites'):
                 current_target.append(f"viss::Bits {vname} = {val};")
+            elif ptype in ('hybrid', 'hybrid_t'):
+                current_target.append(f"viss::Hybrid {vname} = {val};")
+            elif ptype in ('grid', 'grid_t'):
+                current_target.append(f"viss::Grid {vname} = {val};")
             elif ptype == 'str':
                 current_target.append(f"viss::Str {vname} = viss::toStr({val});")
             elif ptype == 'int':
@@ -864,7 +1265,8 @@ def transpile(viss_code, filename):
         m_assign_op = re.match(r'^\s*@([a-zA-Z0-9_]+)\s*(\+=|-=|\*=|/=|%=)\s*(.+?)\s*;?\s*$', transpiled_line)
         if m_assign_op:
             vname, op, val = m_assign_op.group(1), m_assign_op.group(2), m_assign_op.group(3)
-            val = val.replace('@', '').replace('&', '')
+            val = replace_module_calls(val, imported_aliases)
+            val = re.sub(r'[@&]([a-zA-Z0-9_]+)', r'\1', val)
             val = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', val)
             val = apply_primitive_static_transforms(val)
             current_target.append(f"{vname} {op} {val};")
@@ -874,13 +1276,12 @@ def transpile(viss_code, filename):
         m_assign = re.match(r'^\s*@([a-zA-Z0-9_]+)\s*=\s*(.+?)\s*;?\s*$', transpiled_line)
         if m_assign:
             vname, val = m_assign.group(1), m_assign.group(2)
-            val = val.replace('@', '').replace('&', '')
+            val = replace_module_calls(val, imported_aliases)
+            val = re.sub(r'[@&]([a-zA-Z0-9_]+)', r'\1', val)
             val = re.sub(r'\bawait\s+([a-zA-Z0-9_.]+)\(([^)]*)\)', r'(\1(\2)).get()', val)
             val = re.sub(r'([a-zA-Z0-9_]+)\?', r'\1_q', val)
             for c in known_classes:
                 val = re.sub(r'\b' + c + r'\.([a-zA-Z0-9_!]+)\(', r'_cls_' + c + r'::\1(', val)
-            for imp in imported_aliases:
-                val = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', val)
             val = re.sub(r'([a-zA-Z0-9_]+)!\(', r'\1_bang(', val)
             val = apply_primitive_static_transforms(val)
             if vname in declared_vars:
@@ -922,9 +1323,14 @@ def transpile(viss_code, filename):
         for c in known_classes:
             transpiled_line = re.sub(r'\b' + c + r'\.([a-zA-Z0-9_!]+)\(', r'_cls_' + c + r'::\1(', transpiled_line)
 
-        # Imported modules alias.func( -> alias::func(
-        for imp in imported_aliases:
-            transpiled_line = re.sub(r'\b' + imp + r'\.([a-zA-Z0-9_]+)\(', imp + r'::\1(', transpiled_line)
+        # Imported modules alias.func( -> alias::func( and nested alias.sub.func( -> alias::sub::func(
+        transpiled_line = replace_module_calls(transpiled_line, imported_aliases)
+
+        # Standalone .draw.sprite(...) -> rt::draw::sprite(...)
+        transpiled_line = re.sub(r'(?:^|[^\w])\.draw\.sprite\s*\(', ' rt::draw::sprite(', transpiled_line)
+
+        # Convert list literals inside function call arguments: ([...]) -> ({...})
+        transpiled_line = re.sub(r'\(\s*\[([^\]]+)\]\s*\)', r'({\1})', transpiled_line)
 
         # Transform function calls with ! in name: func!(...) -> func_bang(...)
         transpiled_line = re.sub(r'([a-zA-Z0-9_]+)!\(', r'\1_bang(', transpiled_line)
@@ -1052,8 +1458,16 @@ def main():
         sys.exit(1)
 
     base, _ = os.path.splitext(viss_file)
-    cpp_file = base + ".cpp"
+    stem = os.path.splitext(os.path.basename(viss_file))[0]
+    cache_dir = os.path.join(os.path.dirname(os.path.abspath(viss_file)), ".viss_cache", stem)
+    os.makedirs(cache_dir, exist_ok=True)
+    cpp_file = os.path.join(cache_dir, stem + ".cpp")
     exe_file = base + ".exe" if os.name == 'nt' else base
+
+    if "-o" in sys.argv:
+        o_idx = sys.argv.index("-o")
+        if o_idx + 1 < len(sys.argv):
+            exe_file = sys.argv[o_idx + 1]
 
     print(f"[Viss Compiler v{VERSION}] Transpiling {viss_file} to {cpp_file}...")
 
@@ -1078,10 +1492,53 @@ def main():
         cxx_dir = os.path.dirname(os.path.abspath(cxx))
         env = os.environ.copy()
         env["PATH"] = cxx_dir + os.pathsep + env.get("PATH", "")
-        print(f"[Viss Compiler v{VERSION}] Compiling binary using {os.path.basename(cxx)}...")
-        flags = [cxx, "-std=c++17", "-O2", cpp_file, "-o", exe_file]
+        if getattr(sys, 'frozen', False):
+            viss_root = os.path.dirname(os.path.abspath(sys.executable))
+        else:
+            viss_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        file_dir = os.path.dirname(os.path.abspath(viss_file))
+        flags = [cxx, "-std=c++17", "-O2", f"-I{viss_root}", f"-I{file_dir}", "-I.", cpp_file]
+
         if os.name == 'nt':
-            flags.extend(["-lwinmm", "-lws2_32", "-lwininet"])
+            if "-mwindows" in sys.argv or "--gui" in sys.argv:
+                flags.append("-mwindows")
+
+            # Look for icon
+            icon_path = None
+            if "--icon" in sys.argv:
+                i_idx = sys.argv.index("--icon")
+                if i_idx + 1 < len(sys.argv):
+                    icon_path = os.path.abspath(sys.argv[i_idx + 1])
+            else:
+                for cand_icon in [
+                    os.path.join(file_dir, "app_icon.ico"),
+                    os.path.join(file_dir, "icon.ico"),
+                    os.path.join(os.getcwd(), "app_icon.ico"),
+                    os.path.join(os.getcwd(), "icon.ico")
+                ]:
+                    if os.path.exists(cand_icon):
+                        icon_path = os.path.abspath(cand_icon)
+                        break
+
+            if icon_path and os.path.exists(icon_path):
+                windres = shutil.which("windres")
+                if not windres:
+                    candidate_wr = r"C:\AGY\TOOLS\w64devkit\bin\windres.exe"
+                    if os.path.exists(candidate_wr):
+                        windres = candidate_wr
+                if windres:
+                    rc_file = os.path.join(cache_dir, "app_icon.rc")
+                    res_obj = os.path.join(cache_dir, "app_icon.res.o")
+                    clean_ico = icon_path.replace("\\", "/")
+                    with open(rc_file, "w", encoding="utf-8") as rf:
+                        rf.write(f'1 ICON "{clean_ico}"\n')
+                    wr_res = subprocess.run([windres, "-i", rc_file, "-o", res_obj, "-O", "coff"], env=env)
+                    if wr_res.returncode == 0 and os.path.exists(res_obj):
+                        flags.append(res_obj)
+
+            flags.extend(["-o", exe_file, "-lwinmm", "-lws2_32", "-lwininet", "-lole32", "-lcomdlg32", "-lshell32", "-lgdiplus"])
+        else:
+            flags.extend(["-o", exe_file])
         res = subprocess.run(flags, env=env)
         if res.returncode == 0:
             print(f"[Viss Compiler v{VERSION}] Build successful: {exe_file}")

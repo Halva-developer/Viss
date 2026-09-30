@@ -12,3 +12,7 @@ __pycache__/
 !src/*.cpp
 !src/**/*.cpp
 
+.viss_cache/
+build/
+*.spec
+

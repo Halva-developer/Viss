@@ -1,0 +1,24 @@
+$import lib "iostream" as io
+!func mul(a, b) {
+    return a * b;
+}
+!func sub(a, b) {
+    return(a - b);
+}
+!main {
+    @x = 10;
+    @y = 20;
+    @z = @x + @y;
+    io.println("z = " + str.from(@z));
+    io.println("mul = " + str.from(mul(4, 5)));
+    io.println("sub = " + str.from(sub(50, 8)));
+    ?if (@z == 30) {
+        io.println("sum match!");
+    }
+    ?else {
+        io.println("no match");
+    }
+    !for @i in 1..4 {
+        io.println("loop " + str.from(@i));
+    }
+}

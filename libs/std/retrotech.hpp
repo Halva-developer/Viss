@@ -1,7 +1,11 @@
 #pragma once
 #include "../vissrt.hpp"
+#include "mask.hpp"
 #include <iostream>
 #include <vector>
+#include <queue>
+#include <condition_variable>
+#include <atomic>
 #include <cstdint>
 #include <array>
 #include <string>
@@ -36,8 +40,14 @@ namespace retrotech {
         bool has_char = false;
     };
 
+    struct AudioJob {
+        std::vector<uint8_t> samples;
+        int duration_ms = 0;
+        int fallback_freq = 0;
+    };
+
     // =========================================================================
-    // 8-BIT RETRO AUDIO ENGINE (Square, Triangle, Noise, Chiptune Music)
+    // 8-BIT RETRO AUDIO ENGINE (Queue-based, Single Worker Thread)
     // =========================================================================
     class RetroAudioEngine {
     private:
@@ -59,25 +69,55 @@ namespace retrotech {
         bool pcm_ready = false;
         #endif
 
-        std::mutex audio_mtx;
-        bool music_playing = false;
-        std::atomic<int> active_sounds{0};
+        std::queue<AudioJob> job_queue;
+        std::mutex q_mtx;
+        std::condition_variable q_cv;
+        std::thread worker;
+        std::atomic<bool> audio_running{false};
+        std::atomic<bool> music_playing{false};
 
     public:
         RetroAudioEngine() {
             #ifdef _WIN32
             init_winmm();
             #endif
+            audio_running = true;
+            worker = std::thread([this]() {
+                while (audio_running) {
+                    AudioJob job;
+                    {
+                        std::unique_lock<std::mutex> lock(q_mtx);
+                        q_cv.wait(lock, [this]() { return !audio_running || !job_queue.empty(); });
+                        if (!audio_running) break;
+                        job = std::move(job_queue.front());
+                        job_queue.pop();
+                    }
+                    #ifdef _WIN32
+                    if (pcm_ready && hWaveOut && pWaveOutWrite && !job.samples.empty()) {
+                        WAVEHDR header;
+                        memset(&header, 0, sizeof(header));
+                        header.lpData = (LPSTR)job.samples.data();
+                        header.dwBufferLength = (DWORD)job.samples.size();
+                        pWaveOutPrepareHeader(hWaveOut, &header, sizeof(WAVEHDR));
+                        pWaveOutWrite(hWaveOut, &header, sizeof(WAVEHDR));
+                        std::this_thread::sleep_for(std::chrono::milliseconds(job.duration_ms + 5));
+                        pWaveOutUnprepareHeader(hWaveOut, &header, sizeof(WAVEHDR));
+                    } else if (job.fallback_freq > 0) {
+                        ::Beep((DWORD)job.fallback_freq, (DWORD)job.duration_ms);
+                    }
+                    #endif
+                }
+            });
         }
 
         ~RetroAudioEngine() {
-            #ifdef _WIN32
-            // Wait for any active playing sounds to finish before shutting down audio
-            int max_wait = 250;
-            while (active_sounds.load() > 0 && max_wait-- > 0) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            stop_music();
+            audio_running = false;
+            q_cv.notify_all();
+            if (worker.joinable()) {
+                worker.join();
             }
-            music_playing = false;
+            #ifdef _WIN32
             if (hWaveOut && pWaveOutClose) {
                 pWaveOutClose(hWaveOut);
             }
@@ -86,7 +126,6 @@ namespace retrotech {
             }
             #endif
         }
-
 
         void init_winmm() {
             #ifdef _WIN32
@@ -117,7 +156,6 @@ namespace retrotech {
             #endif
         }
 
-        // Generate synthetic wave: square (pulse), triangle, noise, sine
         std::vector<uint8_t> generate_wave(double start_freq, double end_freq, int duration_ms, 
                                            const std::string& wave_type = "square", double duty = 0.5, int volume = 90) {
             int sample_rate = 22050;
@@ -151,7 +189,6 @@ namespace retrotech {
                     sample = (current_phase < 0.5) ? (128 + amp) : (128 - amp);
                 }
 
-                // Envelope attack/decay smoothing
                 if (i < 60) sample = 128 + ((sample - 128) * i) / 60;
                 else if (i > total_samples - 60) sample = 128 + ((sample - 128) * (total_samples - i)) / 60;
 
@@ -162,37 +199,16 @@ namespace retrotech {
             return buf;
         }
 
-        // Fire-and-forget non-blocking audio output
         void play_async(const std::vector<uint8_t>& samples, int duration_ms, int fallback_freq = 800) {
-            #ifdef _WIN32
-            if (!pcm_ready) {
-                active_sounds++;
-                std::thread([this, fallback_freq, duration_ms]() {
-                    ::Beep((DWORD)fallback_freq, (DWORD)duration_ms);
-                    active_sounds--;
-                }).detach();
-                return;
+            {
+                std::lock_guard<std::mutex> lock(q_mtx);
+                if (job_queue.size() > 6) {
+                    job_queue.pop();
+                }
+                job_queue.push({samples, duration_ms, fallback_freq});
             }
-
-            active_sounds++;
-            std::thread([this, samples, duration_ms]() {
-                std::lock_guard<std::mutex> lock(audio_mtx);
-                WAVEHDR header;
-                memset(&header, 0, sizeof(header));
-                header.lpData = (LPSTR)samples.data();
-                header.dwBufferLength = (DWORD)samples.size();
-
-                pWaveOutPrepareHeader(hWaveOut, &header, sizeof(WAVEHDR));
-                pWaveOutWrite(hWaveOut, &header, sizeof(WAVEHDR));
-                std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms + 15));
-                pWaveOutUnprepareHeader(hWaveOut, &header, sizeof(WAVEHDR));
-                active_sounds--;
-            }).detach();
-            #else
-            std::cout << "\a" << std::flush;
-            #endif
+            q_cv.notify_one();
         }
-
 
         void tone(double freq, int ms, const std::string& wave_type = "square", double duty = 0.5, int vol = 90) {
             auto samples = generate_wave(freq, freq, ms, wave_type, duty, vol);
@@ -204,56 +220,32 @@ namespace retrotech {
             play_async(samples, ms, (int)start_freq);
         }
 
-        // Sound effect presets
         void play_sfx(const std::string& name) {
             if (name == "jump") {
-                // Fast rising pitch square wave (NES jump)
-                sweep(150, 620, 130, "square", 0.25);
+                sweep(150, 620, 120, "square", 0.25);
             } else if (name == "coin") {
-                // Two-tone bell (B5 -> E6)
-                std::thread([this]() {
-                    tone(987, 70, "square", 0.5, 95);
-                    std::this_thread::sleep_for(std::chrono::milliseconds(70));
-                    tone(1319, 220, "square", 0.5, 95);
-                }).detach();
+                tone(987, 60, "square", 0.5, 95);
+                tone(1319, 180, "square", 0.5, 95);
             } else if (name == "stomp") {
-                // Quick downward pitch drop
-                sweep(360, 60, 90, "square", 0.5);
+                sweep(360, 60, 80, "square", 0.5);
             } else if (name == "powerup") {
-                // Fast rising 7-note arpeggio
-                std::thread([this]() {
-                    int notes[] = {330, 392, 659, 523, 587, 784, 988};
-                    for (int n : notes) {
-                        tone(n, 45, "triangle", 0.5, 95);
-                        std::this_thread::sleep_for(std::chrono::milliseconds(45));
-                    }
-                }).detach();
+                int notes[] = {330, 392, 659, 523, 587, 784, 988};
+                for (int n : notes) tone(n, 40, "triangle", 0.5, 95);
             } else if (name == "bump") {
-                sweep(160, 90, 70, "square", 0.5);
+                sweep(160, 90, 60, "square", 0.5);
             } else if (name == "hurt" || name == "die") {
-                sweep(240, 50, 250, "noise", 0.5);
+                sweep(240, 50, 200, "noise", 0.5);
             } else if (name == "fireball") {
-                sweep(800, 200, 70, "noise", 0.5);
+                sweep(800, 200, 60, "noise", 0.5);
             } else if (name == "flag") {
-                std::thread([this]() {
-                    int fanfares[] = {784, 988, 1319, 1175, 1319};
-                    for (int n : fanfares) {
-                        tone(n, 120, "square", 0.5, 90);
-                        std::this_thread::sleep_for(std::chrono::milliseconds(130));
-                    }
-                }).detach();
+                int fanfares[] = {784, 988, 1319, 1175, 1319};
+                for (int n : fanfares) tone(n, 100, "square", 0.5, 90);
             } else if (name == "gameover") {
-                std::thread([this]() {
-                    int notes[] = {523, 440, 392, 330, 294, 261};
-                    for (int n : notes) {
-                        tone(n, 150, "square", 0.25, 90);
-                        std::this_thread::sleep_for(std::chrono::milliseconds(160));
-                    }
-                }).detach();
+                int notes[] = {523, 440, 392, 330, 294, 261};
+                for (int n : notes) tone(n, 120, "square", 0.25, 90);
             }
         }
 
-        // Note parser: C4, D#5, Bb3, etc. -> Hz
         double note_to_freq(const std::string& note_str) {
             if (note_str.empty() || note_str == ".") return 0.0;
             char n = toupper(note_str[0]);
@@ -280,12 +272,12 @@ namespace retrotech {
             if (idx < note_str.size() && isdigit(note_str[idx])) {
                 octave = note_str[idx] - '0';
             }
-            int note_num = (octave + 1) * 12 + semitone; // MIDI note number
+            int note_num = (octave + 1) * 12 + semitone;
             return 440.0 * pow(2.0, (note_num - 69) / 12.0);
         }
 
-        // Background music player
         void play_music(const std::string& melody, int bpm = 120) {
+            stop_music();
             music_playing = true;
             std::thread([this, melody, bpm]() {
                 std::stringstream ss(melody);
@@ -293,7 +285,7 @@ namespace retrotech {
                 int quarter_ms = 60000 / bpm;
 
                 while (music_playing && (ss >> item)) {
-                    int duration_ms = quarter_ms / 2; // Default eighth note
+                    int duration_ms = quarter_ms / 2;
                     std::string note_part = item;
                     size_t colon = item.find(':');
                     if (colon != std::string::npos) {
@@ -307,7 +299,7 @@ namespace retrotech {
                     } else {
                         double f = note_to_freq(note_part);
                         if (f > 20.0) {
-                            tone(f, duration_ms - 15, "square", 0.5, 80);
+                            tone(f, duration_ms - 15, "square", 0.5, 75);
                         }
                         std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
                     }
@@ -348,6 +340,74 @@ namespace retrotech {
 
         // 256-color palette (default initialized to 16 classic NES / Retro colors)
         std::array<RGBColor, 256> palette;
+
+        struct UIElement {
+            int col;
+            int row;
+            std::string text;
+            uint8_t fg;
+            uint8_t bg;
+            bool is_terminal_col;
+        };
+        std::vector<UIElement> ui_elements;
+
+#ifdef _WIN32
+        bool window_mode = false;
+        HWND hwnd = NULL;
+        int window_scale = 4;
+        std::vector<uint32_t> dib_pixels;
+        BITMAPINFO bmi = {};
+
+        static LRESULT CALLBACK VissWindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+            if (uMsg == WM_CLOSE || uMsg == WM_DESTROY) {
+                PostQuitMessage(0);
+                return 0;
+            }
+            return DefWindowProcA(hWnd, uMsg, wParam, lParam);
+        }
+
+        bool open_window(const std::string& title = "Viss RetroTech Engine", int scale = 4) {
+            window_scale = scale > 0 ? scale : 4;
+            WNDCLASSEXA wc = { sizeof(WNDCLASSEXA) };
+            wc.lpfnWndProc = VissWindowProc;
+            wc.hInstance = GetModuleHandle(NULL);
+            wc.lpszClassName = "VissRetroWindowClass";
+            wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+            RegisterClassExA(&wc);
+
+            RECT rc = { 0, 0, width * window_scale, height * window_scale };
+            AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX, FALSE);
+            int win_w = rc.right - rc.left;
+            int win_h = rc.bottom - rc.top;
+
+            hwnd = CreateWindowExA(
+                0, "VissRetroWindowClass", title.c_str(),
+                (WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX) | WS_VISIBLE,
+                CW_USEDEFAULT, CW_USEDEFAULT, win_w, win_h,
+                NULL, NULL, GetModuleHandle(NULL), NULL
+            );
+
+            if (!hwnd) return false;
+
+            memset(&bmi, 0, sizeof(bmi));
+            bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+            bmi.bmiHeader.biWidth = width;
+            bmi.bmiHeader.biHeight = -height; // top-down DIB
+            bmi.bmiHeader.biPlanes = 1;
+            bmi.bmiHeader.biBitCount = 32;
+            bmi.bmiHeader.biCompression = BI_RGB;
+
+            dib_pixels.resize(width * height, 0);
+            window_mode = true;
+            return true;
+        }
+
+        bool is_window_open() const { return window_mode && hwnd != NULL; }
+#endif
+
+        void print_ui(int col, int row, const std::string& text, uint8_t fg = 10, uint8_t bg = 13, bool is_terminal_col = false) {
+            ui_elements.push_back({col, row, text, fg, bg, is_terminal_col});
+        }
 
         ScreenBuffer() : width(32), height(24), pixels(32 * 24, 0), text_overlay(32 * 24), use_palette(true) {
             init_default_palette();
@@ -497,19 +557,21 @@ namespace retrotech {
             }
         }
 
-        void color_screen(const viss::Bytes& mask, const viss::Bytes& map) {
-            if (mask.size() >= 48) {
-                use_palette = true;
-                for (int i = 0; i < (int)mask.size() / 3 && i < 256; ++i) {
-                    palette[i] = {(uint8_t)mask.get(i * 3), (uint8_t)mask.get(i * 3 + 1), (uint8_t)mask.get(i * 3 + 2)};
-                }
-            } else if (mask.size() >= 3) {
-                mask_r = mask.get(0);
-                mask_g = mask.get(1);
-                mask_b = mask.get(2);
-                use_palette = false;
+        void set_colormask(const viss::Bytes& mask) {
+            use_palette = true;
+            size_t num_colors = mask.size() / 3;
+            if (num_colors > 256) num_colors = 256;
+            for (size_t i = 0; i < num_colors; ++i) {
+                palette[i] = {(uint8_t)mask.get(i * 3), (uint8_t)mask.get(i * 3 + 1), (uint8_t)mask.get(i * 3 + 2)};
             }
+        }
 
+        void color_screen(const viss::Bytes& mask) {
+            set_colormask(mask);
+        }
+
+        void color_screen(const viss::Bytes& mask, const viss::Bytes& map) {
+            set_colormask(mask);
             if (map.size() > 0) {
                 if (pixels.empty() || (int)pixels.size() != (int)map.size()) {
                     pixels.resize(map.size(), 0);
@@ -517,6 +579,22 @@ namespace retrotech {
                 }
                 for (int i = 0; i < (int)pixels.size() && i < (int)map.size(); ++i) {
                     pixels[i] = map.get(i);
+                }
+            }
+        }
+
+        void draw_tiles(const viss::Bytes& map, int map_w, int map_h, int x = 0, int y = 0, int tile_size = 1) {
+            for (int ty = 0; ty < map_h; ++ty) {
+                for (int tx = 0; tx < map_w; ++tx) {
+                    int idx = ty * map_w + tx;
+                    if (idx < (int)map.size()) {
+                        uint8_t tile_id = map.get(idx);
+                        if (tile_size <= 1) {
+                            set_pixel(x + tx, y + ty, tile_id);
+                        } else {
+                            draw_rect(x + tx * tile_size, y + ty * tile_size, tile_size, tile_size, tile_id);
+                        }
+                    }
                 }
             }
         }
@@ -531,8 +609,135 @@ namespace retrotech {
             }
         }
 
+        void draw_screen_bits(const viss::Bits& bits, int on_color = 7, int off_color = 8) {
+            int w = width;
+            int h = height;
+            if (w * h != (int)bits.size()) {
+                int side = (int)std::round(std::sqrt((double)bits.size()));
+                if (side * side == (int)bits.size()) {
+                    w = side;
+                    h = side;
+                } else {
+                    w = 32;
+                    h = (int)(bits.size() + 31) / 32;
+                }
+                resize(w, h);
+            }
+            for (int i = 0; i < w * h && i < (int)bits.size(); ++i) {
+                pixels[i] = bits.get(i) ? (uint8_t)on_color : (uint8_t)off_color;
+                text_overlay[i].has_char = false;
+            }
+            update();
+        }
+
+        void draw_screen_bytes(const viss::Bytes& bytes, int on_color = 7, int off_color = 8) {
+            int w = width;
+            int h = height;
+            if (w * h != (int)bytes.size()) {
+                int side = (int)std::round(std::sqrt((double)bytes.size()));
+                if (side * side == (int)bytes.size()) {
+                    w = side;
+                    h = side;
+                } else {
+                    w = 32;
+                    h = (int)(bytes.size() + 31) / 32;
+                }
+                resize(w, h);
+            }
+            for (int i = 0; i < w * h && i < (int)bytes.size(); ++i) {
+                pixels[i] = bytes.get(i);
+                text_overlay[i].has_char = false;
+            }
+            update();
+        }
+
+        void draw_bits(const viss::Bits& bits, int w = 0, int h = 0, int on_color = 7, int off_color = 8, int x = 0, int y = 0) {
+            if (w <= 0 || h <= 0) {
+                int side = (int)std::round(std::sqrt((double)bits.size()));
+                if (side * side == (int)bits.size()) {
+                    w = side;
+                    h = side;
+                } else {
+                    w = (int)bits.size();
+                    h = 1;
+                }
+            }
+            for (int dy = 0; dy < h; ++dy) {
+                for (int dx = 0; dx < w; ++dx) {
+                    size_t idx = dy * w + dx;
+                    if (idx < bits.size()) {
+                        set_pixel(x + dx, y + dy, bits.get(idx) ? (uint8_t)on_color : (uint8_t)off_color);
+                    }
+                }
+            }
+        }
+
+        void draw_bit_sprite(const viss::Bits& bits, int x, int y, int w, int h, int on_color = 7, bool transparent_off = true, int off_color = 8) {
+            for (int dy = 0; dy < h; ++dy) {
+                for (int dx = 0; dx < w; ++dx) {
+                    size_t idx = dy * w + dx;
+                    if (idx < bits.size()) {
+                        bool b = bits.get(idx);
+                        if (b) {
+                            set_pixel(x + dx, y + dy, (uint8_t)on_color);
+                        } else if (!transparent_off) {
+                            set_pixel(x + dx, y + dy, (uint8_t)off_color);
+                        }
+                    }
+                }
+            }
+        }
+
+        void draw_bit_tilemap(const viss::Bits& map, int map_w, int map_h, int tile_size = 4, const std::string& solid_sym = "#", int fg = 6, int bg = 1) {
+            for (int ty = 0; ty < map_h; ++ty) {
+                for (int tx = 0; tx < map_w; ++tx) {
+                    size_t tidx = ty * map_w + tx;
+                    if (tidx < map.size() && map.get(tidx)) {
+                        draw_block(tx * tile_size, ty * tile_size, tile_size, tile_size, solid_sym, (uint8_t)fg, (uint8_t)bg);
+                    }
+                }
+            }
+        }
+
         void update() {
-            #ifdef _WIN32
+#ifdef _WIN32
+            if (window_mode && hwnd) {
+                MSG msg;
+                while (PeekMessageA(&msg, NULL, 0, 0, PM_REMOVE)) {
+                    if (msg.message == WM_QUIT) {
+                        hwnd = NULL;
+                        window_mode = false;
+                        return;
+                    }
+                    TranslateMessage(&msg);
+                    DispatchMessageA(&msg);
+                }
+
+                if (!hwnd) return;
+
+                dib_pixels.resize(width * height);
+                for (size_t i = 0; i < pixels.size() && i < dib_pixels.size(); ++i) {
+                    uint8_t raw = pixels[i];
+                    RGBColor col = palette[raw];
+                    dib_pixels[i] = (col.r << 16) | (col.g << 8) | col.b;
+                }
+
+                HDC hdc = GetDC(hwnd);
+                if (hdc) {
+                    StretchDIBits(
+                        hdc,
+                        0, 0, width * window_scale, height * window_scale,
+                        0, 0, width, height,
+                        dib_pixels.data(),
+                        &bmi,
+                        DIB_RGB_COLORS,
+                        SRCCOPY
+                    );
+                    ReleaseDC(hwnd, hdc);
+                }
+                return;
+            }
+
             static bool vt_enabled = false;
             if (!vt_enabled) {
                 SetConsoleOutputCP(CP_UTF8);
@@ -549,7 +754,7 @@ namespace retrotech {
                 }
                 vt_enabled = true;
             }
-            #endif
+#endif
 
             // Apply screen shake if active
             int cur_shake_x = 0;
@@ -676,6 +881,22 @@ namespace retrotech {
                     last_fg_r = -1; last_fg_g = -1; last_fg_b = -1;
                 }
             }
+            if (!ui_elements.empty()) {
+                for (const auto& el : ui_elements) {
+                    int term_col = el.is_terminal_col ? (el.col + 1) : (compact_mode ? (el.col + 1) : (el.col * 2 + 1));
+                    int term_row = el.row + 1;
+                    frame += "\033[" + std::to_string(term_row) + ";" + std::to_string(term_col) + "H";
+                    if (use_palette) {
+                        const auto& fc = palette[el.fg];
+                        const auto& bc = palette[el.bg];
+                        frame += "\033[38;2;" + std::to_string(fc.r) + ";" + std::to_string(fc.g) + ";" + std::to_string(fc.b) + "m";
+                        frame += "\033[48;2;" + std::to_string(bc.r) + ";" + std::to_string(bc.g) + ";" + std::to_string(bc.b) + "m";
+                    }
+                    frame += el.text;
+                }
+                frame += "\033[0m";
+                ui_elements.clear();
+            }
             std::cout << frame << std::flush;
         }
     };
@@ -688,6 +909,141 @@ namespace retrotech {
     // =========================================================================
     // RETROTECH API FUNCTIONS
     // =========================================================================
+
+    // --- Screen Setup & Configuration (10-byte Hardware Config) ---
+    // [0] Width (e.g. 32, 64)
+    // [1] Height (e.g. 24, 36)
+    // [2] Render Mode (0: Standard block, 1: Compact Half-Block ▀)
+    // [3] Palette Preset (0: NES Mario, 1: GameBoy, 2: CGA, 3: Monochrome)
+    // [4] Target FPS (30, 60, 120)
+    // [5] Flags (Bit 0: cursor, Bit 1: vsync, Bit 2: auto-clear)
+    // [6] Default Background Color index
+    // [7] Default Foreground Color index
+    // [8] Scale (1x, 2x)
+    // [9] Audio Volume (0-100)
+    namespace screen {
+        inline void create(const viss::Bytes& cfg) {
+            int w = (cfg.size() >= 1 && cfg[0] > 0) ? cfg[0] : 32;
+            int h = (cfg.size() >= 2 && cfg[1] > 0) ? cfg[1] : 24;
+            getScreen().resize(w, h);
+
+            if (cfg.size() >= 3) {
+                getScreen().set_compact(cfg[2] == 1);
+            }
+            if (cfg.size() >= 4) {
+                uint8_t pal = cfg[3];
+                if (pal == 1) { // GameBoy
+                    getScreen().set_palette_color(0, 155, 188, 15);
+                    getScreen().set_palette_color(1, 139, 172, 15);
+                    getScreen().set_palette_color(2, 48, 98, 48);
+                    getScreen().set_palette_color(3, 15, 56, 15);
+                } else if (pal == 2) { // CGA
+                    getScreen().set_palette_color(0, 0, 0, 0);
+                    getScreen().set_palette_color(1, 0, 170, 170);
+                    getScreen().set_palette_color(2, 170, 0, 170);
+                    getScreen().set_palette_color(3, 255, 255, 255);
+                } else if (pal == 3) { // Monochrome
+                    getScreen().set_palette_color(0, 0, 0, 0);
+                    getScreen().set_palette_color(1, 255, 255, 255);
+                }
+            }
+            if (cfg.size() >= 7) {
+                getScreen().clear(cfg[6]);
+            }
+        }
+
+        inline void create(int w, int h, int render_mode = 1, int palette_id = 0, int fps_cap = 60) {
+            viss::Bytes cfg(10, 0);
+            cfg[0] = (uint8_t)w;
+            cfg[1] = (uint8_t)h;
+            cfg[2] = (uint8_t)render_mode;
+            cfg[3] = (uint8_t)palette_id;
+            cfg[4] = (uint8_t)fps_cap;
+            cfg[5] = 0x02; // vsync
+            cfg[6] = 0;    // default bg
+            cfg[7] = 7;    // default fg
+            cfg[8] = 1;    // scale
+            cfg[9] = 90;   // audio volume
+            create(cfg);
+        }
+
+        inline void create(std::initializer_list<int> init) {
+            viss::Bytes cfg(10, 0);
+            size_t idx = 0;
+            for (auto v : init) {
+                if (idx < 10) cfg[idx++] = (uint8_t)v;
+            }
+            create(cfg);
+        }
+
+        inline viss::Bytes default_config(int w = 32, int h = 24) {
+            viss::Bytes cfg(10, 0);
+            cfg[0] = (uint8_t)w;
+            cfg[1] = (uint8_t)h;
+            cfg[2] = 1;
+            cfg[3] = 0;
+            cfg[4] = 60;
+            cfg[5] = 0x02;
+            cfg[6] = 0;
+            cfg[7] = 7;
+            cfg[8] = 1;
+            cfg[9] = 90;
+            return cfg;
+        }
+
+        inline void set(int x, int y, int id) {
+            getScreen().set_pixel(x, y, (uint8_t)id);
+        }
+
+        inline int get(int x, int y) {
+            return (int)getScreen().get_pixel(x, y);
+        }
+
+        inline void rect(int x, int y, int w, int h, int id) {
+            getScreen().draw_rect(x, y, w, h, (uint8_t)id);
+        }
+
+        inline void clear(int id = 0) {
+            getScreen().clear((uint8_t)id);
+        }
+
+        inline void blit(const viss::Bytes& grid, int gw, int gh, int x = 0, int y = 0) {
+            getScreen().draw_tiles(grid, gw, gh, x, y, 1);
+        }
+
+        inline void update() {
+            getScreen().update();
+        }
+
+        inline void print_ui(int col, int row, const std::string& text, int fg_id = 10, int bg_id = 13) {
+            getScreen().print_ui(col, row, text, fg_id, bg_id);
+        }
+
+        inline void apply(const viss::Bytes& m) {
+            getScreen().set_colormask(m);
+        }
+
+        inline bool window(const std::string& title = "Viss RetroTech Engine", int scale = 4) {
+#ifdef _WIN32
+            return getScreen().open_window(title, scale);
+#else
+            return false;
+#endif
+        }
+
+        inline bool open_window(const std::string& title = "Viss RetroTech Engine", int scale = 4) {
+            return window(title, scale);
+        }
+
+        inline bool is_window_open() {
+#ifdef _WIN32
+            return getScreen().is_window_open();
+#else
+            return false;
+#endif
+        }
+    }
+
     inline void InitScreen(int w = 32, int h = 24) {
         getScreen().resize(w, h);
     }
@@ -708,8 +1064,85 @@ namespace retrotech {
         getScreen().draw_raw(map, w, h);
     }
 
+    inline void ColorScreen(const viss::Bytes& colormask) {
+        getScreen().color_screen(colormask);
+    }
+
     inline void ColorScreen(const viss::Bytes& colormask, const viss::Bytes& map) {
         getScreen().color_screen(colormask, map);
+    }
+
+    inline void SetColorMask(const viss::Bytes& mask) {
+        getScreen().set_colormask(mask);
+    }
+
+    inline void DrawTiles(const viss::Bytes& map, int map_w, int map_h, int x = 0, int y = 0, int tile_size = 1) {
+        getScreen().draw_tiles(map, map_w, map_h, x, y, tile_size);
+    }
+
+    inline void DrawTilemap(const viss::Bytes& map, int map_w, int map_h, int x = 0, int y = 0, int tile_size = 1) {
+        getScreen().draw_tiles(map, map_w, map_h, x, y, tile_size);
+    }
+
+    // --- Screen Bit / Buffer Drawing ---
+    inline void DrawScreen(const viss::Bits& bits, Int on_color = 7, Int off_color = 8) {
+        getScreen().draw_screen_bits(bits, (int)on_color, (int)off_color);
+    }
+    inline void draw_screen(const viss::Bits& bits, Int on_color = 7, Int off_color = 8) {
+        DrawScreen(bits, on_color, off_color);
+    }
+
+    inline void DrawScreen(const viss::Bytes& bytes, Int on_color = 7, Int off_color = 8) {
+        getScreen().draw_screen_bytes(bytes, (int)on_color, (int)off_color);
+    }
+    inline void draw_screen(const viss::Bytes& bytes, Int on_color = 7, Int off_color = 8) {
+        DrawScreen(bytes, on_color, off_color);
+    }
+
+    inline void DrawBits(const viss::Bits& bits, Int w = 0, Int h = 0, Int on_color = 7, Int off_color = 8, Int x = 0, Int y = 0) {
+        getScreen().draw_bits(bits, (int)w, (int)h, (int)on_color, (int)off_color, (int)x, (int)y);
+    }
+    inline void draw_bits(const viss::Bits& bits, Int w = 0, Int h = 0, Int on_color = 7, Int off_color = 8, Int x = 0, Int y = 0) {
+        DrawBits(bits, w, h, on_color, off_color, x, y);
+    }
+
+    inline void DrawBitSprite(const viss::Bits& bits, Int x, Int y, Int w, Int h, Int on_color = 7, Bool transparent_off = true, Int off_color = 8) {
+        getScreen().draw_bit_sprite(bits, (int)x, (int)y, (int)w, (int)h, (int)on_color, transparent_off, (int)off_color);
+    }
+    inline void draw_bit_sprite(const viss::Bits& bits, Int x, Int y, Int w, Int h, Int on_color = 7, Bool transparent_off = true, Int off_color = 8) {
+        DrawBitSprite(bits, x, y, w, h, on_color, transparent_off, off_color);
+    }
+
+    inline void DrawBitTilemap(const viss::Bits& map, Int map_w, Int map_h, Int tile_size = 4, const Str& solid_sym = "#", Int fg = 6, Int bg = 1) {
+        getScreen().draw_bit_tilemap(map, (int)map_w, (int)map_h, (int)tile_size, solid_sym, (int)fg, (int)bg);
+    }
+    inline void draw_bit_tilemap(const viss::Bits& map, Int map_w, Int map_h, Int tile_size = 4, const Str& solid_sym = "#", Int fg = 6, Int bg = 1) {
+        DrawBitTilemap(map, map_w, map_h, tile_size, solid_sym, fg, bg);
+    }
+
+    inline Bool BitCollides(const viss::Bits& a, Int ax, Int ay, Int aw, Int ah,
+                            const viss::Bits& b, Int bx, Int by, Int bw, Int bh) {
+        Int x1 = std::max(ax, bx);
+        Int y1 = std::max(ay, by);
+        Int x2 = std::min(ax + aw, bx + bw);
+        Int y2 = std::min(ay + ah, by + bh);
+
+        if (x1 >= x2 || y1 >= y2) return false;
+
+        for (Int y = y1; y < y2; ++y) {
+            for (Int x = x1; x < x2; ++x) {
+                Int a_idx = (y - ay) * aw + (x - ax);
+                Int b_idx = (y - by) * bw + (x - bx);
+                if (a.get(a_idx) && b.get(b_idx)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    inline Bool bit_collides(const viss::Bits& a, Int ax, Int ay, Int aw, Int ah,
+                            const viss::Bits& b, Int bx, Int by, Int bw, Int bh) {
+        return BitCollides(a, ax, ay, aw, ah, b, bx, by, bw, bh);
     }
 
     inline void UpdateScreen() {
@@ -742,6 +1175,200 @@ namespace retrotech {
 
     inline void DrawBlock(int x, int y, int w, int h, const Str& symbol, int fg, int bg) {
         getScreen().draw_block(x, y, w, h, symbol, (uint8_t)fg, (uint8_t)bg);
+    }
+
+    // --- Self-Contained 3-Byte Header Sprites ---
+    // [0] Width (e.g. 8, 16)
+    // [1] Height (e.g. 8, 16)
+    // [2] Flags (Bits 0..3: transparent color 0-15; Bit 4: 1-bit monochrome; Bit 5: flip_x; Bit 6: flip_y; Bit 7: opaque)
+    // [3..N] Pixel or Bitfield data
+    namespace draw {
+        inline void sprite(const viss::Bytes& spr, int x, int y) {
+            if (spr.size() < 3) return;
+            int w = spr[0];
+            int h = spr[1];
+            uint8_t flags = spr[2];
+
+            int transparent_color = (flags & 0x80) ? -1 : (flags & 0x0F);
+            bool is_1bit = (flags & 0x10) != 0;
+            bool flip_x = (flags & 0x20) != 0;
+            bool flip_y = (flags & 0x40) != 0;
+
+            if (is_1bit) {
+                size_t bit_offset = 24; // 3 bytes * 8 bits
+                for (int sy = 0; sy < h; ++sy) {
+                    for (int sx = 0; sx < w; ++sx) {
+                        int src_x = flip_x ? (w - 1 - sx) : sx;
+                        int src_y = flip_y ? (h - 1 - sy) : sy;
+                        size_t b_idx = bit_offset + src_y * w + src_x;
+                        bool bit = spr.get_bit(b_idx / 8, (uint8_t)(b_idx % 8));
+                        if (bit) {
+                            getScreen().set_pixel(x + sx, y + sy, 7); // white
+                        } else if (transparent_color >= 0) {
+                            getScreen().set_pixel(x + sx, y + sy, (uint8_t)transparent_color);
+                        }
+                    }
+                }
+            } else {
+                size_t data_offset = 3;
+                for (int sy = 0; sy < h; ++sy) {
+                    for (int sx = 0; sx < w; ++sx) {
+                        int src_x = flip_x ? (w - 1 - sx) : sx;
+                        int src_y = flip_y ? (h - 1 - sy) : sy;
+                        size_t p_idx = data_offset + src_y * w + src_x;
+                        if (p_idx < spr.size()) {
+                            uint8_t col = spr[p_idx];
+                            if (transparent_color < 0 || col != (uint8_t)transparent_color) {
+                                getScreen().set_pixel(x + sx, y + sy, col);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        inline void sprite(const viss::Bytes& spr, int x, int y, int w, int h, int transparent_color = 0) {
+            getScreen().draw_sprite(spr, x, y, w, h, transparent_color);
+        }
+    }
+
+    namespace mask {
+        using namespace viss::bytemask;
+        inline void apply(const viss::Bytes& m) {
+            getScreen().set_colormask(m);
+        }
+    }
+    namespace bytemask = mask;
+    namespace colormask = mask;
+
+    inline struct _ColormaskBridgeInit {
+        _ColormaskBridgeInit() {
+            retrotech_bridge::apply_colormask_fn = [](const uint8_t* ptr, size_t sz) {
+                viss::Bytes b(sz, 0);
+                std::memcpy(b.raw(), ptr, sz);
+                getScreen().set_colormask(b);
+            };
+        }
+    } _colormask_bridge_init_instance;
+
+
+    namespace sprite {
+        inline viss::Bytes create(int w, int h, int transparent_id = 0) {
+            viss::Bytes spr(3 + w * h, 0);
+            spr[0] = (uint8_t)w;
+            spr[1] = (uint8_t)h;
+            spr[2] = (transparent_id < 0) ? 0x80 : (uint8_t)(transparent_id & 0x7F);
+            return spr;
+        }
+
+        inline void draw(const viss::Bytes& spr, int x, int y, bool flip_x = false) {
+            if (spr.size() < 3) return;
+            int w = spr[0];
+            int h = spr[1];
+            uint8_t flags = spr[2];
+            int trans = (flags & 0x80) ? -1 : (int)(flags & 0x7F);
+
+            for (int sy = 0; sy < h; ++sy) {
+                for (int sx = 0; sx < w; ++sx) {
+                    int src_x = flip_x ? (w - 1 - sx) : sx;
+                    size_t idx = 3 + sy * w + src_x;
+                    if (idx < spr.size()) {
+                        uint8_t id = spr[idx];
+                        if (trans < 0 || id != (uint8_t)trans) {
+                            getScreen().set_pixel(x + sx, y + sy, id);
+                        }
+                    }
+                }
+            }
+        }
+
+        inline void draw_scaled(const viss::Bytes& spr, int x, int y, int scale = 1, bool flip_x = false) {
+            if (spr.size() < 3 || scale <= 0) return;
+            if (scale == 1) {
+                draw(spr, x, y, flip_x);
+                return;
+            }
+            int w = spr[0];
+            int h = spr[1];
+            uint8_t flags = spr[2];
+            int trans = (flags & 0x80) ? -1 : (int)(flags & 0x7F);
+
+            for (int sy = 0; sy < h; ++sy) {
+                for (int sx = 0; sx < w; ++sx) {
+                    int src_x = flip_x ? (w - 1 - sx) : sx;
+                    size_t idx = 3 + sy * w + src_x;
+                    if (idx < spr.size()) {
+                        uint8_t id = spr[idx];
+                        if (trans < 0 || id != (uint8_t)trans) {
+                            getScreen().draw_rect(x + sx * scale, y + sy * scale, scale, scale, id);
+                        }
+                    }
+                }
+            }
+        }
+
+        inline void set(viss::Bytes& spr, int sx, int sy, int id) {
+            if (spr.size() < 3) return;
+            int w = spr[0];
+            int h = spr[1];
+            if (sx >= 0 && sx < w && sy >= 0 && sy < h) {
+                size_t idx = 3 + sy * w + sx;
+                if (idx < spr.size()) spr[idx] = (uint8_t)id;
+            }
+        }
+
+        inline int get(const viss::Bytes& spr, int sx, int sy) {
+            if (spr.size() < 3) return 0;
+            int w = spr[0];
+            int h = spr[1];
+            if (sx >= 0 && sx < w && sy >= 0 && sy < h) {
+                size_t idx = 3 + sy * w + sx;
+                if (idx < spr.size()) return (int)spr[idx];
+            }
+            return 0;
+        }
+
+        inline void fill(viss::Bytes& spr, int id) {
+            if (spr.size() < 3) return;
+            for (size_t i = 3; i < spr.size(); ++i) {
+                spr[i] = (uint8_t)id;
+            }
+        }
+
+        inline void replace_color(viss::Bytes& spr, int old_id, int new_id) {
+            if (spr.size() < 3) return;
+            for (size_t i = 3; i < spr.size(); ++i) {
+                if (spr[i] == (uint8_t)old_id) {
+                    spr[i] = (uint8_t)new_id;
+                }
+            }
+        }
+    }
+
+    namespace ui {
+        inline void text(int col, int row, const std::string& str, int fg_id = 10, int bg_id = 13) {
+            getScreen().print_ui(col, row, str, fg_id, bg_id);
+        }
+    }
+
+    inline viss::Bytes make_sprite(int w, int h, int transparent_color, const viss::Bytes& pixels, bool flip_x = false) {
+        viss::Bytes spr(3 + pixels.size(), 0);
+        spr[0] = (uint8_t)w;
+        spr[1] = (uint8_t)h;
+        uint8_t flags = (transparent_color < 0) ? 0x80 : (transparent_color & 0x0F);
+        if (flip_x) flags |= 0x20;
+        spr[2] = flags;
+        for (size_t i = 0; i < pixels.size(); ++i) {
+            spr[3 + i] = pixels[i];
+        }
+        return spr;
+    }
+
+    inline void DrawSprite(const viss::Bytes& sprite, int x, int y) {
+        draw::sprite(sprite, x, y);
+    }
+    inline void draw_sprite(const viss::Bytes& sprite, int x, int y) {
+        draw::sprite(sprite, x, y);
     }
 
     inline void DrawSprite(const viss::Bytes& sprite, int x, int y, int w, int h, int transparent_color = 0) {
@@ -893,11 +1520,69 @@ namespace retrotech {
     inline Str GetKey() {
         if (HasKey()) {
             #ifdef _WIN32
-            char ch = (char)_getch();
-            return Str(1, ch);
+            int ch = _getch();
+            if (ch == 0 || ch == 224) {
+                int ch2 = _getch();
+                if (ch2 == 72) return "UP";
+                if (ch2 == 80) return "DOWN";
+                if (ch2 == 75) return "LEFT";
+                if (ch2 == 77) return "RIGHT";
+                return Str(1, (char)ch2);
+            }
+            return Str(1, (char)ch);
             #endif
         }
         return "";
     }
+
+    // --- Snake-Case API Aliases ---
+    inline void screen_create(const viss::Bytes& cfg) { screen::create(cfg); }
+    inline void screen_create(int w, int h, int render_mode = 1, int palette_id = 0, int fps_cap = 60) { screen::create(w, h, render_mode, palette_id, fps_cap); }
+    inline void init_screen(int w = 32, int h = 24) { InitScreen(w, h); }
+    inline void set_compact(Bool compact = true) { SetCompact(compact); }
+    inline void set_render_mode(const Str& mode) { SetRenderMode(mode); }
+    inline void set_pixel_size(const Str& mode) { SetPixelSize(mode); }
+    inline void draw_raw_pixels(const viss::Bytes& map, int w = 32, int h = 32) { DrawRawPixels(map, w, h); }
+    inline void color_screen(const viss::Bytes& colormask) { ColorScreen(colormask); }
+    inline void color_screen(const viss::Bytes& colormask, const viss::Bytes& map) { ColorScreen(colormask, map); }
+    inline void set_colormask(const viss::Bytes& colormask) { SetColorMask(colormask); }
+    inline void draw_tiles(const viss::Bytes& map, int map_w, int map_h, int x = 0, int y = 0, int tile_size = 1) { DrawTiles(map, map_w, map_h, x, y, tile_size); }
+    inline void draw_tilemap(const viss::Bytes& map, int map_w, int map_h, int x = 0, int y = 0, int tile_size = 1) { DrawTilemap(map, map_w, map_h, x, y, tile_size); }
+    inline void update_screen() { UpdateScreen(); }
+    inline void clear_screen(int color = 0) { ClearScreen(color); }
+    inline void draw_pixel(int x, int y, int color) { DrawPixel(x, y, color); }
+    inline int get_pixel(int x, int y) { return GetPixel(x, y); }
+    inline void draw_rect(int x, int y, int w, int h, int color) { DrawRect(x, y, w, h, color); }
+    inline void draw_char(int x, int y, const Str& symbol, int fg, int bg) { DrawChar(x, y, symbol, fg, bg); }
+    inline void draw_text(int x, int y, const Str& text, int fg, int bg) { DrawText(x, y, text, fg, bg); }
+    inline void draw_block(int x, int y, int w, int h, const Str& symbol, int fg, int bg) { DrawBlock(x, y, w, h, symbol, fg, bg); }
+    inline void draw_sprite(const viss::Bytes& sprite, int x, int y, int w, int h, int transparent_color = 0) { DrawSprite(sprite, x, y, w, h, transparent_color); }
+    inline void draw_sprite_flipped(const viss::Bytes& sprite, int x, int y, int w, int h, bool flip_x, int transparent_color = 0) { DrawSpriteFlipped(sprite, x, y, w, h, flip_x, transparent_color); }
+    inline void set_palette_color(int id, int r, int g, int b) { SetPaletteColor(id, r, g, b); }
+    inline void set_camera(int cx, int cy = 0) { SetCamera(cx, cy); }
+    inline int get_camera_x() { return GetCameraX(); }
+    inline int get_camera_y() { return GetCameraY(); }
+    inline void shake(int amount = 2, int frames = 4) { Shake(amount, frames); }
+    inline Bool collides(int x1, int y1, int w1, int h1, int x2, int y2, int w2, int h2) { return Collides(x1, y1, w1, h1, x2, y2, w2, h2); }
+    inline void draw_tile(const Str& tile_type, int x, int y, int size = 4) { DrawTile(tile_type, x, y, size); }
+    inline void beep(Int freq = 800, Int duration_ms = 100) { Beep(freq, duration_ms); }
+    inline void tone(Dec freq, Int duration_ms, const Str& wave_type = "square", Dec duty = 0.5, Int volume = 90) { Tone(freq, duration_ms, wave_type, duty, volume); }
+    inline void tone(Dec freq, Int duration_ms, Int volume) { Tone(freq, duration_ms, volume); }
+    inline void tone(Dec freq, Int duration_ms, Dec duty) { Tone(freq, duration_ms, duty); }
+    inline void tone_sync(Dec freq, Int duration_ms, const Str& wave_type = "square", Dec duty = 0.5, Int volume = 90) { ToneSync(freq, duration_ms, wave_type, duty, volume); }
+    inline void sweep(Dec start_freq, Dec end_freq, Int duration_ms, const Str& wave_type = "square", Dec duty = 0.5) { Sweep(start_freq, end_freq, duration_ms, wave_type, duty); }
+    inline void play_sfx(const Str& name) { PlaySfx(name); }
+    inline void sound_jump() { SoundJump(); }
+    inline void sound_coin() { SoundCoin(); }
+    inline void sound_stomp() { SoundStomp(); }
+    inline void sound_powerup() { SoundPowerup(); }
+    inline void sound_hurt() { SoundHurt(); }
+    inline void sound_bump() { SoundBump(); }
+    inline void sound_flag() { SoundFlag(); }
+    inline void sound_game_over() { SoundGameOver(); }
+    inline void play_music(const Str& melody, Int bpm = 120) { PlayMusic(melody, bpm); }
+    inline void stop_music() { StopMusic(); }
+    inline Bool has_key() { return HasKey(); }
+    inline Str get_key() { return GetKey(); }
 }
 }

@@ -16,6 +16,12 @@ namespace viss {
         inline void print_single(const T& value) {
             std::cout << value;
         }
+        inline void print_single(uint8_t value) {
+            std::cout << (int)value;
+        }
+        inline void print_single(int8_t value) {
+            std::cout << (int)value;
+        }
         inline void print_single(Bool value) {
             std::cout << (value ? "true" : "false");
         }
@@ -56,8 +62,16 @@ namespace viss {
 
         inline Str read_char() {
             #ifdef _WIN32
-            char ch = (char)_getch();
-            return Str(1, ch);
+            int ch = _getch();
+            if (ch == 0 || ch == 224) {
+                int ch2 = _getch();
+                if (ch2 == 72) return "UP";
+                if (ch2 == 80) return "DOWN";
+                if (ch2 == 75) return "LEFT";
+                if (ch2 == 77) return "RIGHT";
+                return Str(1, (char)ch2);
+            }
+            return Str(1, (char)ch);
             #else
             struct termios oldt, newt;
             tcgetattr(STDIN_FILENO, &oldt);
@@ -85,6 +99,32 @@ namespace viss {
             }
             return "";
         }
+
+        inline Bool is_key_down(int vkey) {
+            #ifdef _WIN32
+            return (GetAsyncKeyState(vkey) & 0x8000) != 0;
+            #else
+            return false;
+            #endif
+        }
+
+        inline Bool is_down(const Str& key_name) {
+            #ifdef _WIN32
+            if (key_name == "LEFT" || key_name == "a" || key_name == "A") return is_key_down(VK_LEFT) || is_key_down('A');
+            if (key_name == "RIGHT" || key_name == "d" || key_name == "D") return is_key_down(VK_RIGHT) || is_key_down('D');
+            if (key_name == "UP" || key_name == "w" || key_name == "W") return is_key_down(VK_UP) || is_key_down('W');
+            if (key_name == "DOWN" || key_name == "s" || key_name == "S") return is_key_down(VK_DOWN) || is_key_down('S');
+            if (key_name == "SPACE" || key_name == " ") return is_key_down(VK_SPACE);
+            if (key_name == "ENTER" || key_name == "\n") return is_key_down(VK_RETURN);
+            if (key_name == "ESCAPE" || key_name == "ESC") return is_key_down(VK_ESCAPE);
+            if (key_name.size() == 1) {
+                char c = (char)toupper((unsigned char)key_name[0]);
+                return is_key_down(c);
+            }
+            #endif
+            return false;
+        }
+        inline Bool is_down_q(const Str& key_name) { return is_down(key_name); }
 
         inline void write_file(const Str& path, const Str& text) {
             std::ofstream f(path);

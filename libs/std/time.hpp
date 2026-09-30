@@ -29,6 +29,12 @@ namespace viss {
         inline void sleep(Int ms) {
             std::this_thread::sleep_for(std::chrono::milliseconds(ms));
         }
+        inline void sleep_ms(Int ms) {
+            sleep(ms);
+        }
+        inline void sleep_sec(double s) {
+            sleep((Int)(s * 1000.0));
+        }
 
         inline Str format_now(const Str& fmt = "%Y-%m-%d %H:%M:%S") {
             auto now = std::chrono::system_clock::now();

@@ -1,0 +1,50 @@
+$import lib "iostream" as io
+$import lib "gui" as ui
+$import lib "time" as time
+
+!main {
+    io.println("Initializing Viss Modern GUI...")
+    ui.create("Viss Modern Studio UI - Halvik Engine", 800, 500)
+
+    @slider_val = 65.0
+    @is_checked = true
+    @user_text = "Synthwave 2026"
+    @frames = 0
+
+    io.println("Running GUI loop (100 frames auto-test)...")
+
+    !while ui.is_open() && @frames < 100 {
+        ui.poll()
+        ui.clear()
+
+        // Draw background cards
+        ui.card(20, 20, 760, 460)
+        ui.label(40, 40, "OGG COVER WATCHER VISS - STUDIO DASHBOARD", 18)
+
+        // Interactive widgets
+        ui.label(40, 80, "Watcher Status: ACTIVE (Monitoring DAW exports)", 14)
+        ui.progress_bar(40, 110, 720, 12, 0.75)
+
+        @clicked = ui.button(40, 140, 160, 36, "FORCE SCAN")
+        @clicked_cover = ui.button(220, 140, 160, 36, "SELECT COVER")
+
+        ui.label(40, 200, "Track Title:", 13)
+        ui.text_input(40, 220, 340, 36, "title_input", @user_text, "Enter track title...")
+
+        ui.slider(40, 280, 340, 30, @slider_val, 0.0, 100.0, "Video Bitrate (Mbps)")
+        ui.checkbox(40, 340, "Auto-render 4K Video for YouTube on Export", @is_checked)
+
+        // Draw preview box
+        ui.card(420, 160, 340, 240)
+        ui.label(440, 180, "Cover Artwork Preview", 14)
+        ui.draw_round_rect(440, 210, 160, 160, 8, ui.Colors.AccentCyan, false)
+        ui.draw_text(450, 280, "[ COVER ART ]", 14)
+
+        ui.update()
+        time.sleep_ms(16)
+        @frames += 1
+    }
+
+    io.println("GUI loop completed successfully with " + str(@frames) + " frames rendered!")
+    ui.close()
+}

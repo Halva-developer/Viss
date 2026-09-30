@@ -9,9 +9,18 @@ namespace viss {
         inline Int len(const Str& s) {
             return (Int)s.length();
         }
+        inline Int size(const Str& s) {
+            return len(s);
+        }
         inline Str sub(const Str& s, Int start, Int length) {
             if (start < 0 || start >= (Int)s.length()) return "";
             return s.substr(start, length);
+        }
+        inline Str substr(const Str& s, Int start, Int length) {
+            return sub(s, start, length);
+        }
+        inline Str from_int(Int v) {
+            return std::to_string(v);
         }
         inline Int find(const Str& s, const Str& subStr) {
             auto pos = s.find(subStr);
@@ -77,6 +86,16 @@ namespace viss {
         inline Str pad_right(const Str& s, Int total_len, char ch = ' ') {
             if ((Int)s.length() >= total_len) return s;
             return s + Str(total_len - s.length(), ch);
+        }
+        template<typename T>
+        inline Str from(const T& val) {
+            return viss::toStr(val);
+        }
+        inline Int to_int(const Str& s, Int def_v = 0) {
+            try { return (Int)std::stoll(s); } catch (...) { return def_v; }
+        }
+        inline double to_float(const Str& s, double def_v = 0.0) {
+            try { return std::stod(s); } catch (...) { return def_v; }
         }
     }
 }

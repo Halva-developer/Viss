@@ -28,7 +28,7 @@
     io.println("[Crypto] Random UUID v4:", @uid);
 
     // 4. JSON: Parse & Stringify
-    @raw_json = "{\"status\":\"ok\",\"code\":200,\"name\":\"Halvik\"}";
+    @raw_json = "{\"status\":\"ok\",\"code\":200,\"name\":\"Halva\"}";
     @doc = json.parse(@raw_json);
     @stat = @doc.get("status").as_str();
     @code_val = @doc.get("code").as_int();

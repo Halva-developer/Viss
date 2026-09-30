@@ -1,0 +1,574 @@
+$import lib "iostream" as io
+$import lib "retrotech" as rt
+
+!func main() {
+    // =========================================================================
+    // 1. SCREEN & COLORMASK INITIALIZATION
+    // =========================================================================
+    // Screen resolution: 28 columns x 22 rows (Classic block mode: 2 terminal spaces = 1 square tile)
+    rt.screen.create(28, 22, 0);
+
+    // Bytemask: initialize from "tetris" preset (16 colors x 3 bytes RGB = 48 bytes)
+    &colormask create | bytes, 48;
+    rt.mask.preset(&colormask, "tetris");
+    rt.mask.apply(&colormask);
+
+    // =========================================================================
+    // 2. TETROMINO SHAPES LOOKUP TABLE (7 PIECES x 4 ROTATIONS x 4 BLOCKS x 2 COORDS = 224 BYTES)
+    // =========================================================================
+    &shapes create | bytes, 224;
+    &shapes = [
+        0,1, 1,1, 2,1, 3,1,
+        2,0, 2,1, 2,2, 2,3,
+        0,2, 1,2, 2,2, 3,2,
+        1,0, 1,1, 1,2, 1,3,
+
+        0,0, 0,1, 1,1, 2,1,
+        1,0, 2,0, 1,1, 1,2,
+        0,1, 1,1, 2,1, 2,2,
+        1,0, 1,1, 0,2, 1,2,
+
+        2,0, 0,1, 1,1, 2,1,
+        1,0, 1,1, 1,2, 2,2,
+        0,1, 1,1, 2,1, 0,2,
+        0,0, 1,0, 1,1, 1,2,
+
+        1,0, 2,0, 1,1, 2,1,
+        1,0, 2,0, 1,1, 2,1,
+        1,0, 2,0, 1,1, 2,1,
+        1,0, 2,0, 1,1, 2,1,
+
+        1,0, 2,0, 0,1, 1,1,
+        1,0, 1,1, 2,1, 2,2,
+        1,1, 2,1, 0,2, 1,2,
+        0,0, 0,1, 1,1, 1,2,
+
+        1,0, 0,1, 1,1, 2,1,
+        1,0, 1,1, 2,1, 1,2,
+        0,1, 1,1, 2,1, 1,2,
+        1,0, 0,1, 1,1, 1,2,
+
+        0,0, 1,0, 1,1, 2,1,
+        2,0, 1,1, 2,1, 1,2,
+        0,1, 1,1, 1,2, 2,2,
+        1,0, 0,1, 1,1, 0,2
+    ];
+
+    // =========================================================================
+    // 3. GAME STATE & PRE-ALLOCATED SCOPED VARIABLES
+    // =========================================================================
+    // 10 wide x 20 high board buffer (each cell holds tile ID 0..7)
+    &board create | bytes, 200;
+    &board.clear();
+
+    @board_x = 2 | int;
+    @board_y = 1 | int;
+
+    @cur_piece = int.random(0, 6) | int;
+    @next_piece = int.random(0, 6) | int;
+    @cur_x = 3 | int;
+    @cur_y = 0 | int;
+    @cur_rot = 0 | int;
+
+    @score = 0 | int;
+    @total_lines = 0 | int;
+    @level = 1 | int;
+
+    @drop_timer = 0 | int;
+    @drop_interval = 14 | int;
+    @running = true | bool;
+    @game_over = false | bool;
+
+    // Loop & temporary variables (function-scoped)
+    @sidx = 0 | int;
+    @bx = 0 | int;
+    @by = 0 | int;
+    @b_idx = 0 | int;
+    @px = 0 | int;
+    @py = 0 | int;
+    @gx = 0 | int;
+    @gy = 0 | int;
+    @nx = 0 | int;
+    @ny = 0 | int;
+    @tile_val = 0 | int;
+    @is_full = false | bool;
+    @cleared_lines = 0 | int;
+    @sy = 0 | int;
+    @dst = 0 | int;
+    @src = 0 | int;
+    @can_left = false | bool;
+    @can_right = false | bool;
+    @can_down = false | bool;
+    @can_fall = false | bool;
+    @new_rot = 0 | int;
+    @test_ok = false | bool;
+    @kick_left = false | bool;
+    @kick_right = false | bool;
+    @slam_y = 0 | int;
+    @slamming = false | bool;
+    @can_step = false | bool;
+    @ghost_y = 0 | int;
+    @searching_ghost = false | bool;
+    @can_ghost_drop = false | bool;
+
+    // Startup chiptune sound
+    rt.Tone(523, 70, "square", 0.5, 60); // C5
+    rt.Tone(659, 70, "square", 0.5, 60); // E5
+    rt.Tone(784, 90, "square", 0.5, 70); // G5
+
+    // Play classic Korobeiniki Tetris theme non-blocking in background
+    rt.PlayMusic("E5:4 B4:8 C5:8 D5:4 C5:8 B4:8 A4:4 A4:8 C5:8 E5:4 D5:8 C5:8 B4:4 . B4:8 C5:8 D5:4 E5:4 C5:4 A4:4 A4:4", 124);
+
+    // =========================================================================
+    // 4. MAIN GAME LOOP
+    // =========================================================================
+    !while (@running) {
+
+        // -------------------------------------------------------------
+        // A. KEYBOARD INPUT HANDLING
+        // -------------------------------------------------------------
+        ?if (io.has_key?()) {
+            @key = io.get_key() | str;
+
+            ?if (@key == "q" or @key == "Q") {
+                @running = false;
+            }
+
+            ?if (not @game_over) {
+                // Move Left
+                ?if (@key == "a" or @key == "A" or @key == "LEFT") {
+                    @can_left = true;
+                    !for @b in 0..4 {
+                        @sidx = (@cur_piece * 32) + (@cur_rot * 8) + (@b * 2);
+                        @bx = @cur_x - 1 + &shapes[@sidx];
+                        @by = @cur_y + &shapes[@sidx + 1];
+                        ?if (@bx < 0) {
+                            @can_left = false;
+                        }
+                        ?if (@can_left and @by >= 0 and @by < 20 and @bx >= 0 and @bx < 10) {
+                            @b_idx = @by * 10 + @bx;
+                            ?if (&board[@b_idx] != 0) {
+                                @can_left = false;
+                            }
+                        }
+                    }
+                    ?if (@can_left) {
+                        @cur_x -= 1;
+                        rt.Tone(440, 15, "square", 0.5, 30);
+                    }
+                }
+
+                // Move Right
+                ?if (@key == "d" or @key == "D" or @key == "RIGHT") {
+                    @can_right = true;
+                    !for @b in 0..4 {
+                        @sidx = (@cur_piece * 32) + (@cur_rot * 8) + (@b * 2);
+                        @bx = @cur_x + 1 + &shapes[@sidx];
+                        @by = @cur_y + &shapes[@sidx + 1];
+                        ?if (@bx >= 10) {
+                            @can_right = false;
+                        }
+                        ?if (@can_right and @by >= 0 and @by < 20 and @bx >= 0 and @bx < 10) {
+                            @b_idx = @by * 10 + @bx;
+                            ?if (&board[@b_idx] != 0) {
+                                @can_right = false;
+                            }
+                        }
+                    }
+                    ?if (@can_right) {
+                        @cur_x += 1;
+                        rt.Tone(440, 15, "square", 0.5, 30);
+                    }
+                }
+
+                // Rotate Clockwise (with Wall Kicks)
+                ?if (@key == "w" or @key == "W" or @key == "UP" or @key == "x" or @key == "X") {
+                    @new_rot = (@cur_rot + 1) % 4;
+                    
+                    // Test 1: Normal position
+                    @test_ok = true;
+                    !for @b in 0..4 {
+                        @sidx = (@cur_piece * 32) + (@new_rot * 8) + (@b * 2);
+                        @bx = @cur_x + &shapes[@sidx];
+                        @by = @cur_y + &shapes[@sidx + 1];
+                        ?if (@bx < 0 or @bx >= 10 or @by >= 20) {
+                            @test_ok = false;
+                        }
+                        ?if (@test_ok and @by >= 0) {
+                            @b_idx = @by * 10 + @bx;
+                            ?if (&board[@b_idx] != 0) {
+                                @test_ok = false;
+                            }
+                        }
+                    }
+
+                    ?if (@test_ok) {
+                        @cur_rot = @new_rot;
+                        rt.Tone(620, 20, "square", 0.5, 45);
+                    } ?else {
+                        // Wall kick: try shifting Left 1
+                        @kick_left = true;
+                        !for @b in 0..4 {
+                            @sidx = (@cur_piece * 32) + (@new_rot * 8) + (@b * 2);
+                            @bx = (@cur_x - 1) + &shapes[@sidx];
+                            @by = @cur_y + &shapes[@sidx + 1];
+                            ?if (@bx < 0 or @bx >= 10 or @by >= 20) {
+                                @kick_left = false;
+                            }
+                            ?if (@kick_left and @by >= 0) {
+                                @b_idx = @by * 10 + @bx;
+                                ?if (&board[@b_idx] != 0) {
+                                    @kick_left = false;
+                                }
+                            }
+                        }
+                        ?if (@kick_left) {
+                            @cur_x -= 1;
+                            @cur_rot = @new_rot;
+                            rt.Tone(620, 20, "square", 0.5, 45);
+                        } ?else {
+                            // Wall kick: try shifting Right 1
+                            @kick_right = true;
+                            !for @b in 0..4 {
+                                @sidx = (@cur_piece * 32) + (@new_rot * 8) + (@b * 2);
+                                @bx = (@cur_x + 1) + &shapes[@sidx];
+                                @by = @cur_y + &shapes[@sidx + 1];
+                                ?if (@bx < 0 or @bx >= 10 or @by >= 20) {
+                                    @kick_right = false;
+                                }
+                                ?if (@kick_right and @by >= 0) {
+                                    @b_idx = @by * 10 + @bx;
+                                    ?if (&board[@b_idx] != 0) {
+                                        @kick_right = false;
+                                    }
+                                }
+                            }
+                            ?if (@kick_right) {
+                                @cur_x += 1;
+                                @cur_rot = @new_rot;
+                                rt.Tone(620, 20, "square", 0.5, 45);
+                            }
+                        }
+                    }
+                }
+
+                // Soft Drop
+                ?if (@key == "s" or @key == "S" or @key == "DOWN") {
+                    @can_down = true;
+                    !for @b in 0..4 {
+                        @sidx = (@cur_piece * 32) + (@cur_rot * 8) + (@b * 2);
+                        @bx = @cur_x + &shapes[@sidx];
+                        @by = @cur_y + 1 + &shapes[@sidx + 1];
+                        ?if (@by >= 20) {
+                            @can_down = false;
+                        }
+                        ?if (@can_down and @by >= 0 and @bx >= 0 and @bx < 10) {
+                            @b_idx = @by * 10 + @bx;
+                            ?if (&board[@b_idx] != 0) {
+                                @can_down = false;
+                            }
+                        }
+                    }
+                    ?if (@can_down) {
+                        @cur_y += 1;
+                        @score += 1;
+                        rt.Tone(220, 12, "square", 0.5, 30);
+                    }
+                }
+
+                // Hard Drop (Slam instantly to bottom)
+                ?if (@key == " ") {
+                    @slam_y = @cur_y;
+                    @slamming = true;
+                    !while (@slamming) {
+                        @can_step = true;
+                        !for @b in 0..4 {
+                            @sidx = (@cur_piece * 32) + (@cur_rot * 8) + (@b * 2);
+                            @bx = @cur_x + &shapes[@sidx];
+                            @by = @slam_y + 1 + &shapes[@sidx + 1];
+                            ?if (@by >= 20) {
+                                @can_step = false;
+                            }
+                            ?if (@can_step and @by >= 0 and @bx >= 0 and @bx < 10) {
+                                @b_idx = @by * 10 + @bx;
+                                ?if (&board[@b_idx] != 0) {
+                                    @can_step = false;
+                                }
+                            }
+                        }
+                        ?if (@can_step) {
+                            @slam_y += 1;
+                        } ?else {
+                            @slamming = false;
+                        }
+                    }
+                    @score += (@slam_y - @cur_y) * 2;
+                    @cur_y = @slam_y;
+                    @drop_timer = 999;
+                    rt.Tone(190, 35, "square", 0.5, 60);
+                }
+            }
+        }
+
+        // -------------------------------------------------------------
+        // B. GRAVITY & PIECE LOCKING
+        // -------------------------------------------------------------
+        ?if (not @game_over) {
+            @drop_timer += 1;
+            @drop_interval = 14 - @level;
+            ?if (@drop_interval < 2) {
+                @drop_interval = 2;
+            }
+
+            ?if (@drop_timer >= @drop_interval) {
+                @drop_timer = 0;
+
+                // Check if can move down
+                @can_fall = true;
+                !for @b in 0..4 {
+                    @sidx = (@cur_piece * 32) + (@cur_rot * 8) + (@b * 2);
+                    @bx = @cur_x + &shapes[@sidx];
+                    @by = @cur_y + 1 + &shapes[@sidx + 1];
+                    ?if (@by >= 20) {
+                        @can_fall = false;
+                    }
+                    ?if (@can_fall and @by >= 0 and @bx >= 0 and @bx < 10) {
+                        @b_idx = @by * 10 + @bx;
+                        ?if (&board[@b_idx] != 0) {
+                            @can_fall = false;
+                        }
+                    }
+                }
+
+                ?if (@can_fall) {
+                    @cur_y += 1;
+                } ?else {
+                    // Lock piece into board!
+                    !for @b in 0..4 {
+                        @sidx = (@cur_piece * 32) + (@cur_rot * 8) + (@b * 2);
+                        @bx = @cur_x + &shapes[@sidx];
+                        @by = @cur_y + &shapes[@sidx + 1];
+                        ?if (@by >= 0 and @by < 20 and @bx >= 0 and @bx < 10) {
+                            @b_idx = @by * 10 + @bx;
+                            &board[@b_idx] = @cur_piece + 1;
+                        }
+                    }
+                    rt.Tone(280, 25, "square", 0.5, 45);
+
+                    // ---------------------------------------------------------
+                    // C. LINE CLEARING & SCORING
+                    // ---------------------------------------------------------
+                    @cleared_lines = 0;
+                    !for @y in 0..20 {
+                        @is_full = true;
+                        !for @x in 0..10 {
+                            @b_idx = @y * 10 + @x;
+                            ?if (&board[@b_idx] == 0) {
+                                @is_full = false;
+                            }
+                        }
+                        ?if (@is_full) {
+                            @cleared_lines += 1;
+                            // Flash the cleared line in white-gold (Tile 12)
+                            !for @x in 0..10 {
+                                rt.screen.set(@board_x + @x, @board_y + @y, 12);
+                            }
+                            rt.screen.update();
+
+                            // Shift rows down
+                            @sy = @y;
+                            !while (@sy > 0) {
+                                !for @x in 0..10 {
+                                    @dst = @sy * 10 + @x;
+                                    @src = (@sy - 1) * 10 + @x;
+                                    &board[@dst] = &board[@src];
+                                }
+                                @sy -= 1;
+                            }
+                            !for @x in 0..10 {
+                                &board[@x] = 0;
+                            }
+                        }
+                    }
+
+                    ?if (@cleared_lines > 0) {
+                        @total_lines += @cleared_lines;
+                        @level = 1 + (@total_lines / 10);
+
+                        ?if (@cleared_lines == 1) {
+                            @score += 100 * @level;
+                            rt.Tone(784, 80, "square", 0.5, 70); // G5
+                        }
+                        ?if (@cleared_lines == 2) {
+                            @score += 300 * @level;
+                            rt.Tone(880, 90, "square", 0.5, 70); // A5
+                        }
+                        ?if (@cleared_lines == 3) {
+                            @score += 500 * @level;
+                            rt.Tone(988, 100, "square", 0.5, 75); // B5
+                        }
+                        ?if (@cleared_lines >= 4) {
+                            @score += 800 * @level;
+                            rt.PlaySfx("coin"); // TETRIS!
+                            rt.Shake(1, 2);
+                        }
+                    }
+
+                    // ---------------------------------------------------------
+                    // D. SPAWN NEXT PIECE & CHECK GAME OVER
+                    // ---------------------------------------------------------
+                    @cur_piece = @next_piece;
+                    @next_piece = int.random(0, 6) | int;
+                    @cur_x = 3;
+                    @cur_y = 0;
+                    @cur_rot = 0;
+
+                    // Check if spawn position collides
+                    !for @b in 0..4 {
+                        @sidx = (@cur_piece * 32) + (@cur_rot * 8) + (@b * 2);
+                        @bx = @cur_x + &shapes[@sidx];
+                        @by = @cur_y + &shapes[@sidx + 1];
+                        ?if (@by >= 0 and @by < 20 and @bx >= 0 and @bx < 10) {
+                            @b_idx = @by * 10 + @bx;
+                            ?if (&board[@b_idx] != 0) {
+                                @game_over = true;
+                            }
+                        }
+                    }
+
+                    ?if (@game_over) {
+                        rt.StopMusic();
+                        rt.PlaySfx("gameover");
+                    }
+                }
+            }
+        }
+
+        // -------------------------------------------------------------
+        // E. CALCULATE GHOST PIECE (LANDING SHADOW)
+        // -------------------------------------------------------------
+        @ghost_y = @cur_y;
+        ?if (not @game_over) {
+            @searching_ghost = true;
+            !while (@searching_ghost) {
+                @can_ghost_drop = true;
+                !for @b in 0..4 {
+                    @sidx = (@cur_piece * 32) + (@cur_rot * 8) + (@b * 2);
+                    @bx = @cur_x + &shapes[@sidx];
+                    @by = @ghost_y + 1 + &shapes[@sidx + 1];
+                    ?if (@by >= 20) {
+                        @can_ghost_drop = false;
+                    }
+                    ?if (@can_ghost_drop and @by >= 0 and @bx >= 0 and @bx < 10) {
+                        @b_idx = @by * 10 + @bx;
+                        ?if (&board[@b_idx] != 0) {
+                            @can_ghost_drop = false;
+                        }
+                    }
+                }
+                ?if (@can_ghost_drop) {
+                    @ghost_y += 1;
+                } ?else {
+                    @searching_ghost = false;
+                }
+            }
+        }
+
+        // -------------------------------------------------------------
+        // F. RENDER SCENE USING TILE IDs & COLORMASK
+        // -------------------------------------------------------------
+        // 1. Clear background with Sidebar Slate (Tile 13)
+        rt.screen.clear(13);
+
+        // 2. Draw 10x20 Board Background (Tile 0)
+        rt.screen.rect(@board_x, @board_y, 10, 20, 0);
+
+        // 3. Draw Steel Gray Walls & Floor (Tile 8)
+        rt.screen.rect(@board_x - 1, @board_y, 1, 20, 8);          // Left Wall
+        rt.screen.rect(@board_x + 10, @board_y, 1, 20, 8);         // Right Wall
+        rt.screen.rect(@board_x - 1, @board_y + 20, 12, 1, 8);     // Bottom Floor
+
+        // 4. Draw Locked Board Tiles (Tile IDs 1..7)
+        !for @y in 0..20 {
+            !for @x in 0..10 {
+                @b_idx = @y * 10 + @x;
+                @tile_val = &board[@b_idx] | int;
+                ?if (@tile_val > 0) {
+                    rt.screen.set(@board_x + @x, @board_y + @y, @tile_val);
+                }
+            }
+        }
+
+        // 5. Draw Ghost Piece Shadow (Tile 9)
+        ?if (not @game_over and @ghost_y != @cur_y) {
+            !for @b in 0..4 {
+                @sidx = (@cur_piece * 32) + (@cur_rot * 8) + (@b * 2);
+                @gx = @cur_x + &shapes[@sidx];
+                @gy = @ghost_y + &shapes[@sidx + 1];
+                ?if (@gy >= 0 and @gy < 20 and @gx >= 0 and @gx < 10) {
+                    rt.screen.set(@board_x + @gx, @board_y + @gy, 9);
+                }
+            }
+        }
+
+        // 6. Draw Active Falling Piece (Tile IDs 1..7)
+        ?if (not @game_over) {
+            !for @b in 0..4 {
+                @sidx = (@cur_piece * 32) + (@cur_rot * 8) + (@b * 2);
+                @px = @cur_x + &shapes[@sidx];
+                @py = @cur_y + &shapes[@sidx + 1];
+                ?if (@py >= 0 and @py < 20 and @px >= 0 and @px < 10) {
+                    rt.screen.set(@board_x + @px, @board_y + @py, @cur_piece + 1);
+                }
+            }
+        }
+
+        // 7. Draw Sidebar UI Panels
+        rt.ui.text(14, 1, "VISS TETRIS", 11, 13);
+        rt.ui.text(14, 2, "===========", 8, 13);
+
+        rt.ui.text(14, 4, "SCORE", 14, 13);
+        rt.ui.text(14, 5, i"@score", 10, 13);
+
+        rt.ui.text(14, 7, "LINES", 14, 13);
+        rt.ui.text(14, 8, i"@total_lines", 10, 13);
+
+        rt.ui.text(14, 10, "LEVEL", 14, 13);
+        rt.ui.text(14, 11, i"@level", 10, 13);
+
+        // Next Piece Preview Box (Tile 0 inner, Tile 8 border)
+        rt.ui.text(14, 13, "NEXT", 11, 13);
+        rt.screen.rect(14, 14, 6, 4, 0);
+        !for @b in 0..4 {
+            @sidx = (@next_piece * 32) + (0 * 8) + (@b * 2);
+            @nx = 15 + &shapes[@sidx];
+            @ny = 14 + &shapes[@sidx + 1];
+            rt.screen.set(@nx, @ny, @next_piece + 1);
+        }
+
+        // Controls summary
+        rt.ui.text(14, 19, "A/D: Move", 10, 13);
+        rt.ui.text(14, 20, "W:Rot S:Drop", 10, 13);
+        rt.ui.text(14, 21, "SPC:Slam Q:End", 14, 13);
+
+        // Game Over Banner Overlay
+        ?if (@game_over) {
+            rt.screen.rect(@board_x, @board_y + 8, 10, 3, 15);
+            rt.ui.text(@board_x + 1, @board_y + 9, "GAME OVER", 10, 15);
+            rt.ui.text(14, 21, "Press Q to exit", 15, 13);
+        }
+
+        // 8. Push Frame to ANSI Console
+        rt.screen.update();
+
+        // Target ~35 FPS
+        async.sleep(28);
+    }
+
+    rt.StopMusic();
+    io.println("");
+    io.println("=========================================");
+    io.println("       THANKS FOR PLAYING TETRIS!        ");
+    io.println(i"   FINAL SCORE: @score   LINES: @total_lines   ");
+    io.println("=========================================");
+}

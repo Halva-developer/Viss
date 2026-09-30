@@ -5,7 +5,7 @@
 # Viss Programming Language
 ### The High-Performance, Visually Structured Language for Everyday Development & Systems
 
-[![Version](https://img.shields.io/badge/version-v0.0.1.2-blue.svg)](https://github.com/Halva-developer/Viss)
+[![Version](https://img.shields.io/badge/version-v0.2.0%20%22Marceline%22-blue.svg)](https://github.com/Halva-developer/Viss)
 [![License](https://img.shields.io/badge/license-UniLicense-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-orange.svg)](https://github.com/Halva-developer/Viss)
 [![Standard](https://img.shields.io/badge/standard-Viss%202.0-purple.svg)](https://github.com/Halva-developer/Viss)
@@ -21,10 +21,25 @@
 Unlike traditional C-family languages, Viss introduces an iconic **Prefix Design System** (`!`, `?`, `@`, `$`) combined with strict architectural structure and clean pipeline typings (`| type`). In Viss, code is readable at a glance: actions, logical conditions, identifiers, and compiler directives are immediately distinguishable without mental fatigue.
 
 ### Core Philosophy
-* **Pure Native Speed:** Compiles directly into zero-overhead native machine code (C++17 backend). No heavy interpreter, no virtual machine warmup, no GIL.
+* **Pure Native Speed:** Compiles directly into zero-overhead native machine code (C++20 backend). No heavy interpreter, no virtual machine warmup, no GIL.
 * **Single Binary Deployment:** Produces lightweight standalone executables (1–2 MB). No runtime installations or environment configurations required for end users.
 * **Zero Boilerplate, Strict Structure:** Eliminates unstructured script chaos by enforcing clear entry points (`!func main()`) and structured entity definitions.
 * **Batteries Included via C/C++ Ecosystem:** Out-of-the-box support for modern graphics, 2D/3D audio, networking, system shell scripting, and instant interop with millions of existing C/C++ libraries.
+
+---
+
+## 🏷️ Release Codenames (The Adventure Time Scheme)
+
+Following the beloved Debian tradition with *Toy Story*, Viss codenames each official milestone after characters from the Land of Ooo (*Adventure Time*):
+
+| Version | Codename | Character | Milestone Highlights |
+| :--- | :--- | :--- | :--- |
+| `v0.0.1` | **"Finn"** | Finn the Human | The initial prototype, prefix syntax discovery, and native proof-of-concept. |
+| `v0.1.0` | **"Jake"** | Jake the Dog | Modular runtime refactor, standard libraries (`io`, `math`, `fs`, `sys`). |
+| `v0.1.2` | **"BMO"** | BMO | Retro-tech audio synthesizer, pixel screen buffer, and sound chip. |
+| `v0.2.0` | **"Marceline"** | Marceline the Vampire Queen | **Current Release:** Struct member methods, enums, `Vec2`/`Vec3` vector math, pipelines (`\|>`), Elvis (`?:`), `!defer`, and complete handbook specs. |
+
+> 🍋 **Unstable Development Branch:** Named **"Lemongrab"** (*"UNACCEPTABLE!"*) for cutting-edge nightly builds.
 
 ---
 
@@ -351,4 +366,4 @@ Viss features a complete Visual Studio Code extension located in `.vscode/extens
 
 Viss is released under the terms of the **UniLicense**. You are free to use, modify, distribute, and build commercial software with Viss without restrictions. See [LICENSE](LICENSE) for details.
 
-Developed with 💙 by **Halva-developer** & **Halvik**.
+Developed with 💙 by **Halva-developer**.

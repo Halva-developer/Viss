@@ -1,0 +1,9 @@
+$import "./mod_math.viss" as m
+$import lib "iostream" as io
+
+!main {
+    @s = m.add(15, 25);
+    @p = m.mul(7, 8);
+    io.println("sum: " + str.from(@s));
+    io.println("product: " + str.from(@p));
+}

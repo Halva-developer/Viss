@@ -3,6 +3,9 @@
 #include <fstream>
 #include <cstdio>
 #include <filesystem>
+#include <vector>
+#include <algorithm>
+#include <cstdlib>
 
 namespace viss {
     namespace fs {
@@ -127,12 +130,136 @@ namespace viss {
 
         inline List<Str> list_recursive(const Str& path) {
             List<Str> files;
-            try {
-                for (const auto& entry : std::filesystem::recursive_directory_iterator(path)) {
-                    files.add(entry.path().string());
+            std::error_code ec;
+            auto opts = std::filesystem::directory_options::skip_permission_denied;
+            std::filesystem::recursive_directory_iterator it(path, opts, ec);
+            std::filesystem::recursive_directory_iterator end;
+            if (ec) return files;
+            while (it != end) {
+                try {
+                    if (!ec) {
+                        files.add(it->path().string());
+                    }
+                } catch (...) {}
+                it.increment(ec);
+                if (ec) {
+                    ec.clear();
                 }
-            } catch (...) {}
+            }
             return files;
+        }
+
+        inline Str app_path() {
+#ifdef _WIN32
+            wchar_t buf[MAX_PATH] = {0};
+            GetModuleFileNameW(NULL, buf, MAX_PATH);
+            return std::filesystem::path(buf).string();
+#else
+            return std::filesystem::current_path().string();
+#endif
+        }
+
+        inline Str app_dir() {
+#ifdef _WIN32
+            wchar_t buf[MAX_PATH] = {0};
+            GetModuleFileNameW(NULL, buf, MAX_PATH);
+            return std::filesystem::path(buf).parent_path().string();
+#else
+            return std::filesystem::current_path().string();
+#endif
+        }
+
+        inline Str cwd() {
+            return std::filesystem::current_path().string();
+        }
+
+        inline Bool has_embedded_zip() {
+#ifdef _WIN32
+            wchar_t buf[MAX_PATH] = {0};
+            GetModuleFileNameW(NULL, buf, MAX_PATH);
+            std::ifstream file(buf, std::ios::binary | std::ios::ate);
+            if (!file.is_open()) return false;
+            std::streamsize size = file.tellg();
+            if (size < 22) return false;
+            std::streamsize search_len = std::min<std::streamsize>(size, 65536 + 22);
+            file.seekg(size - search_len);
+            std::vector<char> buffer(search_len);
+            file.read(buffer.data(), search_len);
+            for (long long i = (long long)search_len - 22; i >= 0; --i) {
+                if ((unsigned char)buffer[i] == 0x50 && (unsigned char)buffer[i+1] == 0x4B &&
+                    (unsigned char)buffer[i+2] == 0x05 && (unsigned char)buffer[i+3] == 0x06) {
+                    return true;
+                }
+            }
+#endif
+            return false;
+        }
+
+        inline Bool extract_embedded_zip(const Str& dest_dir) {
+#ifdef _WIN32
+            wchar_t buf[MAX_PATH] = {0};
+            GetModuleFileNameW(NULL, buf, MAX_PATH);
+            std::filesystem::path exe_path(buf);
+            std::ifstream file(exe_path, std::ios::binary | std::ios::ate);
+            if (!file.is_open()) return false;
+            std::streamsize size = file.tellg();
+            if (size < 22) return false;
+
+            std::streamsize search_len = std::min<std::streamsize>(size, 65536 + 22);
+            file.seekg(size - search_len);
+            std::vector<char> buffer(search_len);
+            file.read(buffer.data(), search_len);
+
+            long long eocd_pos = -1;
+            for (long long i = (long long)search_len - 22; i >= 0; --i) {
+                if ((unsigned char)buffer[i] == 0x50 && (unsigned char)buffer[i+1] == 0x4B &&
+                    (unsigned char)buffer[i+2] == 0x05 && (unsigned char)buffer[i+3] == 0x06) {
+                    eocd_pos = (size - search_len) + i;
+                    break;
+                }
+            }
+            if (eocd_pos < 0) return false;
+
+            file.seekg(eocd_pos + 12);
+            uint32_t cd_size = 0;
+            uint32_t cd_offset = 0;
+            file.read(reinterpret_cast<char*>(&cd_size), 4);
+            file.read(reinterpret_cast<char*>(&cd_offset), 4);
+
+            long long zip_start = eocd_pos - (long long)cd_size - (long long)cd_offset;
+            if (zip_start < 0 || zip_start >= size) return false;
+
+            std::filesystem::path temp_zip = std::filesystem::temp_directory_path() / "viss_installer_payload.zip";
+            std::ofstream out(temp_zip, std::ios::binary);
+            if (!out.is_open()) return false;
+
+            file.seekg(zip_start);
+            char chunk[65536];
+            std::streamsize remaining = size - zip_start;
+            while (remaining > 0) {
+                std::streamsize to_read = std::min<std::streamsize>(remaining, sizeof(chunk));
+                file.read(chunk, to_read);
+                out.write(chunk, to_read);
+                remaining -= to_read;
+            }
+            out.close();
+            file.close();
+
+            std::error_code ec;
+            std::filesystem::create_directories(dest_dir, ec);
+
+            std::string cmd = "tar -xf \"" + temp_zip.string() + "\" -C \"" + dest_dir + "\"";
+            int res = std::system(cmd.c_str());
+            if (res != 0) {
+                std::string ps = "powershell -WindowStyle Hidden -Command \"Expand-Archive -LiteralPath '" + temp_zip.string() + "' -DestinationPath '" + dest_dir + "' -Force\"";
+                res = std::system(ps.c_str());
+            }
+
+            std::filesystem::remove(temp_zip, ec);
+            return (res == 0);
+#else
+            return false;
+#endif
         }
     }
 }
