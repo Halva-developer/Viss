@@ -1,0 +1,1181 @@
+$import lib "iostream" as io
+$import lib "gui" as ui
+$import lib "time" as time
+$import lib "math" as math
+$import lib "audio" as audio
+
+// =============================================================================
+// RETRO HOLLOW KNIGHT PANTHEON BOSS RUSH
+// =============================================================================
+
+struct Particle {
+    pos: Vec2 = vec2(0.0, 0.0)
+    vel: Vec2 = vec2(0.0, 0.0)
+    life: dec = 1.0
+    max_life: dec = 1.0
+    size: dec = 3.0
+    color: int = 16777215
+}
+
+struct SlashArc {
+    pos: Vec2 = vec2(0.0, 0.0)
+    dir_x: dec = 1.0
+    dir_y: dec = 0.0
+    life: dec = 0.15
+    is_down: bool = false
+}
+
+struct Projectile {
+    pos: Vec2 = vec2(0.0, 0.0)
+    vel: Vec2 = vec2(0.0, 0.0)
+    life: dec = 3.0
+    dmg: dec = 15.0
+    size: dec = 8.0
+    is_player: bool = false
+    color: int = 16777215
+}
+
+struct Shockwave {
+    pos_x: dec = 0.0
+    pos_y: dec = 0.0
+    vel_x: dec = 0.0
+    life: dec = 1.2
+    w: dec = 24.0
+    h: dec = 36.0
+}
+
+struct Rock {
+    pos: Vec2 = vec2(0.0, 0.0)
+    vel_y: dec = 0.0
+    size: dec = 14.0
+    active: bool = true
+}
+
+struct Player {
+    pos: Vec2 = vec2(150.0, 450.0)
+    vel: Vec2 = vec2(0.0, 0.0)
+    w: dec = 24.0
+    h: dec = 38.0
+    facing: dec = 1.0
+    on_ground: bool = false
+
+    hp: int = 5
+    max_hp: int = 5
+    soul: dec = 0.0
+    max_soul: dec = 99.0
+
+    dash_timer: dec = 0.0
+    dash_cd: dec = 0.0
+    is_dashing: bool = false
+
+    attack_timer: dec = 0.0
+    attack_cd: dec = 0.0
+
+    focus_timer: dec = 0.0
+    invuln_timer: dec = 0.0
+    pogo_count: int = 0
+}
+
+struct Boss {
+    id: int = 1
+    name: str = "FALSE CHAMPION"
+    title: str = "Mace Brute of the Crossroads"
+
+    pos: Vec2 = vec2(700.0, 400.0)
+    vel: Vec2 = vec2(0.0, 0.0)
+    w: dec = 70.0
+    h: dec = 90.0
+    facing: dec = -1.0
+    on_ground: bool = true
+
+    hp: dec = 380.0
+    max_hp: dec = 380.0
+
+    state: int = 0       // 0: Idle, 1: Attack1, 2: JumpSlam, 3: Special, 4: Staggered
+    state_timer: dec = 0.0
+    attack_phase: int = 0
+
+    stagger_count: int = 0
+    stagger_timer: dec = 0.0
+    dead: bool = false
+    death_timer: dec = 0.0
+    intro_timer: dec = 60.0
+}
+
+!func spawn_particles(@parts: List<Particle>, @x: dec, @y: dec, @cnt: int, @color: int, @speed: dec) {
+    for @i in 0..@cnt {
+        @p = Particle()
+        @p.pos = vec2(@x, @y)
+        @ang = math.random_dec() * 6.28318
+        @spd = (0.5 + math.random_dec() * 0.5) * @speed
+        @p.vel = vec2(math.cos(@ang) * @spd, math.sin(@ang) * @spd)
+        @p.max_life = 0.3 + math.random_dec() * 0.4
+        @p.life = @p.max_life
+        @p.size = 2.0 + math.random_dec() * 4.0
+        @p.color = @color
+        @parts.add(@p)
+    }
+}
+
+!main {
+    @win_w = 960
+    @win_h = 580
+    ui.create("Pantheon of Hallownest - Retro Boss Rush", @win_w, @win_h)
+    !defer ui.close()
+
+    @arena_left = 70.0
+    @arena_right = 890.0
+    @arena_floor = 500.0
+    @plat_y = 370.0
+
+    @p = Player()
+    @boss = Boss()
+    @boss.id = 1
+    @boss.name = "FALSE CHAMPION"
+    @boss.title = "Mace Brute of the Forgotten Hall"
+    @boss.max_hp = 380.0
+    @boss.hp = 380.0
+    @boss.pos = vec2(720.0, 410.0)
+    @boss.w = 70.0
+    @boss.h = 90.0
+
+    @pantheon_tier = 1
+    @max_tiers = 4
+    @in_rest_bench = false
+    @pantheon_complete = false
+    @game_over = false
+
+    @particles = [] | Particle
+    @slashes = [] | SlashArc
+    @projectiles = [] | Projectile
+    @shockwaves = [] | Shockwave
+    @rocks = [] | Rock
+
+    @shake_timer = 0.0
+    @shake_mag = 0.0
+    @freeze_timer = 0.0
+
+    !while ui.is_open() {
+        ui.poll()
+
+        // 1. Screen freeze / hit-stop effect
+        ?if @freeze_timer > 0.0 {
+            @freeze_timer -= 1.0
+            time.sleep_ms(16)
+            continue
+        }
+
+        // =====================================================================
+        // RESTART / BENCH INTERACTION
+        // =====================================================================
+        ?if @game_over {
+            ?if ui.key_pressed(82) { // R key
+                @p = Player()
+                @boss = Boss()
+                @boss.id = 1
+                @boss.name = "FALSE CHAMPION"
+                @boss.title = "Mace Brute of the Forgotten Hall"
+                @boss.max_hp = 380.0
+                @boss.hp = 380.0
+                @boss.pos = vec2(720.0, 410.0)
+                @boss.w = 70.0
+                @boss.h = 90.0
+                @pantheon_tier = 1
+                @game_over = false
+                @in_rest_bench = false
+                @pantheon_complete = false
+                @projectiles.clear()
+                @shockwaves.clear()
+                @rocks.clear()
+            }
+        }
+
+        ?if @in_rest_bench {
+            // Hot spring rest area: auto heal & soul charge
+            ?if @p.hp < @p.max_hp {
+                @p.hp = @p.max_hp
+            }
+            @p.soul = @p.max_soul
+
+            // Press Space or Enter or W to challenge next boss
+            ?if ui.key_pressed(32) || ui.key_pressed(13) || ui.key_pressed(87) {
+                @in_rest_bench = false
+                @pantheon_tier += 1
+                @p.pos = vec2(150.0, 450.0)
+                @p.vel = vec2(0.0, 0.0)
+                @projectiles.clear()
+                @shockwaves.clear()
+                @rocks.clear()
+
+                ?if @pantheon_tier == 2 {
+                    @boss = Boss()
+                    @boss.id = 2
+                    @boss.name = "HORNET SENTINEL"
+                    @boss.title = "Protector of the Greenpath Needle"
+                    @boss.max_hp = 460.0
+                    @boss.hp = 460.0
+                    @boss.w = 38.0
+                    @boss.h = 58.0
+                    @boss.pos = vec2(740.0, 442.0)
+                } ?else if @pantheon_tier == 3 {
+                    @boss = Boss()
+                    @boss.id = 3
+                    @boss.name = "SOUL TYRANT"
+                    @boss.title = "Immortal Scholar of the Sanctum"
+                    @boss.max_hp = 540.0
+                    @boss.hp = 540.0
+                    @boss.w = 54.0
+                    @boss.h = 72.0
+                    @boss.pos = vec2(700.0, 240.0)
+                } ?else if @pantheon_tier == 4 {
+                    @boss = Boss()
+                    @boss.id = 4
+                    @boss.name = "PURE VESSEL"
+                    @boss.title = "Chosen Knight of the White Palace"
+                    @boss.max_hp = 700.0
+                    @boss.hp = 700.0
+                    @boss.w = 46.0
+                    @boss.h = 78.0
+                    @boss.pos = vec2(720.0, 422.0)
+                } ?else {
+                    @pantheon_complete = true
+                }
+            }
+        }
+
+        // =====================================================================
+        // PLAYER INPUT & MOVEMENT (HOLLOW KNIGHT PHYSICS)
+        // =====================================================================
+        ?if !@game_over && !@in_rest_bench && !@pantheon_complete {
+            @move_x = 0.0
+            ?if ui.key_down(65) || ui.key_down(37) { // A / Left
+                @move_x -= 1.0
+                @p.facing = -1.0
+            }
+            ?if ui.key_down(68) || ui.key_down(39) { // D / Right
+                @move_x += 1.0
+                @p.facing = 1.0
+            }
+
+            // Dash (Mothwing Cloak)
+            ?if (ui.key_pressed(75) || ui.key_pressed(67) || ui.key_pressed(16)) && @p.dash_cd <= 0.0 { // K / C / Shift
+                @p.is_dashing = true
+                @p.dash_timer = 0.16
+                @p.dash_cd = 0.65
+                @p.vel.x = @p.facing * 18.0
+                @p.vel.y = 0.0
+                audio.laser(950.0, 50)
+                spawn_particles(@particles, @p.pos.x, @p.pos.y + 16.0, 10, 14540253, 5.0)
+            }
+
+            ?if @p.is_dashing {
+                @p.dash_timer -= 0.016
+                ?if @p.dash_timer <= 0.0 {
+                    @p.is_dashing = false
+                    @p.vel.x = @p.facing * 5.0
+                }
+            } else {
+                @p.vel.x = @move_x * 7.5
+                // Gravity
+                @p.vel.y += 0.82
+                ?if @p.vel.y > 15.0 {
+                    @p.vel.y = 15.0
+                }
+            }
+
+            ?if @p.dash_cd > 0.0 {
+                @p.dash_cd -= 0.016
+            }
+            ?if @p.invuln_timer > 0.0 {
+                @p.invuln_timer -= 0.016
+            }
+
+            // Jump
+            ?if (ui.key_pressed(32) || ui.key_pressed(87) || ui.key_pressed(38)) && @p.on_ground {
+                @p.vel.y = -14.2
+                @p.on_ground = false
+                audio.laser(520.0, 45)
+                spawn_particles(@particles, @p.pos.x, @p.pos.y + @p.h, 6, 12632256, 3.0)
+            }
+
+            // Variable jump cut when releasing jump button
+            ?if (!ui.key_down(32) && !ui.key_down(87) && !ui.key_down(38)) && @p.vel.y < -5.0 {
+                @p.vel.y *= 0.65
+            }
+
+            // Apply player movement
+            @p.pos.x += @p.vel.x
+            @p.pos.y += @p.vel.y
+
+            // Floor & Platform collisions
+            @p.on_ground = false
+            ?if @p.pos.y + @p.h >= @arena_floor {
+                @p.pos.y = @arena_floor - @p.h
+                @p.vel.y = 0.0
+                @p.on_ground = true
+            }
+
+            // Left / Right floating platforms
+            ?if @p.vel.y >= 0.0 {
+                // Left platform (X: 160-320, Y: 370)
+                ?if @p.pos.x + @p.w > 160.0 && @p.pos.x < 320.0 && @p.pos.y + @p.h >= @plat_y && @p.pos.y + @p.h <= @plat_y + 16.0 {
+                    @p.pos.y = @plat_y - @p.h
+                    @p.vel.y = 0.0
+                    @p.on_ground = true
+                }
+                // Right platform (X: 640-800, Y: 370)
+                ?if @p.pos.x + @p.w > 640.0 && @p.pos.x < 800.0 && @p.pos.y + @p.h >= @plat_y && @p.pos.y + @p.h <= @plat_y + 16.0 {
+                    @p.pos.y = @plat_y - @p.h
+                    @p.vel.y = 0.0
+                    @p.on_ground = true
+                }
+            }
+
+            // Walls clamp
+            ?if @p.pos.x < @arena_left {
+                @p.pos.x = @arena_left
+            }
+            ?if @p.pos.x + @p.w > @arena_right {
+                @p.pos.x = @arena_right - @p.w
+            }
+
+            // =================================================================
+            // COMBAT: NAIL SLASH & POGO JUMP
+            // =================================================================
+            ?if @p.attack_cd > 0.0 {
+                @p.attack_cd -= 0.016
+            }
+
+            ?if (ui.key_pressed(74) || ui.key_pressed(88)) && @p.attack_cd <= 0.0 { // J / X key
+                @p.attack_cd = 0.28
+                audio.laser(820.0, 40)
+
+                @slash_dir_y = 0.0
+                @is_down_slash = false
+
+                ?if ui.key_down(83) || ui.key_down(40) { // Down + Attack (POGO)
+                    ?if !@p.on_ground {
+                        @slash_dir_y = 1.0
+                        @is_down_slash = true
+                    }
+                } ?else if ui.key_down(87) || ui.key_down(38) { // Up + Attack
+                    @slash_dir_y = -1.0
+                }
+
+                @s = SlashArc()
+                @s.pos = vec2(@p.pos.x + (@p.facing > 0.0 ? @p.w : -36.0), @p.pos.y + 6.0)
+                ?if @is_down_slash {
+                    @s.pos = vec2(@p.pos.x - 12.0, @p.pos.y + @p.h)
+                    @s.is_down = true
+                } ?else if @slash_dir_y < 0.0 {
+                    @s.pos = vec2(@p.pos.x - 12.0, @p.pos.y - 36.0)
+                }
+                @s.dir_x = @p.facing
+                @s.dir_y = @slash_dir_y
+                @s.life = 0.16
+                @slashes.add(@s)
+
+                // Hitbox detection on Boss
+                @hit_boss = false
+                @slash_box_x = @s.pos.x
+                @slash_box_y = @s.pos.y
+                @slash_box_w = 46.0
+                @slash_box_h = 36.0
+
+                ?if @slash_box_x + @slash_box_w > @boss.pos.x && @slash_box_x < @boss.pos.x + @boss.w &&
+                    @slash_box_y + @slash_box_h > @boss.pos.y && @slash_box_y < @boss.pos.y + @boss.h {
+                    @hit_boss = true
+                }
+
+                ?if @hit_boss && !@boss.dead {
+                    @boss.hp -= 22.0
+                    audio.hit()
+                    @shake_mag = 6.0
+                    @shake_timer = 0.12
+                    @freeze_timer = 2.0 // crisp HK hit-stop
+
+                    // Add Soul
+                    @p.soul += 11.0
+                    ?if @p.soul > @p.max_soul {
+                        @p.soul = @p.max_soul
+                    }
+
+                    // POGO BOUNCE!
+                    ?if @is_down_slash {
+                        @p.vel.y = -12.4
+                        @p.pogo_count += 1
+                        audio.laser(1350.0, 50)
+                        spawn_particles(@particles, @p.pos.x + @p.w / 2, @p.pos.y + @p.h, 15, 16777215, 7.0)
+                    } else {
+                        // Horizontal pushback
+                        @p.vel.x = -@p.facing * 4.0
+                    }
+
+                    spawn_particles(@particles, @boss.pos.x + @boss.w / 2, @boss.pos.y + @boss.h / 2, 12, 16753920, 6.0)
+                }
+
+                // Hitbox detection on rocks / projectiles for pogo bounce
+                for @rk in @rocks {
+                    ?if @rk.active && @is_down_slash {
+                        ?if @s.pos.x + 36.0 > @rk.pos.x - @rk.size && @s.pos.x < @rk.pos.x + @rk.size &&
+                            @s.pos.y + 36.0 > @rk.pos.y - @rk.size && @s.pos.y < @rk.pos.y + @rk.size {
+                            @rk.active = false
+                            @p.vel.y = -12.0
+                            audio.laser(1200.0, 40)
+                            spawn_particles(@particles, @rk.pos.x, @rk.pos.y, 10, 16777215, 5.0)
+                        }
+                    }
+                }
+            }
+
+            // =================================================================
+            // SPELL: VENGEFUL SPIRIT (33 SOUL)
+            // =================================================================
+            ?if (ui.key_pressed(76) || ui.key_pressed(90)) && @p.soul >= 33.0 { // L / Z key
+                @p.soul -= 33.0
+                audio.laser(380.0, 140)
+                @proj = Projectile()
+                @proj.pos = vec2(@p.pos.x + (@p.facing > 0.0 ? @p.w : -32.0), @p.pos.y + 8.0)
+                @proj.vel = vec2(@p.facing * 16.0, 0.0)
+                @proj.dmg = 55.0
+                @proj.size = 18.0
+                @proj.is_player = true
+                @proj.color = 16777215
+                @projectiles.add(@proj)
+                spawn_particles(@particles, @proj.pos.x, @proj.pos.y, 8, 14540253, 4.0)
+                @shake_mag = 4.0
+                @shake_timer = 0.1
+            }
+
+            // =================================================================
+            // FOCUS HEAL (HOLD F OR H)
+            // =================================================================
+            ?if (ui.key_down(70) || ui.key_down(72)) && @p.soul >= 33.0 && @p.hp < @p.max_hp && @p.on_ground {
+                @p.focus_timer += 0.016
+                @p.vel.x = 0.0 // stationary during focus
+                spawn_particles(@particles, @p.pos.x + @p.w / 2, @p.pos.y + @p.h / 2, 2, 16777215, 2.0)
+                ?if @p.focus_timer >= 0.85 {
+                    @p.hp += 1
+                    @p.soul -= 33.0
+                    @p.focus_timer = 0.0
+                    audio.powerup()
+                    @shake_mag = 5.0
+                    @shake_timer = 0.15
+                    spawn_particles(@particles, @p.pos.x + @p.w / 2, @p.pos.y + @p.h / 2, 25, 65535, 7.0)
+                }
+            } else {
+                @p.focus_timer = 0.0
+            }
+        }
+
+        // =====================================================================
+        // BOSS LOGIC & AI STATES
+        // =====================================================================
+        ?if !@in_rest_bench && !@pantheon_complete && !@game_over {
+            ?if @boss.hp <= 0.0 && !@boss.dead {
+                @boss.dead = true
+                @boss.death_timer = 2.0
+                audio.explosion()
+                @shake_mag = 16.0
+                @shake_timer = 0.6
+                spawn_particles(@particles, @boss.pos.x + @boss.w / 2, @boss.pos.y + @boss.h / 2, 60, 16753920, 12.0)
+            }
+
+            ?if @boss.dead {
+                @boss.death_timer -= 0.016
+                ?if @boss.death_timer <= 0.0 {
+                    @in_rest_bench = true
+                }
+            } else {
+                @boss.facing = (@p.pos.x < @boss.pos.x) ? -1.0 : 1.0
+                @boss.state_timer += 0.016
+
+                // -------------------------------------------------------------
+                // BOSS 1: FALSE CHAMPION (Crossroads Mace Brute)
+                // -------------------------------------------------------------
+                ?if @boss.id == 1 {
+                    ?if @boss.state == 0 { // IDLE / WINDUP
+                        @boss.vel.x = 0.0
+                        ?if @boss.state_timer > 1.2 {
+                            @boss.state_timer = 0.0
+                            @boss.attack_phase = (@boss.attack_phase + 1) % 3
+
+                            ?if @boss.attack_phase == 0 { // Jump slam
+                                @boss.state = 2
+                                @boss.vel.y = -14.0
+                                @boss.vel.x = @boss.facing * 6.5
+                                audio.laser(300.0, 100)
+                            } ?else if @boss.attack_phase == 1 { // Ground smash
+                                @boss.state = 1
+                            } ?else { // Tantrum rockfall
+                                @boss.state = 3
+                                audio.explosion()
+                                @shake_mag = 10.0
+                                @shake_timer = 0.3
+                                for @ri in 0..6 {
+                                    @rk = Rock()
+                                    @rk.pos = vec2(100.0 + @ri * 130.0 + (math.random_dec() * 40.0), 40.0)
+                                    @rk.vel_y = 3.0 + math.random_dec() * 3.0
+                                    @rocks.add(@rk)
+                                }
+                            }
+                        }
+                    } ?else if @boss.state == 1 { // Ground slam
+                        ?if @boss.state_timer > 0.6 {
+                            @boss.state = 0
+                            @boss.state_timer = 0.0
+                            audio.explosion()
+                            @shake_mag = 12.0
+                            @shake_timer = 0.25
+
+                            // Spawn shockwave traveling towards player
+                            @sw = Shockwave()
+                            @sw.pos_x = @boss.pos.x + (@boss.facing > 0.0 ? @boss.w : -20.0)
+                            @sw.pos_y = @arena_floor - 36.0
+                            @sw.vel_x = @boss.facing * 7.5
+                            @shockwaves.add(@sw)
+                        }
+                    } ?else if @boss.state == 2 { // Airborne Jump slam
+                        @boss.vel.y += 0.7
+                        @boss.pos.x += @boss.vel.x
+                        @boss.pos.y += @boss.vel.y
+
+                        ?if @boss.pos.y + @boss.h >= @arena_floor {
+                            @boss.pos.y = @arena_floor - @boss.h
+                            @boss.vel.y = 0.0
+                            @boss.state = 0
+                            @boss.state_timer = 0.0
+                            audio.explosion()
+                            @shake_mag = 14.0
+                            @shake_timer = 0.3
+
+                            // Left and right shockwaves on heavy landing
+                            @sw1 = Shockwave()
+                            @sw1.pos_x = @boss.pos.x - 10.0
+                            @sw1.pos_y = @arena_floor - 36.0
+                            @sw1.vel_x = -7.0
+                            @shockwaves.add(@sw1)
+
+                            @sw2 = Shockwave()
+                            @sw2.pos_x = @boss.pos.x + @boss.w + 10.0
+                            @sw2.pos_y = @arena_floor - 36.0
+                            @sw2.vel_x = 7.0
+                            @shockwaves.add(@sw2)
+                        }
+                    } ?else if @boss.state == 3 { // Tantrum recovery
+                        ?if @boss.state_timer > 1.4 {
+                            @boss.state = 0
+                            @boss.state_timer = 0.0
+                        }
+                    }
+                }
+
+                // -------------------------------------------------------------
+                // BOSS 2: HORNET SENTINEL (The Needle Protector)
+                // -------------------------------------------------------------
+                ?if @boss.id == 2 {
+                    ?if @boss.state == 0 { // Stalking / reposition
+                        @boss.vel.x = @boss.facing * 3.5
+                        @boss.pos.x += @boss.vel.x
+                        ?if @boss.state_timer > 0.9 {
+                            @boss.state_timer = 0.0
+                            @boss.attack_phase = (@boss.attack_phase + 1) % 3
+
+                            ?if @boss.attack_phase == 0 { // Needle Dash ("SHAW!")
+                                @boss.state = 1
+                                @boss.vel.x = @boss.facing * 16.0
+                                audio.laser(1200.0, 80)
+                            } ?else if @boss.attack_phase == 1 { // Jump & Dive
+                                @boss.state = 2
+                                @boss.vel.y = -15.0
+                                @boss.vel.x = @boss.facing * 6.0
+                                audio.laser(700.0, 60)
+                            } ?else { // Needle Thread Sphere
+                                @boss.state = 3
+                                audio.laser(450.0, 160)
+                            }
+                        }
+                    } ?else if @boss.state == 1 { // Horizontal Lunge
+                        @boss.pos.x += @boss.vel.x
+                        spawn_particles(@particles, @boss.pos.x + @boss.w / 2, @boss.pos.y + @boss.h / 2, 3, 16777215, 3.0)
+                        ?if @boss.state_timer > 0.45 || @boss.pos.x <= @arena_left || @boss.pos.x + @boss.w >= @arena_right {
+                            @boss.state = 0
+                            @boss.state_timer = 0.0
+                        }
+                    } ?else if @boss.state == 2 { // Aerial Dive
+                        @boss.vel.y += 0.8
+                        @boss.pos.x += @boss.vel.x
+                        @boss.pos.y += @boss.vel.y
+                        ?if @boss.pos.y + @boss.h >= @arena_floor {
+                            @boss.pos.y = @arena_floor - @boss.h
+                            @boss.vel.y = 0.0
+                            @boss.state = 0
+                            @boss.state_timer = 0.0
+                            audio.hit()
+                            @shake_mag = 8.0
+                            @shake_timer = 0.15
+                        }
+                    } ?else if @boss.state == 3 { // Thread Storm
+                        spawn_particles(@particles, @boss.pos.x + @boss.w / 2, @boss.pos.y + @boss.h / 2, 4, 16777215, 6.0)
+                        ?if @boss.state_timer > 1.2 {
+                            @boss.state = 0
+                            @boss.state_timer = 0.0
+                        }
+                    }
+                }
+
+                // -------------------------------------------------------------
+                // BOSS 3: SOUL TYRANT (Teleport & Orbs)
+                // -------------------------------------------------------------
+                ?if @boss.id == 3 {
+                    ?if @boss.state == 0 { // Hovering
+                        @boss.pos.y = 220.0 + math.sin(@boss.state_timer * 3.0) * 20.0
+                        ?if @boss.state_timer > 1.4 {
+                            @boss.state_timer = 0.0
+                            @boss.attack_phase = (@boss.attack_phase + 1) % 3
+
+                            ?if @boss.attack_phase == 0 { // Fire 2 Homing Orbs
+                                @boss.state = 1
+                                for @oi in 0..2 {
+                                    @proj = Projectile()
+                                    @proj.pos = vec2(@boss.pos.x + @boss.w / 2, @boss.pos.y + 10.0 + @oi * 24.0)
+                                    @proj.vel = vec2(@boss.facing * 7.5, (math.random_dec() - 0.5) * 4.0)
+                                    @proj.dmg = 1.0
+                                    @proj.size = 12.0
+                                    @proj.is_player = false
+                                    @proj.color = 65535
+                                    @projectiles.add(@proj)
+                                }
+                                audio.laser(550.0, 90)
+                            } ?else if @boss.attack_phase == 1 { // Desolate Slam
+                                @boss.state = 2
+                                @boss.pos.x = @p.pos.x - 10.0
+                                @boss.pos.y = 100.0
+                                @boss.vel.y = 18.0
+                                audio.laser(250.0, 120)
+                            } ?else { // Teleport to new arena position
+                                @boss.pos.x = (@p.pos.x < 480.0) ? 750.0 : 180.0
+                                @boss.pos.y = 220.0
+                                audio.laser(850.0, 60)
+                                spawn_particles(@particles, @boss.pos.x, @boss.pos.y, 25, 65535, 7.0)
+                                @boss.state = 0
+                            }
+                        }
+                    } ?else if @boss.state == 1 { // Orb recovery
+                        ?if @boss.state_timer > 0.5 {
+                            @boss.state = 0
+                            @boss.state_timer = 0.0
+                        }
+                    } ?else if @boss.state == 2 { // Slamming down
+                        @boss.pos.y += @boss.vel.y
+                        ?if @boss.pos.y + @boss.h >= @arena_floor {
+                            @boss.pos.y = @arena_floor - @boss.h
+                            @boss.state = 0
+                            @boss.state_timer = 0.0
+                            audio.explosion()
+                            @shake_mag = 15.0
+                            @shake_timer = 0.35
+
+                            // Two fast shockwaves
+                            @sw1 = Shockwave()
+                            @sw1.pos_x = @boss.pos.x - 10.0
+                            @sw1.pos_y = @arena_floor - 36.0
+                            @sw1.vel_x = -8.5
+                            @shockwaves.add(@sw1)
+
+                            @sw2 = Shockwave()
+                            @sw2.pos_x = @boss.pos.x + @boss.w + 10.0
+                            @sw2.pos_y = @arena_floor - 36.0
+                            @sw2.vel_x = 8.5
+                            @shockwaves.add(@sw2)
+                        }
+                    }
+                }
+
+                // -------------------------------------------------------------
+                // BOSS 4: PURE VESSEL (God of the Pantheon)
+                // -------------------------------------------------------------
+                ?if @boss.id == 4 {
+                    ?if @boss.state == 0 { // Stalking / Focus
+                        @boss.vel.x = @boss.facing * 4.0
+                        @boss.pos.x += @boss.vel.x
+                        ?if @boss.state_timer > 0.85 {
+                            @boss.state_timer = 0.0
+                            @boss.attack_phase = (@boss.attack_phase + 1) % 4
+
+                            ?if @boss.attack_phase == 0 { // Triple Slash Combo
+                                @boss.state = 1
+                                @boss.vel.x = @boss.facing * 14.0
+                                audio.laser(1100.0, 70)
+                            } ?else if @boss.attack_phase == 1 { // Soul Daggers Fan
+                                @boss.state = 2
+                                for @di in 0..5 {
+                                    @proj = Projectile()
+                                    @proj.pos = vec2(@boss.pos.x + @boss.w / 2, @boss.pos.y + 20.0)
+                                    @ang = (@boss.facing > 0.0 ? 0.0 : 3.14159) + (-0.5 + @di * 0.2)
+                                    @proj.vel = vec2(math.cos(@ang) * 12.0, math.sin(@ang) * 12.0)
+                                    @proj.dmg = 1.0
+                                    @proj.size = 10.0
+                                    @proj.is_player = false
+                                    @proj.color = 16777215
+                                    @projectiles.add(@proj)
+                                }
+                                audio.laser(900.0, 90)
+                            } ?else if @boss.attack_phase == 2 { // Teleport & Ground Slam
+                                @boss.pos.x = @p.pos.x - 10.0
+                                @boss.pos.y = 80.0
+                                @boss.vel.y = 20.0
+                                @boss.state = 3
+                            } ?else { // Void Tendrils Burst
+                                @boss.state = 4
+                                audio.explosion()
+                                @shake_mag = 14.0
+                                @shake_timer = 0.4
+                                for @vi in 0..4 {
+                                    @sw = Shockwave()
+                                    @sw.pos_x = 150.0 + @vi * 160.0
+                                    @sw.pos_y = @arena_floor - 60.0
+                                    @sw.vel_x = 0.0
+                                    @sw.h = 60.0
+                                    @sw.life = 1.0
+                                    @shockwaves.add(@sw)
+                                }
+                            }
+                        }
+                    } ?else if @boss.state == 1 { // Triple slash dash
+                        @boss.pos.x += @boss.vel.x
+                        spawn_particles(@particles, @boss.pos.x + @boss.w / 2, @boss.pos.y + @boss.h / 2, 4, 16777215, 4.0)
+                        ?if @boss.state_timer > 0.45 || @boss.pos.x <= @arena_left || @boss.pos.x + @boss.w >= @arena_right {
+                            @boss.state = 0
+                            @boss.state_timer = 0.0
+                        }
+                    } ?else if @boss.state == 2 { // Daggers recovery
+                        ?if @boss.state_timer > 0.4 {
+                            @boss.state = 0
+                            @boss.state_timer = 0.0
+                        }
+                    } ?else if @boss.state == 3 { // Slamming
+                        @boss.pos.y += @boss.vel.y
+                        ?if @boss.pos.y + @boss.h >= @arena_floor {
+                            @boss.pos.y = @arena_floor - @boss.h
+                            @boss.state = 0
+                            @boss.state_timer = 0.0
+                            audio.explosion()
+                            @shake_mag = 16.0
+                            @shake_timer = 0.35
+
+                            @sw1 = Shockwave()
+                            @sw1.pos_x = @boss.pos.x - 10.0
+                            @sw1.pos_y = @arena_floor - 36.0
+                            @sw1.vel_x = -9.0
+                            @shockwaves.add(@sw1)
+
+                            @sw2 = Shockwave()
+                            @sw2.pos_x = @boss.pos.x + @boss.w + 10.0
+                            @sw2.pos_y = @arena_floor - 36.0
+                            @sw2.vel_x = 9.0
+                            @shockwaves.add(@sw2)
+                        }
+                    } ?else if @boss.state == 4 { // Tendrils recovery
+                        ?if @boss.state_timer > 1.2 {
+                            @boss.state = 0
+                            @boss.state_timer = 0.0
+                        }
+                    }
+                }
+
+                // Clamp boss in arena
+                ?if @boss.pos.x < @arena_left { @boss.pos.x = @arena_left }
+                ?if @boss.pos.x + @boss.w > @arena_right { @boss.pos.x = @arena_right - @boss.w }
+
+                // Player collision damage from boss body (contact damage)
+                ?if !@p.is_dashing && @p.invuln_timer <= 0.0 {
+                    ?if @p.pos.x + @p.w > @boss.pos.x && @p.pos.x < @boss.pos.x + @boss.w &&
+                        @p.pos.y + @p.h > @boss.pos.y && @p.pos.y < @boss.pos.y + @boss.h {
+                        @p.hp -= 1
+                        @p.invuln_timer = 1.3
+                        @p.vel.x = -@boss.facing * 9.0
+                        @p.vel.y = -7.0
+                        audio.hit()
+                        @shake_mag = 12.0
+                        @shake_timer = 0.25
+                        spawn_particles(@particles, @p.pos.x + @p.w / 2, @p.pos.y + @p.h / 2, 20, 16724530, 8.0)
+
+                        ?if @p.hp <= 0 {
+                            @game_over = true
+                            audio.explosion()
+                        }
+                    }
+                }
+            }
+        }
+
+        // =====================================================================
+        // PROJECTILES & SHOCKWAVES UPDATE
+        // =====================================================================
+        for @proj in @projectiles {
+            @proj.pos.x += @proj.vel.x
+            @proj.pos.y += @proj.vel.y
+            @proj.life -= 0.016
+
+            ?if @proj.is_player {
+                // Spell hit on boss
+                ?if !@boss.dead && @proj.pos.x + @proj.size > @boss.pos.x && @proj.pos.x - @proj.size < @boss.pos.x + @boss.w &&
+                    @proj.pos.y + @proj.size > @boss.pos.y && @proj.pos.y - @proj.size < @boss.pos.y + @boss.h {
+                    @boss.hp -= @proj.dmg
+                    @proj.life = 0.0 // despawn
+                    audio.hit()
+                    @shake_mag = 8.0
+                    @shake_timer = 0.15
+                    spawn_particles(@particles, @proj.pos.x, @proj.pos.y, 16, 16777215, 7.0)
+                }
+            } else {
+                // Enemy projectile hit on player
+                ?if !@p.is_dashing && @p.invuln_timer <= 0.0 {
+                    ?if @proj.pos.x + @proj.size > @p.pos.x && @proj.pos.x - @proj.size < @p.pos.x + @p.w &&
+                        @proj.pos.y + @proj.size > @p.pos.y && @proj.pos.y - @proj.size < @p.pos.y + @p.h {
+                        @p.hp -= 1
+                        @proj.life = 0.0
+                        @p.invuln_timer = 1.3
+                        @p.vel.y = -6.0
+                        audio.hit()
+                        @shake_mag = 10.0
+                        @shake_timer = 0.2
+                        spawn_particles(@particles, @p.pos.x, @p.pos.y, 16, 16724530, 6.0)
+
+                        ?if @p.hp <= 0 {
+                            @game_over = true
+                            audio.explosion()
+                        }
+                    }
+                }
+            }
+        }
+        @projectiles.retain(|pr| pr.life > 0.0 && pr.pos.x >= 0.0 && pr.pos.x <= 960.0)
+
+        // Shockwaves
+        for @sw in @shockwaves {
+            @sw.pos_x += @sw.vel_x
+            @sw.life -= 0.016
+
+            ?if !@p.is_dashing && @p.invuln_timer <= 0.0 {
+                ?if @p.pos.x + @p.w > @sw.pos_x && @p.pos.x < @sw.pos_x + @sw.w &&
+                    @p.pos.y + @p.h > @sw.pos_y && @p.pos.y < @sw.pos_y + @sw.h {
+                    @p.hp -= 1
+                    @p.invuln_timer = 1.3
+                    @p.vel.y = -7.0
+                    audio.hit()
+                    @shake_mag = 12.0
+                    @shake_timer = 0.25
+                    spawn_particles(@particles, @p.pos.x, @p.pos.y, 16, 16724530, 6.0)
+
+                    ?if @p.hp <= 0 {
+                        @game_over = true
+                        audio.explosion()
+                    }
+                }
+            }
+        }
+        @shockwaves.retain(|s| s.life > 0.0 && s.pos_x >= 50.0 && s.pos_x <= 910.0)
+
+        // Falling rocks
+        for @rk in @rocks {
+            ?if @rk.active {
+                @rk.pos.y += @rk.vel_y
+                ?if @rk.pos.y >= @arena_floor {
+                    @rk.active = false
+                    audio.hit()
+                    spawn_particles(@particles, @rk.pos.x, @arena_floor, 8, 8947848, 4.0)
+                }
+
+                ?if !@p.is_dashing && @p.invuln_timer <= 0.0 {
+                    ?if @p.pos.x + @p.w > @rk.pos.x - @rk.size && @p.pos.x < @rk.pos.x + @rk.size &&
+                        @p.pos.y + @p.h > @rk.pos.y - @rk.size && @p.pos.y < @rk.pos.y + @rk.size {
+                        @rk.active = false
+                        @p.hp -= 1
+                        @p.invuln_timer = 1.3
+                        @p.vel.y = -6.0
+                        audio.hit()
+                        @shake_mag = 10.0
+                        @shake_timer = 0.2
+                        spawn_particles(@particles, @p.pos.x, @p.pos.y, 16, 16724530, 6.0)
+
+                        ?if @p.hp <= 0 {
+                            @game_over = true
+                            audio.explosion()
+                        }
+                    }
+                }
+            }
+        }
+        @rocks.retain(|r| r.active)
+
+        // Slashes life
+        for @sl in @slashes {
+            @sl.life -= 0.016
+        }
+        @slashes.retain(|sl| sl.life > 0.0)
+
+        // Particles
+        for @pt in @particles {
+            @pt.pos.x += @pt.vel.x
+            @pt.pos.y += @pt.vel.y
+            @pt.life -= 0.016
+        }
+        @particles.retain(|pt| pt.life > 0.0)
+
+        // Screen shake decay
+        @off_x = 0.0
+        @off_y = 0.0
+        ?if @shake_timer > 0.0 {
+            @shake_timer -= 0.016
+            @off_x = (math.random_dec() - 0.5) * @shake_mag
+            @off_y = (math.random_dec() - 0.5) * @shake_mag
+        }
+
+        // =====================================================================
+        // RENDERING (RETRO HOLLOW KNIGHT GOTHIC AESTHETIC)
+        // =====================================================================
+        ui.clear(ui.Color.rgb(12, 14, 22))
+
+        // Background Gothic Hall Columns & Arches
+        for @ci in 0..7 {
+            @col_x = int(60 + @ci * 140 + @off_x * 0.3)
+            ui.draw_rect(@col_x, 40, 24, int(@arena_floor - 40), ui.Color.rgb(18, 22, 34), true)
+            ui.draw_round_rect(@col_x - 6, 40, 36, 14, 3, ui.Color.rgb(26, 32, 48), true)
+        }
+
+        // Background Soul Mist
+        ui.draw_line(int(@arena_left), int(@arena_floor - 2), int(@arena_right), int(@arena_floor - 2), ui.Color.rgba(70, 100, 140, 60), 4)
+
+        // Floating Platforms
+        ui.draw_round_rect(int(160 + @off_x), int(@plat_y + @off_y), 160, 14, 4, ui.Color.rgb(32, 40, 58), true, ui.Color.rgb(70, 90, 130), 2)
+        ui.draw_round_rect(int(640 + @off_x), int(@plat_y + @off_y), 160, 14, 4, ui.Color.rgb(32, 40, 58), true, ui.Color.rgb(70, 90, 130), 2)
+
+        // Arena Boundaries (Stone Pillars & Spikes)
+        ui.draw_rect(0, 0, int(@arena_left), @win_h, ui.Color.rgb(15, 18, 28), true)
+        ui.draw_rect(int(@arena_right), 0, int(@win_w - @arena_right), @win_h, ui.Color.rgb(15, 18, 28), true)
+        ui.draw_rect(0, int(@arena_floor), @win_w, int(@win_h - @arena_floor), ui.Color.rgb(10, 12, 18), true)
+        ui.draw_line(int(@arena_left), int(@arena_floor), int(@arena_right), int(@arena_floor), ui.Color.rgb(90, 110, 160), 3)
+
+        // Shockwaves render
+        for @sw in @shockwaves {
+            @sw_color = ui.Color.rgb(240, 245, 255)
+            ui.draw_round_rect(int(@sw.pos_x + @off_x), int(@sw.pos_y + @off_y), int(@sw.w), int(@sw.h), 4, @sw_color, true)
+            ui.draw_line(int(@sw.pos_x + @off_x), int(@sw.pos_y + @sw.h + @off_y), int(@sw.pos_x + @sw.w + @off_x), int(@sw.pos_y + @sw.h + @off_y), ui.Color.rgb(100, 180, 255), 3)
+        }
+
+        // Rocks render
+        for @rk in @rocks {
+            ui.draw_circle(int(@rk.pos.x + @off_x), int(@rk.pos.y + @off_y), int(@rk.size), ui.Color.rgb(65, 75, 95), true)
+            ui.draw_circle(int(@rk.pos.x + @off_x), int(@rk.pos.y + @off_y), int(@rk.size - 3.0), ui.Color.rgb(110, 125, 150), true)
+        }
+
+        // Projectiles render (Vengeful Spirit & Soul Orbs)
+        for @pr in @projectiles {
+            ?if @pr.is_player {
+                // Bright white-cyan Soul Shade projectile
+                ui.draw_circle(int(@pr.pos.x + @off_x), int(@pr.pos.y + @off_y), int(@pr.size), ui.Color.rgb(220, 245, 255), true)
+                ui.draw_circle(int(@pr.pos.x - @pr.vel.x * 0.8 + @off_x), int(@pr.pos.y + @off_y), int(@pr.size * 0.7), ui.Color.rgba(100, 200, 255, 180), true)
+                ui.draw_circle(int(@pr.pos.x - @pr.vel.x * 1.6 + @off_x), int(@pr.pos.y + @off_y), int(@pr.size * 0.4), ui.Color.rgba(40, 80, 160, 100), true)
+            } else {
+                // Enemy glowing soul orb / dagger
+                ui.draw_circle(int(@pr.pos.x + @off_x), int(@pr.pos.y + @off_y), int(@pr.size), ui.Color.rgb(255, 230, 120), true)
+                ui.draw_circle(int(@pr.pos.x + @off_x), int(@pr.pos.y + @off_y), int(@pr.size - 2.0), ui.Color.rgb(255, 255, 240), true)
+            }
+        }
+
+        // Particles render
+        for @pt in @particles {
+            @alpha = int((@pt.life / @pt.max_life) * 255.0)
+            ?if @alpha > 255 { @alpha = 255 }
+            ?if @alpha < 10 { @alpha = 10 }
+            ui.draw_circle(int(@pt.pos.x + @off_x), int(@pt.pos.y + @off_y), int(@pt.size), ui.Color.rgb(230, 240, 255), true)
+        }
+
+        // =====================================================================
+        // BOSS RENDER
+        // =====================================================================
+        ?if !@in_rest_bench && !@pantheon_complete {
+            @bx = int(@boss.pos.x + @off_x)
+            @by = int(@boss.pos.y + @off_y)
+            @bw = int(@boss.w)
+            @bh = int(@boss.h)
+
+            ?if @boss.dead {
+                // Dying dissipation
+                ui.draw_round_rect(@bx, @by, @bw, @bh, 8, ui.Color.rgba(120, 140, 180, 120), true)
+            } else {
+                ?if @boss.id == 1 { // False Champion (Armored Mace Giant)
+                    ui.draw_round_rect(@bx, @by, @bw, @bh, 12, ui.Color.rgb(55, 65, 80), true, ui.Color.rgb(140, 160, 190), 3)
+                    // Glowing Red Eyes under helmet
+                    @eye_x = (@boss.facing > 0.0) ? @bx + @bw - 18 : @bx + 10
+                    ui.draw_circle(@eye_x, @by + 24, 4, ui.Color.rgb(255, 40, 40), true)
+                    // Giant Iron Mace
+                    @mace_x = (@boss.facing > 0.0) ? @bx + @bw + 12 : @bx - 26
+                    ui.draw_circle(@mace_x, @by + @bh - 20, 18, ui.Color.rgb(40, 45, 55), true)
+                    ui.draw_line(@bx + @bw / 2, @by + 30, @mace_x, @by + @bh - 20, ui.Color.rgb(90, 100, 120), 5)
+                } ?else if @boss.id == 2 { // Hornet Sentinel
+                    // Red cloak body
+                    ui.draw_round_rect(@bx, @by + 16, @bw, @bh - 16, 10, ui.Color.rgb(180, 30, 45), true, ui.Color.rgb(220, 50, 70), 2)
+                    // White mask / horns
+                    ui.draw_round_rect(@bx + 4, @by, @bw - 8, 24, 8, ui.Color.rgb(245, 245, 250), true)
+                    ui.draw_circle((@boss.facing > 0.0 ? @bx + @bw - 10 : @bx + 10), @by + 12, 3, ui.Color.rgb(10, 10, 15), true)
+                    // Needle blade
+                    @needle_end_x = (@boss.facing > 0.0) ? @bx + @bw + 32 : @bx - 32
+                    ui.draw_line(@bx + @bw / 2, @by + 26, @needle_end_x, @by + 26, ui.Color.rgb(230, 235, 255), 4)
+                } ?else if @boss.id == 3 { // Soul Tyrant
+                    // Floating mystical robes
+                    ui.draw_round_rect(@bx, @by, @bw, @bh, 14, ui.Color.rgb(35, 45, 90), true, ui.Color.rgb(80, 130, 240), 2)
+                    // Soul crown / aura
+                    ui.draw_circle(@bx + @bw / 2, @by + 14, 12, ui.Color.rgb(220, 240, 255), true)
+                    ui.draw_circle(@bx + @bw / 2, @by + 14, 5, ui.Color.rgb(10, 20, 40), true)
+                } ?else if @boss.id == 4 { // Pure Vessel
+                    // White Palace Cloak & Armor
+                    ui.draw_round_rect(@bx, @by + 18, @bw, @bh - 18, 8, ui.Color.rgb(230, 235, 245), true, ui.Color.rgb(140, 150, 175), 2)
+                    // Grand Horns Mask
+                    ui.draw_round_rect(@bx + 4, @by, @bw - 8, 26, 6, ui.Color.rgb(250, 250, 255), true)
+                    ui.draw_circle((@boss.facing > 0.0 ? @bx + @bw - 12 : @bx + 12), @by + 14, 3, ui.Color.rgb(10, 15, 25), true)
+                    // Pure Nail
+                    @nail_x = (@boss.facing > 0.0) ? @bx + @bw + 24 : @bx - 24
+                    ui.draw_line(@bx + @bw / 2, @by + 30, @nail_x, @by + 10, ui.Color.rgb(255, 255, 255), 4)
+                }
+            }
+
+            // Boss Health Bar (Bottom Center)
+            @bar_w = 460
+            @bar_h = 14
+            @bar_x = int((@win_w - @bar_w) / 2)
+            @bar_y = int(@win_h - 45)
+            ui.draw_round_rect(@bar_x - 3, @bar_y - 3, @bar_w + 6, @bar_h + 6, 4, ui.Color.rgb(20, 24, 36), true, ui.Color.rgb(80, 100, 140), 2)
+
+            @hp_ratio = @boss.hp / @boss.max_hp
+            ?if @hp_ratio < 0.0 { @hp_ratio = 0.0 }
+            @fill_w = int(@bar_w * @hp_ratio)
+            ui.draw_round_rect(@bar_x, @bar_y, @fill_w, @bar_h, 2, ui.Color.rgb(240, 245, 255), true)
+
+            // Boss Title
+            ui.draw_text(int(@win_w / 2 - 120), @bar_y - 24, @boss.name, ui.Color.rgb(245, 245, 255), 15, "Segoe UI", true)
+            ui.draw_text(int(@win_w / 2 - 110), @bar_y + 18, @boss.title, ui.Color.rgb(130, 150, 185), 11, "Segoe UI", false)
+        }
+
+        // =====================================================================
+        // PLAYER RENDER (THE KNIGHT)
+        // =====================================================================
+        ?if !@game_over {
+            @px = int(@p.pos.x + @off_x)
+            @py = int(@p.pos.y + @off_y)
+
+            // Blink when invulnerable
+            @draw_player = true
+            ?if @p.invuln_timer > 0.0 {
+                @flicker = int(@p.invuln_timer * 30.0) % 2
+                ?if @flicker == 0 { @draw_player = false }
+            }
+
+            ?if @draw_player {
+                // Ghost Trail when dashing
+                ?if @p.is_dashing {
+                    ui.draw_round_rect(@px - int(@p.facing * 16), @py, int(@p.w), int(@p.h), 6, ui.Color.rgba(140, 160, 200, 80), true)
+                }
+
+                // Focus Aura (Charging healing orb)
+                ?if @p.focus_timer > 0.0 {
+                    @aura_rad = int(24.0 + @p.focus_timer * 20.0)
+                    ui.draw_circle(@px + int(@p.w / 2), @py + int(@p.h / 2), @aura_rad, ui.Color.rgba(255, 255, 255, 80), false)
+                }
+
+                // Dark Cloak body
+                ui.draw_round_rect(@px, @py + 14, int(@p.w), int(@p.h - 14), 6, ui.Color.rgb(30, 36, 50), true, ui.Color.rgb(55, 65, 85), 1)
+
+                // White Mask
+                ui.draw_round_rect(@px + 2, @py, int(@p.w - 4), 20, 8, ui.Color.rgb(245, 248, 255), true)
+
+                // Large Black Bug Eyes
+                @eye_x = (@p.facing > 0.0) ? @px + 14 : @px + 4
+                ui.draw_circle(@eye_x, @py + 10, 3, ui.Color.rgb(10, 12, 18), true)
+
+                // Nail weapon rendering
+                @nail_x = (@p.facing > 0.0) ? @px + int(@p.w) + 12 : @px - 12
+                ui.draw_line(@px + int(@p.w / 2), @py + 18, @nail_x, @py + 18, ui.Color.rgb(210, 225, 245), 3)
+            }
+        }
+
+        // Slash Arcs (White Nail Swipe)
+        for @sl in @slashes {
+            @sx = int(@sl.pos.x + @off_x)
+            @sy = int(@sl.pos.y + @off_y)
+            ?if @sl.is_down {
+                ui.draw_line(@sx, @sy, @sx + 40, @sy + 12, ui.Color.rgb(255, 255, 255), 4)
+                ui.draw_line(@sx, @sy + 2, @sx + 40, @sy + 14, ui.Color.rgba(140, 200, 255, 180), 2)
+            } else {
+                ui.draw_line(@sx, @sy, @sx + int(@sl.dir_x * 42), @sy + int(@sl.dir_y * 30), ui.Color.rgb(255, 255, 255), 4)
+                ui.draw_line(@sx, @sy - 2, @sx + int(@sl.dir_x * 42), @sy + int(@sl.dir_y * 30) - 2, ui.Color.rgba(140, 200, 255, 180), 2)
+            }
+        }
+
+        // =====================================================================
+        // HUD: MASKS & SOUL VESSEL (HOLLOW KNIGHT ICONIC STYLE)
+        // =====================================================================
+        // Soul Vessel (Top-Left Circle)
+        ui.draw_circle(50, 48, 24, ui.Color.rgb(25, 30, 45), true)
+        ui.draw_circle(50, 48, 24, ui.Color.rgb(80, 100, 140), false)
+        @soul_ratio = @p.soul / @p.max_soul
+        ?if @soul_ratio > 0.0 {
+            @soul_h = int(40.0 * @soul_ratio)
+            ui.draw_circle(50, 48, int(20.0 * @soul_ratio), ui.Color.rgb(240, 245, 255), true)
+        }
+
+        // Masks (Health white shields)
+        for @mi in 0..@p.max_hp {
+            @mx = 88 + @mi * 28
+            ?if @mi < @p.hp {
+                // Full Mask
+                ui.draw_round_rect(@mx, 38, 20, 22, 6, ui.Color.rgb(245, 248, 255), true, ui.Color.rgb(100, 120, 160), 2)
+                ui.draw_circle(@mx + 6, 46, 2, ui.Color.rgb(20, 25, 35), true)
+                ui.draw_circle(@mx + 14, 46, 2, ui.Color.rgb(20, 25, 35), true)
+            } else {
+                // Broken Mask
+                ui.draw_round_rect(@mx, 38, 20, 22, 6, ui.Color.rgb(35, 42, 58), true, ui.Color.rgb(65, 75, 95), 1)
+            }
+        }
+
+        // Top-Right: Pantheon Tier Info
+        ui.draw_text(@win_w - 240, 36, i"PANTHEON TIER: {@pantheon_tier} / {@max_tiers}", ui.Color.rgb(230, 235, 245), 13, "Segoe UI", true)
+        ui.draw_text(@win_w - 240, 56, i"Pogo Combo: {@p.pogo_count}", ui.Color.rgb(130, 150, 185), 11, "Segoe UI", false)
+
+        // Rest Bench Screen between Bosses
+        ?if @in_rest_bench && !@pantheon_complete {
+            ui.draw_rect(int(@win_w / 2 - 240), 160, 480, 160, ui.Color.rgba(16, 20, 32, 230), true)
+            ui.draw_round_rect(int(@win_w / 2 - 240), 160, 480, 160, 8, ui.Color.rgba(16, 20, 32, 0), false, ui.Color.rgb(100, 140, 200), 2)
+            ui.draw_text(int(@win_w / 2 - 130), 185, "GODHOME REST BENCH", ui.Color.rgb(255, 255, 255), 18, "Segoe UI", true)
+            ui.draw_text(int(@win_w / 2 - 170), 220, "Hot Spring bath has fully restored your Masks & Soul!", ui.Color.rgb(140, 200, 255), 12, "Segoe UI", false)
+            ui.draw_text(int(@win_w / 2 - 140), 260, "[ Press SPACE to challenge next Boss ]", ui.Color.rgb(255, 230, 120), 13, "Segoe UI", true)
+        }
+
+        // Pantheon Complete Screen
+        ?if @pantheon_complete {
+            ui.draw_rect(int(@win_w / 2 - 260), 150, 520, 180, ui.Color.rgba(12, 16, 28, 240), true)
+            ui.draw_round_rect(int(@win_w / 2 - 260), 150, 520, 180, 8, ui.Color.rgba(12, 16, 28, 0), false, ui.Color.rgb(255, 215, 0), 3)
+            ui.draw_text(int(@win_w / 2 - 150), 175, "PANTHEON CONQUERED!", ui.Color.rgb(255, 215, 0), 20, "Segoe UI", true)
+            ui.draw_text(int(@win_w / 2 - 175), 215, "You have ascended and mastered all 4 Pantheon Bosses!", ui.Color.rgb(220, 235, 255), 12, "Segoe UI", false)
+            ui.draw_text(int(@win_w / 2 - 110), 250, i"Total Pogo Bounces: {@p.pogo_count}", ui.Color.rgb(160, 200, 255), 13, "Segoe UI", true)
+            ui.draw_text(int(@win_w / 2 - 120), 285, "[ Press R to Restart Pantheon ]", ui.Color.rgb(240, 240, 240), 12, "Segoe UI", false)
+        }
+
+        // Game Over Screen
+        ?if @game_over {
+            ui.draw_rect(int(@win_w / 2 - 200), 170, 400, 140, ui.Color.rgba(20, 10, 15, 235), true)
+            ui.draw_round_rect(int(@win_w / 2 - 200), 170, 400, 140, 8, ui.Color.rgba(20, 10, 15, 0), false, ui.Color.rgb(200, 50, 60), 2)
+            ui.draw_text(int(@win_w / 2 - 75), 195, "DEFEATED", ui.Color.rgb(255, 60, 70), 22, "Segoe UI", true)
+            ui.draw_text(int(@win_w / 2 - 110), 235, "Your Shade lingers in Hallownest...", ui.Color.rgb(180, 170, 180), 11, "Segoe UI", false)
+            ui.draw_text(int(@win_w / 2 - 100), 265, "[ Press R to Retry Pantheon ]", ui.Color.rgb(240, 240, 240), 12, "Segoe UI", true)
+        }
+
+        // Bottom Controls Guide
+        ui.draw_text(20, @win_h - 18, "[A/D]: Move | [Space/W]: Jump | [J/X]: Nail Slash | [Down+J]: POGO | [K/Shift]: Dash | [L/Z]: Spell | [Hold F]: Heal", ui.Color.rgb(110, 130, 160), 10, "Segoe UI", false)
+
+        ui.update()
+        time.sleep_ms(16) // ~60 FPS
+    }
+}

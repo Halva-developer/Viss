@@ -479,6 +479,13 @@ namespace audio {
     inline void sfx(const std::string& effect_name) {
         getEngine().sfx(effect_name);
     }
+    inline void laser(double freq = 650.0, int dur_ms = 120) { getEngine().sfx("laser"); }
+    inline void hit() { getEngine().sfx("hit"); }
+    inline void explosion() { getEngine().sfx("explosion"); }
+    inline void powerup() { getEngine().sfx("powerup"); }
+    inline void gem() { getEngine().sfx("gem"); }
+    inline void jump() { getEngine().sfx("jump"); }
+    inline void dash() { getEngine().sfx("dash"); }
 
 #ifdef _WIN32
     inline bool play_file(const std::string& path) {
