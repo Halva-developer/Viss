@@ -12,6 +12,8 @@
 #include <thread>
 #include <algorithm>
 #include <filesystem>
+#include <atomic>
+#include <mutex>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -200,7 +202,22 @@ inline int run_process_silent(const std::string& cmd) {
         ok = CreateProcessW(NULL, &wcmd2[0], NULL, NULL, FALSE, 0x08000000, NULL, NULL, &si, &pi);
         if (!ok) return -1;
     }
-    WaitForSingleObject(pi.hProcess, INFINITE);
+    while (true) {
+        DWORD wait_res = MsgWaitForMultipleObjects(1, &pi.hProcess, FALSE, 50, QS_ALLINPUT);
+        if (wait_res == WAIT_OBJECT_0) {
+            break;
+        } else if (wait_res == WAIT_OBJECT_0 + 1) {
+            MSG msg;
+            while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        } else if (wait_res == WAIT_TIMEOUT) {
+            // continue waiting
+        } else {
+            break;
+        }
+    }
     DWORD exit_code = 0;
     GetExitCodeProcess(pi.hProcess, &exit_code);
     CloseHandle(pi.hProcess);
@@ -936,6 +953,336 @@ inline bool render_video(const std::string& audio_path, const std::string& cover
     }
 
     return (res == 0 && fs::exists(out_mp4_path) && fs::file_size(out_mp4_path) > 1000);
+}
+
+// =========================================================================
+// Asynchronous Non-Blocking Video Rendering Engine
+// =========================================================================
+struct AsyncVideoRenderState {
+    std::mutex mtx;
+    std::atomic<bool> is_running{false};
+    std::atomic<bool> is_done{false};
+    std::atomic<bool> is_success{false};
+    std::atomic<int> progress_pct{0};
+    std::string current_audio;
+    std::string current_output;
+    std::string speed;
+    std::string info_text;
+    std::string error_text;
+    std::string progress_file;
+    double total_duration = 0.0;
+#ifdef _WIN32
+    HANDLE hProcess = NULL;
+#endif
+};
+
+inline AsyncVideoRenderState& get_async_render_state() {
+    static AsyncVideoRenderState state;
+    return state;
+}
+
+inline void update_progress_from_file(AsyncVideoRenderState& state) {
+    if (state.progress_file.empty()) return;
+#ifdef _WIN32
+    int sz = MultiByteToWideChar(CP_UTF8, 0, state.progress_file.data(), (int)state.progress_file.size(), NULL, 0);
+    std::wstring wpath(sz, 0);
+    MultiByteToWideChar(CP_UTF8, 0, state.progress_file.data(), (int)state.progress_file.size(), &wpath[0], sz);
+
+    HANDLE hFile = CreateFileW(wpath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return;
+
+    DWORD fSize = GetFileSize(hFile, NULL);
+    if (fSize == 0 || fSize == INVALID_FILE_SIZE) {
+        CloseHandle(hFile);
+        return;
+    }
+
+    DWORD toRead = (fSize > 4096) ? 4096 : fSize;
+    SetFilePointer(hFile, (fSize > 4096) ? (fSize - 4096) : 0, NULL, FILE_BEGIN);
+
+    std::string buf(toRead, '\0');
+    DWORD bytesRead = 0;
+    if (ReadFile(hFile, &buf[0], toRead, &bytesRead, NULL) && bytesRead > 0) {
+        buf.resize(bytesRead);
+        std::stringstream ss(buf);
+        std::string line;
+        double current_sec = 0.0;
+        std::string speed_str = "";
+        while (std::getline(ss, line)) {
+            while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+            if (line.rfind("out_time_us=", 0) == 0) {
+                try {
+                    long long us = std::stoll(line.substr(12));
+                    current_sec = (double)us / 1000000.0;
+                } catch (...) {}
+            } else if (line.rfind("out_time_ms=", 0) == 0) {
+                try {
+                    long long ms = std::stoll(line.substr(12));
+                    current_sec = (double)ms / 1000000.0;
+                } catch (...) {}
+            } else if (line.rfind("speed=", 0) == 0) {
+                speed_str = line.substr(6);
+                while (!speed_str.empty() && speed_str.front() == ' ') speed_str.erase(speed_str.begin());
+            }
+        }
+        if (state.total_duration > 0.05) {
+            int pct = (int)((current_sec / state.total_duration) * 100.0);
+            if (pct < 0) pct = 0;
+            if (pct > 99) pct = 99;
+            state.progress_pct.store(pct);
+            std::lock_guard<std::mutex> lk(state.mtx);
+            if (!speed_str.empty()) {
+                state.speed = speed_str;
+                state.info_text = std::to_string(pct) + "% (" + speed_str + ")";
+            } else {
+                state.info_text = std::to_string(pct) + "%";
+            }
+        }
+    }
+    CloseHandle(hFile);
+#endif
+}
+
+inline bool start_render_video(const std::string& audio_path, const std::string& cover_path, const std::string& out_mp4_path, bool use_blur_bg = true, bool use_waveform = false) {
+    auto& state = get_async_render_state();
+    if (state.is_running.load()) {
+        return false;
+    }
+
+    if (!fs::exists(audio_path)) {
+        std::lock_guard<std::mutex> lk(state.mtx);
+        state.error_text = "Audio file not found: " + audio_path;
+        state.is_done.store(true);
+        state.is_success.store(false);
+        return false;
+    }
+
+    std::string ffmpeg = find_ffmpeg();
+    if (ffmpeg.empty()) {
+        std::lock_guard<std::mutex> lk(state.mtx);
+        state.error_text = "FFmpeg binary not found";
+        state.is_done.store(true);
+        state.is_success.store(false);
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lk(state.mtx);
+        state.current_audio = audio_path;
+        state.current_output = out_mp4_path;
+        state.error_text = "";
+        state.speed = "";
+        state.info_text = "0%";
+        state.total_duration = get_duration(audio_path);
+        state.progress_pct.store(0);
+        state.is_done.store(false);
+        state.is_success.store(false);
+        state.is_running.store(true);
+
+        fs::path temp_dir = fs::temp_directory_path();
+        static std::atomic<uint64_t> s_counter{1};
+#ifdef _WIN32
+        DWORD pid = GetCurrentProcessId();
+#else
+        uint32_t pid = 1;
+#endif
+        state.progress_file = (temp_dir / ("viss_prog_" + std::to_string(pid) + "_" + std::to_string(s_counter++) + ".txt")).string();
+        if (fs::exists(state.progress_file)) {
+            std::error_code ec;
+            fs::remove(state.progress_file, ec);
+        }
+    }
+
+    std::thread([audio_path, cover_path, out_mp4_path, use_blur_bg, use_waveform, ffmpeg]() {
+        auto& st = get_async_render_state();
+
+        std::string actual_cover = cover_path;
+        fs::path temp_cover;
+        if (!fs::exists(actual_cover)) {
+            temp_cover = fs::path(audio_path).string() + ".extracted_cov.jpg";
+            if (extract_cover(audio_path, temp_cover.string()) && fs::exists(temp_cover)) {
+                actual_cover = temp_cover.string();
+            } else {
+                std::vector<std::string> def_covers = {
+                    "C:\\Users\\halva\\AppData\\Local\\Programs\\AudioCoverWatcher\\default_cover.jpg",
+                    "C:\\Users\\halva\\OggCoverWatcherViss\\default_cover.jpg",
+                    "C:\\Users\\halva\\Pictures\\icon.jpg",
+                    "default_cover.jpg"
+                };
+                for (const auto& dc : def_covers) {
+                    if (fs::exists(dc)) { actual_cover = dc; break; }
+                }
+            }
+        }
+
+        fs::path out_p(out_mp4_path);
+        if (!out_p.parent_path().empty() && !fs::exists(out_p.parent_path())) {
+            std::error_code ec;
+            fs::create_directories(out_p.parent_path(), ec);
+        }
+
+        std::string fps_str = use_waveform ? "25" : "10";
+        std::string filter_str = "";
+
+        if (!fs::exists(actual_cover)) {
+            if (use_waveform) {
+                filter_str = "-filter_complex \"color=c=0x0b1120:s=1920x1080:r=" + fps_str + "[bg];[0:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.75:rate=25[wave];[bg][wave]overlay=0:H-h-20[v]\" -map \"[v]\" -map 0:a";
+            } else {
+                filter_str = "-filter_complex \"color=c=0x0b1120:s=1920x1080:r=" + fps_str + "[v]\" -map \"[v]\" -map 0:a";
+            }
+        } else {
+            if (use_blur_bg && use_waveform) {
+                filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=25:20[bg];[0:v]scale=920:920:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[v0];[1:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.75:rate=25[wave];[v0][wave]overlay=0:H-h-20[v]\" -map \"[v]\"";
+            } else if (use_blur_bg) {
+                filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=25:20[bg];[0:v]scale=920:920:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[v]\" -map \"[v]\"";
+            } else if (use_waveform) {
+                filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x050508[v0];[1:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.75:rate=25[wave];[v0][wave]overlay=0:H-h-20[v]\" -map \"[v]\"";
+            } else {
+                filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x050508[v]\" -map \"[v]\"";
+            }
+        }
+
+        std::string prog_arg = st.progress_file.empty() ? "" : (" -progress \"" + st.progress_file + "\"");
+        std::string cmd;
+        if (!fs::exists(actual_cover)) {
+            cmd = "\"" + ffmpeg + "\" -y -i \"" + audio_path + "\" " + filter_str + prog_arg + " -c:v libx264 -preset fast -c:a aac -b:a 320k -pix_fmt yuv420p -shortest \"" + out_mp4_path + "\"";
+        } else {
+            cmd = "\"" + ffmpeg + "\" -y -loop 1 -framerate " + fps_str + " -i \"" + actual_cover + "\" -i \"" + audio_path + "\" " +
+                  filter_str + prog_arg + " -map 1:a -c:v libx264 -preset fast -c:a aac -b:a 320k -pix_fmt yuv420p -shortest \"" + out_mp4_path + "\"";
+        }
+
+        int exit_code = -1;
+#ifdef _WIN32
+        int sz = MultiByteToWideChar(CP_UTF8, 0, cmd.data(), (int)cmd.size(), NULL, 0);
+        std::wstring wcmd(sz, 0);
+        MultiByteToWideChar(CP_UTF8, 0, cmd.data(), (int)cmd.size(), &wcmd[0], sz);
+
+        STARTUPINFOW si = { sizeof(si) };
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
+        PROCESS_INFORMATION pi = { 0 };
+
+        BOOL ok = CreateProcessW(NULL, &wcmd[0], NULL, NULL, FALSE, 0x08000000, NULL, NULL, &si, &pi);
+        if (!ok) {
+            std::string c = "cmd.exe /c \"" + cmd + "\"";
+            int sz2 = MultiByteToWideChar(CP_UTF8, 0, c.data(), (int)c.size(), NULL, 0);
+            std::wstring wcmd2(sz2, 0);
+            MultiByteToWideChar(CP_UTF8, 0, c.data(), (int)c.size(), &wcmd2[0], sz2);
+            ok = CreateProcessW(NULL, &wcmd2[0], NULL, NULL, FALSE, 0x08000000, NULL, NULL, &si, &pi);
+        }
+
+        if (ok) {
+            st.hProcess = pi.hProcess;
+            WaitForSingleObject(pi.hProcess, INFINITE);
+            DWORD ec = 0;
+            GetExitCodeProcess(pi.hProcess, &ec);
+            exit_code = (int)ec;
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+            st.hProcess = NULL;
+        }
+#else
+        exit_code = std::system(cmd.c_str());
+#endif
+
+        if (!temp_cover.empty() && fs::exists(temp_cover)) {
+            std::error_code ec;
+            fs::remove(temp_cover, ec);
+        }
+
+        bool success = (exit_code == 0 && fs::exists(out_mp4_path) && fs::file_size(out_mp4_path) > 1000);
+
+        if (!st.progress_file.empty() && fs::exists(st.progress_file)) {
+            std::error_code ec;
+            fs::remove(st.progress_file, ec);
+        }
+
+        {
+            std::lock_guard<std::mutex> lk(st.mtx);
+            st.is_success.store(success);
+            st.progress_pct.store(success ? 100 : 0);
+            st.info_text = success ? "100%" : "Render failed";
+            if (!success) {
+                st.error_text = "FFmpeg exit code: " + std::to_string(exit_code);
+            }
+            st.is_running.store(false);
+            st.is_done.store(true);
+        }
+    }).detach();
+
+    return true;
+}
+
+inline bool is_rendering_video() {
+    auto& state = get_async_render_state();
+    return state.is_running.load();
+}
+
+inline int get_render_video_progress() {
+    auto& state = get_async_render_state();
+    if (state.is_running.load()) {
+        update_progress_from_file(state);
+        return state.progress_pct.load();
+    }
+    if (state.is_done.load()) {
+        return state.is_success.load() ? 100 : 0;
+    }
+    return 0;
+}
+
+inline std::string get_render_video_status() {
+    auto& state = get_async_render_state();
+    if (state.is_running.load()) return "RENDERING";
+    if (state.is_done.load()) {
+        return state.is_success.load() ? "DONE" : "ERROR";
+    }
+    return "IDLE";
+}
+
+inline std::string get_render_video_info() {
+    auto& state = get_async_render_state();
+    if (state.is_running.load()) {
+        update_progress_from_file(state);
+        std::lock_guard<std::mutex> lk(state.mtx);
+        return state.info_text;
+    }
+    if (state.is_done.load()) {
+        std::lock_guard<std::mutex> lk(state.mtx);
+        return state.is_success.load() ? "DONE" : state.error_text;
+    }
+    return "IDLE";
+}
+
+inline void cancel_render_video() {
+    auto& state = get_async_render_state();
+#ifdef _WIN32
+    if (state.hProcess != NULL) {
+        TerminateProcess(state.hProcess, 1);
+    }
+#endif
+    std::lock_guard<std::mutex> lk(state.mtx);
+    state.is_running.store(false);
+    state.is_done.store(true);
+    state.is_success.store(false);
+    state.error_text = "Cancelled by user";
+    state.info_text = "Cancelled";
+    if (!state.progress_file.empty() && fs::exists(state.progress_file)) {
+        std::error_code ec;
+        fs::remove(state.progress_file, ec);
+    }
+}
+
+inline void clear_render_video() {
+    auto& state = get_async_render_state();
+    std::lock_guard<std::mutex> lk(state.mtx);
+    state.is_done.store(false);
+    state.is_success.store(false);
+    state.is_running.store(false);
+    state.progress_pct.store(0);
+    state.info_text = "";
+    state.error_text = "";
+    state.current_audio = "";
+    state.current_output = "";
 }
 
 } // namespace media

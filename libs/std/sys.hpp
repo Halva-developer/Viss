@@ -50,7 +50,22 @@ namespace viss {
                 g_last_exit_code = -1;
                 return -1;
             }
-            WaitForSingleObject(pi.hProcess, INFINITE);
+            while (true) {
+                DWORD wait_res = MsgWaitForMultipleObjects(1, &pi.hProcess, FALSE, 50, QS_ALLINPUT);
+                if (wait_res == WAIT_OBJECT_0) {
+                    break;
+                } else if (wait_res == WAIT_OBJECT_0 + 1) {
+                    MSG msg;
+                    while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
+                        TranslateMessage(&msg);
+                        DispatchMessageW(&msg);
+                    }
+                } else if (wait_res == WAIT_TIMEOUT) {
+                    // continue waiting
+                } else {
+                    break;
+                }
+            }
             DWORD exit_code = 0;
             GetExitCodeProcess(pi.hProcess, &exit_code);
             CloseHandle(pi.hProcess);
@@ -98,7 +113,22 @@ namespace viss {
                 result += buffer;
             }
             CloseHandle(hRead);
-            WaitForSingleObject(pi.hProcess, INFINITE);
+            while (true) {
+                DWORD wait_res = MsgWaitForMultipleObjects(1, &pi.hProcess, FALSE, 50, QS_ALLINPUT);
+                if (wait_res == WAIT_OBJECT_0) {
+                    break;
+                } else if (wait_res == WAIT_OBJECT_0 + 1) {
+                    MSG msg;
+                    while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
+                        TranslateMessage(&msg);
+                        DispatchMessageW(&msg);
+                    }
+                } else if (wait_res == WAIT_TIMEOUT) {
+                    // continue waiting
+                } else {
+                    break;
+                }
+            }
             DWORD exit_code = 0;
             GetExitCodeProcess(pi.hProcess, &exit_code);
             g_last_exit_code = (int)exit_code;
