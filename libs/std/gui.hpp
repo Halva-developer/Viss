@@ -666,7 +666,7 @@ public:
         }
     }
 
-    std::string open_file(const std::string& title = "Выберите файл обложки") {
+    std::string open_file(const std::string& title = "Select File") {
         OPENFILENAMEW ofn;
         wchar_t szFile[MAX_PATH] = { 0 };
         ZeroMemory(&ofn, sizeof(ofn));
@@ -688,7 +688,7 @@ public:
         return "";
     }
 
-    std::string browse_folder(const std::string& title = "Выберите музыкальную папку для отслеживания:") {
+    std::string browse_folder(const std::string& title = "Select Folder:") {
         OleInitialize(NULL);
         BROWSEINFOW bi = { 0 };
         bi.hwndOwner = hwnd;
@@ -1236,10 +1236,10 @@ inline void card(int x, int y, int w, int h, Color bg = Colors::PanelBg, Color b
 inline void card_group(int x, int y, int w, int h, const std::string& title, Color bg = Colors::PanelBg, Color border = Colors::PanelBorder) {
     getApp().card_group(x, y, w, h, title, bg, border);
 }
-inline std::string open_file(const std::string& title = "Выберите файл обложки") {
+inline std::string open_file(const std::string& title = "Select File") {
     return getApp().open_file(title);
 }
-inline std::string browse_folder(const std::string& title = "Выберите музыкальную папку для отслеживания:") {
+inline std::string browse_folder(const std::string& title = "Select Folder:") {
     return getApp().browse_folder(title);
 }
 inline std::string dropped_file() {
