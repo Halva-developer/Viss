@@ -295,6 +295,17 @@ namespace viss {
                 data->push_back(item);
             }
         }
+
+        template<typename> friend class List;
+
+        template<typename U, typename = std::enable_if_t<std::is_constructible_v<T, U>>>
+        List(const List<U>& other) : data(std::make_shared<std::vector<T>>()), mtx(std::make_shared<std::mutex>()) {
+            if (other.data) {
+                for (const auto& item : *other.data) {
+                    data->push_back((T)item);
+                }
+            }
+        }
         
         inline void add(const T& item) {
             std::lock_guard<std::mutex> lock(*mtx);

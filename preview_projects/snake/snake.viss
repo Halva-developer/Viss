@@ -1,0 +1,221 @@
+// =============================================================================
+// Viss Retro Snake (Powered by Retrotech)
+// Pure Viss v0.2.1 "Hambo" Implementation
+// =============================================================================
+$import lib "iostream" as io
+$import lib "retrotech" as rt
+$import lib "sys" as sys
+$import lib "str" as str
+$import lib "time" as time
+
+// Playfield boundaries (20x20 inner grid)
+@ARENA_X = 1;
+@ARENA_Y = 2;
+@ARENA_W = 20;
+@ARENA_H = 20;
+
+!func spawn_food(snake_x as list<int>, snake_y as list<int>) -> list<int> {
+    @valid = false;
+    @fx = 0;
+    @fy = 0;
+    !while !@valid {
+        @fx = sys.random(0, 20);
+        @fy = sys.random(0, 20);
+        @collision = false;
+        !for @i in 0..snake_x.size() {
+            ?if snake_x[@i] == @fx && snake_y[@i] == @fy {
+                @collision = true;
+            }
+        }
+        ?if !@collision {
+            @valid = true;
+        }
+    }
+    return [@fx, @fy];
+}
+
+!main {
+    // Initialize 32x24 retro pixel buffer screen
+    rt.init_screen(32, 24);
+
+    @high_score = 0;
+    @app_running = true;
+
+    !while @app_running {
+        // Snake body initialization
+        @snake_x = [10, 9, 8] | list<int>;
+        @snake_y = [10, 10, 10] | list<int>;
+
+        // Current movement direction (Right)
+        @dir_x = 1;
+        @dir_y = 0;
+        @next_dir_x = 1;
+        @next_dir_y = 0;
+
+        @food = spawn_food(@snake_x, @snake_y);
+        @food_x = @food[0];
+        @food_y = @food[1];
+
+        @score = 0;
+        @apples_eaten = 0;
+        @level = 1;
+        @game_over = false;
+        @tick_timer = 0;
+        @tick_interval = 8; // frames per step (decreases with level)
+
+        rt.sound_coin();
+
+        // Game loop
+        !while !@game_over {
+            // --- 1. INPUT HANDLING ---
+            ?if rt.has_key() {
+                @k = rt.get_key();
+                ?if (@k == "UP" || @k == "w" || @k == "W") && @dir_y != 1 {
+                    @next_dir_x = 0;
+                    @next_dir_y = -1;
+                    rt.sound_bump();
+                } ?elif (@k == "DOWN" || @k == "s" || @k == "S") && @dir_y != -1 {
+                    @next_dir_x = 0;
+                    @next_dir_y = 1;
+                    rt.sound_bump();
+                } ?elif (@k == "LEFT" || @k == "a" || @k == "A") && @dir_x != 1 {
+                    @next_dir_x = -1;
+                    @next_dir_y = 0;
+                    rt.sound_bump();
+                } ?elif (@k == "RIGHT" || @k == "d" || @k == "D") && @dir_x != -1 {
+                    @next_dir_x = 1;
+                    @next_dir_y = 0;
+                    rt.sound_bump();
+                } ?elif @k == "q" || @k == "Q" || @k == "ESCAPE" || @k == "ESC" {
+                    @game_over = true;
+                    @app_running = false;
+                }
+            }
+
+            // --- 2. LOGIC / TICK STEP ---
+            @tick_timer = @tick_timer + 1;
+            ?if @tick_timer >= @tick_interval {
+                @tick_timer = 0;
+                @dir_x = @next_dir_x;
+                @dir_y = @next_dir_y;
+
+                @new_head_x = @snake_x[0] + @dir_x;
+                @new_head_y = @snake_y[0] + @dir_y;
+
+                // Wall Collision
+                ?if @new_head_x < 0 || @new_head_x >= 20 || @new_head_y < 0 || @new_head_y >= 20 {
+                    @game_over = true;
+                    rt.sound_game_over();
+                } ?else {
+                    // Self-Collision Check
+                    @self_hit = false;
+                    !for @i in 0..@snake_x.size() {
+                        ?if @snake_x[@i] == @new_head_x && @snake_y[@i] == @new_head_y {
+                            @self_hit = true;
+                        }
+                    }
+
+                    ?if @self_hit {
+                        @game_over = true;
+                        rt.sound_game_over();
+                    } ?else {
+                        // Insert new head at front
+                        @snake_x.insert(0, @new_head_x);
+                        @snake_y.insert(0, @new_head_y);
+
+                        // Check Food Eating
+                        ?if @new_head_x == @food_x && @new_head_y == @food_y {
+                            @score = @score + 10;
+                            @apples_eaten = @apples_eaten + 1;
+                            rt.sound_powerup();
+
+                            ?if @score > @high_score {
+                                @high_score = @score;
+                            }
+
+                            // Level scaling
+                            ?if @apples_eaten % 5 == 0 && @tick_interval > 3 {
+                                @level = @level + 1;
+                                @tick_interval = @tick_interval - 1;
+                            }
+
+                            @new_food = spawn_food(@snake_x, @snake_y);
+                            @food_x = @new_food[0];
+                            @food_y = @new_food[1];
+                        } ?else {
+                            // Pop tail
+                            @snake_x.removeLast();
+                            @snake_y.removeLast();
+                        }
+                    }
+                }
+            }
+
+            // --- 3. RENDERING ---
+            rt.clear_screen(0);
+
+            // Arena Outer Frame
+            rt.draw_rect(@ARENA_X - 1, @ARENA_Y - 1, @ARENA_W + 2, @ARENA_H + 2, 8); // Gray border
+            rt.draw_rect(@ARENA_X, @ARENA_Y, @ARENA_W, @ARENA_H, 0);                 // Inner arena
+
+            // Draw Food (Flashing Red / Yellow)
+            @food_color = 12; // Red
+            ?if (@tick_timer % 4) < 2 {
+                @food_color = 14; // Yellow flash
+            }
+            rt.draw_pixel(@ARENA_X + @food_x, @ARENA_Y + @food_y, @food_color);
+
+            // Draw Snake Body
+            !for @i in 0..@snake_x.size() {
+                @sx = @ARENA_X + @snake_x[@i];
+                @sy = @ARENA_Y + @snake_y[@i];
+                ?if @i == 0 {
+                    // Head: Bright Green
+                    rt.draw_pixel(@sx, @sy, 10);
+                } ?else {
+                    // Body: Darker Green
+                    rt.draw_pixel(@sx, @sy, 2);
+                }
+            }
+
+            // UI Sidebar
+            rt.draw_text(23, 2, "VISS SNAKE", 14, 0);
+            rt.draw_text(23, 4, i"SCORE: {@score}", 15, 0);
+            rt.draw_text(23, 6, i"HIGH: {@high_score}", 11, 0);
+            rt.draw_text(23, 8, i"EATEN: {@apples_eaten}", 10, 0);
+            rt.draw_text(23, 10, i"LEVEL: {@level}", 13, 0);
+
+            rt.draw_text(23, 13, "CONTROLS:", 7, 0);
+            rt.draw_text(23, 15, "W/A/S/D", 8, 0);
+            rt.draw_text(23, 16, "Arrows", 8, 0);
+            rt.draw_text(23, 18, "Q: Quit", 8, 0);
+
+            rt.update_screen();
+            time.sleep(20);
+        }
+
+        // --- GAME OVER SCREEN ---
+        ?if @app_running {
+            rt.draw_rect(4, 9, 14, 5, 4);  // Red banner box
+            rt.draw_rect(5, 10, 12, 3, 0); // Inner black
+            rt.draw_text(6, 11, "GAME OVER!", 12, 0);
+            rt.draw_text(23, 20, "[R] RESTART", 14, 0);
+            rt.draw_text(23, 21, "[Q] QUIT", 12, 0);
+            rt.update_screen();
+
+            @wait_input = true;
+            !while @wait_input {
+                ?if rt.has_key() {
+                    @k = rt.get_key();
+                    ?if @k == "r" || @k == "R" {
+                        @wait_input = false;
+                    } ?elif @k == "q" || @k == "Q" || @k == "ESCAPE" || @k == "ESC" {
+                        @wait_input = false;
+                        @app_running = false;
+                    }
+                }
+                time.sleep(50);
+            }
+        }
+    }
+}

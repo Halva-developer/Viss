@@ -308,7 +308,30 @@ std::vector<std::pair<std::string, int>> splitIntoStatements(const std::string& 
         // Dict literal atomic capture: @var = { ... } or return { ... }
         if (!in_string && c == '{') {
             std::string trimmed_cur = trim(cur);
-            if (trimmed_cur.find('=') != std::string::npos || startsWith(trimmed_cur, "!return") || startsWith(trimmed_cur, "return")) {
+            auto isDictAssignmentCandidate = [](const std::string& s) -> bool {
+                if (startsWith(s, "?if") || startsWith(s, "if ") || startsWith(s, "if(") ||
+                    startsWith(s, "?elif") || startsWith(s, "elif ") || startsWith(s, "elif(") ||
+                    startsWith(s, "?else") || startsWith(s, "else ") || startsWith(s, "else{") ||
+                    startsWith(s, "?while") || startsWith(s, "!while") || startsWith(s, "while ") || startsWith(s, "while(") ||
+                    startsWith(s, "?for") || startsWith(s, "!for") || startsWith(s, "for ") || startsWith(s, "for(") ||
+                    startsWith(s, "?try") || startsWith(s, "try") || startsWith(s, "?expect") || startsWith(s, "expect") ||
+                    startsWith(s, "?match") || startsWith(s, "match") ||
+                    startsWith(s, "!func") || startsWith(s, "func ") || startsWith(s, "!main") || startsWith(s, "!async") ||
+                    startsWith(s, "!class") || startsWith(s, "class ") || startsWith(s, "!struct") || startsWith(s, "struct ") ||
+                    startsWith(s, "!enum") || startsWith(s, "enum ")) {
+                    return false;
+                }
+                if (startsWith(s, "!return") || startsWith(s, "return")) return true;
+                for (size_t j = 0; j < s.size(); ++j) {
+                    if (s[j] == '=') {
+                        if (j > 0 && (s[j - 1] == '=' || s[j - 1] == '!' || s[j - 1] == '<' || s[j - 1] == '>')) continue;
+                        if (j + 1 < s.size() && s[j + 1] == '=') continue;
+                        return true;
+                    }
+                }
+                return false;
+            };
+            if (isDictAssignmentCandidate(trimmed_cur)) {
                 int dict_depth = 1;
                 cur += c;
                 i++;
@@ -884,32 +907,34 @@ inline VissType parseVissType(const std::string& name) {
 
 inline std::string resolveVissCppType(const std::string& type_name) {
     std::string t = trim(type_name);
-    if (t == "str" || t == "string") return "viss::Str";
-    if (t == "int" || t == "i8" || t == "u8" || t == "i16" || t == "u16" || t == "i32" || t == "u32" || t == "i64" || t == "u64" || t == "byte") return "viss::Int";
-    if (t == "dec" || t == "double" || t == "float") return "viss::Dec";
-    if (t == "bool") return "viss::Bool";
-    if (t == "bytes" || t == "bytemask" || t == "mask") return "viss::Bytes";
-    if (t == "bits" || t == "bites") return "viss::Bits";
-    if (t == "hybrid") return "viss::Hybrid";
-    if (t == "grid") return "viss::Grid";
-    if (t == "var" || t == "any") return "viss::Var";
-    if (t == "list" || t == "List" || t == "[]") return "viss::List<viss::Var>";
-    if (t == "map" || t == "Map" || t == "dict" || t == "Dict" || t == "{}") return "viss::Map<viss::Str, viss::Var>";
-    if (t == "inf" || t == "Inf") return "viss::Inf";
+    std::string tl = t;
+    for (auto& ch : tl) ch = std::tolower((unsigned char)ch);
+
+    if (tl == "str" || tl == "string") return "viss::Str";
+    if (tl == "int" || tl == "i8" || tl == "u8" || tl == "i16" || tl == "u16" || tl == "i32" || tl == "u32" || tl == "i64" || tl == "u64" || tl == "byte") return "viss::Int";
+    if (tl == "dec" || tl == "double" || tl == "float") return "viss::Dec";
+    if (tl == "bool") return "viss::Bool";
+    if (tl == "bytes" || tl == "bytemask" || tl == "mask") return "viss::Bytes";
+    if (tl == "bits" || tl == "bites") return "viss::Bits";
+    if (tl == "hybrid") return "viss::Hybrid";
+    if (tl == "grid") return "viss::Grid";
+    if (tl == "var" || tl == "any") return "viss::Var";
+    if (tl == "list" || tl == "[]") return "viss::List<viss::Var>";
+    if (tl == "map" || tl == "dict" || tl == "{}") return "viss::Map<viss::Str, viss::Var>";
+    if (tl == "inf") return "viss::Inf";
 
     // Typed lists: [str], list<str>, List<int>, etc.
-    if ((startsWith(t, "[") && endsWith(t, "]")) || (startsWith(t, "list<") && endsWith(t, ">")) || (startsWith(t, "List<") && endsWith(t, ">"))) {
+    if ((startsWith(t, "[") && endsWith(t, "]")) || (startsWith(tl, "list<") && endsWith(tl, ">"))) {
         std::string inner;
         if (startsWith(t, "[")) inner = trim(t.substr(1, t.size() - 2));
-        else if (startsWith(t, "list<")) inner = trim(t.substr(5, t.size() - 6));
-        else if (startsWith(t, "List<")) inner = trim(t.substr(5, t.size() - 6));
+        else inner = trim(t.substr(5, t.size() - 6));
         if (inner.empty() || inner == "any" || inner == "var") return "viss::List<viss::Var>";
         return "viss::List<" + resolveVissCppType(inner) + ">";
     }
 
     // Typed maps/dicts: map<str, int>, dict<str, var>, Map<str, int>
-    if ((startsWith(t, "map<") && endsWith(t, ">")) || (startsWith(t, "Map<") && endsWith(t, ">")) ||
-        (startsWith(t, "dict<") && endsWith(t, ">")) || (startsWith(t, "Dict<") && endsWith(t, ">"))) {
+    if ((startsWith(tl, "map<") && endsWith(tl, ">")) ||
+        (startsWith(tl, "dict<") && endsWith(tl, ">"))) {
         size_t start_idx = t.find('<');
         std::string inner = trim(t.substr(start_idx + 1, t.size() - start_idx - 2));
         size_t comma = inner.find(',');
@@ -999,6 +1024,105 @@ inline std::string transformDictLiteral(const std::string& dict_str, const std::
     }
     out += "}";
     return out;
+}
+
+inline std::string transformListLiterals(const std::string& expr) {
+    if (expr.find('[') == std::string::npos) return expr;
+    std::string res;
+    size_t i = 0;
+    bool in_str = false;
+    char quote_c = 0;
+
+    auto is_ident_char = [](char c) {
+        return (isalnum((unsigned char)c) || c == '_');
+    };
+
+    while (i < expr.size()) {
+        char c = expr[i];
+
+        // String literals
+        if (!in_str && (c == '"' || c == '\'')) {
+            in_str = true;
+            quote_c = c;
+            res += c;
+            i++;
+            continue;
+        } else if (in_str && c == quote_c) {
+            if (i > 0 && expr[i - 1] == '\\') {
+                res += c;
+                i++;
+                continue;
+            }
+            in_str = false;
+            res += c;
+            i++;
+            continue;
+        }
+        if (in_str) {
+            res += c;
+            i++;
+            continue;
+        }
+
+        // Check for '['
+        if (c == '[') {
+            int p = (int)res.size() - 1;
+            while (p >= 0 && std::isspace((unsigned char)res[p])) p--;
+
+            bool is_subscript = false;
+            if (p >= 0) {
+                char pc = res[p];
+                if (pc == ')' || pc == ']' || pc == '"' || pc == '\'') {
+                    is_subscript = true;
+                } else if (is_ident_char(pc)) {
+                    int w_start = p;
+                    while (w_start >= 0 && is_ident_char(res[w_start])) w_start--;
+                    std::string word = res.substr(w_start + 1, p - w_start);
+                    if (word != "return" && word != "yield" && word != "in" && word != "to" && word != "as" && word != "case") {
+                        is_subscript = true;
+                    }
+                }
+            }
+
+            if (!is_subscript) {
+                int depth = 1;
+                bool inner_str = false;
+                char inner_quote = 0;
+                size_t j = i + 1;
+                while (j < expr.size() && depth > 0) {
+                    char jc = expr[j];
+                    if (!inner_str && (jc == '"' || jc == '\'')) {
+                        inner_str = true;
+                        inner_quote = jc;
+                    } else if (inner_str && jc == inner_quote) {
+                        if (j > 0 && expr[j - 1] != '\\') inner_str = false;
+                    } else if (!inner_str) {
+                        if (jc == '[' || jc == '(' || jc == '{') depth++;
+                        else if (jc == ']' || jc == ')' || jc == '}') depth--;
+                    }
+                    if (depth == 0) break;
+                    j++;
+                }
+
+                if (depth == 0) {
+                    std::string inner = expr.substr(i + 1, j - i - 1);
+                    std::string transformed_inner = transformListLiterals(inner);
+                    std::string trimmed_inner = trim(transformed_inner);
+                    if (trimmed_inner.empty()) {
+                        res += "viss::List<viss::Var>{}";
+                    } else {
+                        res += "viss::List{" + transformed_inner + "}";
+                    }
+                    i = j + 1;
+                    continue;
+                }
+            }
+        }
+
+        res += c;
+        i++;
+    }
+    return res;
 }
 
 inline std::string transformSlices(const std::string& expr) {
@@ -1328,6 +1452,7 @@ std::string transformExpression(
 ) {
     std::string raw_expr = processPipeline(input_raw_expr);
     raw_expr = transformSlices(raw_expr);
+    raw_expr = transformListLiterals(raw_expr);
     raw_expr = transformInOperator(raw_expr);
     while (raw_expr.find("!await") != std::string::npos || std::regex_search(raw_expr, std::regex(R"(\bawait\s+)"))) {
         std::string replaced = std::regex_replace(
@@ -1707,15 +1832,9 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
                 size_t eq_pos = p.find('=');
                 if (eq_pos != std::string::npos) p = trim(p.substr(0, eq_pos));
                 std::smatch m_as;
-                if (std::regex_match(p, m_as, std::regex(R"(^([a-zA-Z0-9_]+)\s+as\s+([a-zA-Z0-9_<>]+)$)"))) {
+                if (std::regex_match(p, m_as, std::regex(R"(^([a-zA-Z0-9_]+)\s*(?:as|:)\s*([a-zA-Z0-9_<>]+)$)"))) {
                     std::string pname = m_as[1].str();
-                    std::string ptype = m_as[2].str();
-                    if (ptype == "str") ptype = "viss::Str";
-                    else if (ptype == "int") ptype = "viss::Int";
-                    else if (ptype == "dec" || ptype == "double" || ptype == "float") ptype = "viss::Dec";
-                    else if (ptype == "bool") ptype = "viss::Bool";
-                    else if (ptype == "bytes") ptype = "viss::Bytes";
-                    else if (ptype == "bits") ptype = "viss::Bits";
+                    std::string ptype = resolveVissCppType(m_as[2].str());
                     cpp_params.push_back(ptype + " " + pname);
                 } else {
                     std::string pname = replaceAll(replaceAll(p, "@", ""), "&", "");
@@ -2077,14 +2196,8 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
                 std::smatch m_as;
                 if (std::regex_match(p, m_as, std::regex(R"(^@?([a-zA-Z0-9_]+)\s*(?:as|:)\s*([a-zA-Z0-9_<>]+)$)"))) {
                     std::string pname = m_as[1].str();
-                    std::string ptype = m_as[2].str();
+                    std::string ptype = resolveVissCppType(m_as[2].str());
                     declared_vars.insert(pname);
-                    if (ptype == "str") ptype = "viss::Str";
-                    else if (ptype == "int") ptype = "viss::Int";
-                    else if (ptype == "dec" || ptype == "double" || ptype == "float") ptype = "viss::Dec";
-                    else if (ptype == "bool") ptype = "viss::Bool";
-                    else if (ptype == "bytes") ptype = "viss::Bytes";
-                    else if (ptype == "bits") ptype = "viss::Bits";
                     std::string decl = ptype + " " + pname + (default_val.empty() ? "" : " = " + default_val);
                     cpp_params.push_back(decl);
                 } else {
@@ -2112,13 +2225,7 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
 
             std::string cpp_ret = "auto";
             if (!ret_type.empty()) {
-                cpp_ret = ret_type;
-                if (ret_type == "str") cpp_ret = "viss::Str";
-                else if (ret_type == "int") cpp_ret = "viss::Int";
-                else if (ret_type == "dec" || ret_type == "double" || ret_type == "float") cpp_ret = "viss::Dec";
-                else if (ret_type == "bool") cpp_ret = "viss::Bool";
-                else if (ret_type == "bytes") cpp_ret = "viss::Bytes";
-                else if (ret_type == "bits") cpp_ret = "viss::Bits";
+                cpp_ret = resolveVissCppType(ret_type);
             }
 
             if (is_async) {
@@ -2304,7 +2411,7 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             continue;
         }
         std::smatch m_if;
-        if (std::regex_match(stripped, m_if, std::regex(R"(^(?:\}\s*)?(?:\?else\s+if|else\s+if)(?:\s*\((.*)\)|\s+(.+?))\s*\{$)"))) {
+        if (std::regex_match(stripped, m_if, std::regex(R"(^(?:\}\s*)?(?:\?else\s+if|else\s+if|\?elif|elif)(?:\s*\((.*)\)|\s+(.+?))\s*\{$)"))) {
             declared_vars.enter_block();
             std::string cond = m_if[1].matched ? m_if[1].str() : m_if[2].str();
             std::string err;
@@ -2344,7 +2451,7 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             current_target->push_back("if (" + cond + ") {");
             continue;
         }
-        if (stripped == "} else {" || stripped == "?else {" || stripped == "else {") {
+        if (stripped == "} else {" || stripped == "?else {" || stripped == "else {" || stripped == "} ?else {") {
             declared_vars.enter_block();
             bool has_leading_brace = startsWith(stripped, "}");
             if (has_leading_brace && !block_stack.empty() && (block_stack.back().first == "if" || block_stack.back().first == "else_if")) {
@@ -2900,6 +3007,10 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             else ret_expr = trim(stripped.substr(6));
             if (!ret_expr.empty() && ret_expr.back() == ';') ret_expr.pop_back();
             if (!ret_expr.empty()) {
+                ret_expr = transformListLiterals(ret_expr);
+                if (isDictLiteral(ret_expr)) {
+                    ret_expr = transformDictLiteral(ret_expr, "viss::Map<viss::Str, viss::Var>");
+                }
                 std::string err;
                 ret_expr = transformExpression(ret_expr, imported_aliases, declared_vars, line_num, filename, err);
             }

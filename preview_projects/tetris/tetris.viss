@@ -1,0 +1,307 @@
+// =============================================================================
+// Viss Retro Tetris (Powered by Retrotech)
+// =============================================================================
+$import lib "iostream" as io
+$import lib "retrotech" as rt
+$import lib "time" as time
+$import lib "sys" as sys
+
+// Board Dimensions
+@BOARD_W = 10;
+@BOARD_H = 20;
+
+// Tetromino Definitions: 7 pieces, 4 rotations each (offsets [dx, dy])
+!func get_piece_blocks(type_id, rot) -> List<Int> {
+    // Returns 8 numbers: x0, y0, x1, y1, x2, y2, x3, y3
+    @r = rot % 4;
+    
+    // 0: I-piece
+    ?if type_id == 0 {
+        ?if @r == 0 || @r == 2 {
+            return [0,1, 1,1, 2,1, 3,1];
+        } ?else {
+            return [1,0, 1,1, 1,2, 1,3];
+        }
+    }
+    // 1: O-piece
+    ?if type_id == 1 {
+        return [0,0, 1,0, 0,1, 1,1];
+    }
+    // 2: T-piece
+    ?if type_id == 2 {
+        ?if @r == 0 { return [1,0, 0,1, 1,1, 2,1]; }
+        ?if @r == 1 { return [1,0, 1,1, 2,1, 1,2]; }
+        ?if @r == 2 { return [0,1, 1,1, 2,1, 1,2]; }
+        return [1,0, 0,1, 1,1, 1,2];
+    }
+    // 3: S-piece
+    ?if type_id == 3 {
+        ?if @r == 0 || @r == 2 {
+            return [1,0, 2,0, 0,1, 1,1];
+        } ?else {
+            return [0,0, 0,1, 1,1, 1,2];
+        }
+    }
+    // 4: Z-piece
+    ?if type_id == 4 {
+        ?if @r == 0 || @r == 2 {
+            return [0,0, 1,0, 1,1, 2,1];
+        } ?else {
+            return [1,0, 0,1, 1,1, 0,2];
+        }
+    }
+    // 5: J-piece
+    ?if type_id == 5 {
+        ?if @r == 0 { return [0,0, 0,1, 1,1, 2,1]; }
+        ?if @r == 1 { return [1,0, 2,0, 1,1, 1,2]; }
+        ?if @r == 2 { return [0,1, 1,1, 2,1, 2,2]; }
+        return [1,0, 1,1, 0,2, 1,2];
+    }
+    // 6: L-piece
+    ?if type_id == 6 {
+        ?if @r == 0 { return [2,0, 0,1, 1,1, 2,1]; }
+        ?if @r == 1 { return [1,0, 1,1, 1,2, 2,2]; }
+        ?if @r == 2 { return [0,1, 1,1, 2,1, 0,2]; }
+        return [0,0, 1,0, 1,1, 1,2];
+    }
+
+    return [0,0, 0,0, 0,0, 0,0];
+}
+
+!func get_piece_color(type_id) -> Int {
+    // 1-based palette colors for retrotech
+    ?if type_id == 0 { return 11; } // Cyan (I)
+    ?if type_id == 1 { return 14; } // Yellow (O)
+    ?if type_id == 2 { return 13; } // Magenta (T)
+    ?if type_id == 3 { return 10; } // Green (S)
+    ?if type_id == 4 { return 12; } // Red (Z)
+    ?if type_id == 5 { return 9;  } // Blue (J)
+    return 6;                       // Orange (L)
+}
+
+!func collides(board, type_id, rot, px, py) -> Bool {
+    @blocks = get_piece_blocks(type_id, rot);
+    !for @i in 0..4 {
+        @bx = px + @blocks[@i * 2];
+        @by = py + @blocks[@i * 2 + 1];
+        
+        // Check walls & floor
+        ?if @bx < 0 || @bx >= 10 || @by >= 20 {
+            return true;
+        }
+        // Check existing blocks on board
+        ?if @by >= 0 {
+            ?if @board[@by * 10 + @bx] != 0 {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+!main {
+    sys.seed();
+    
+    // Initialize 30x24 retro pixel buffer screen
+    rt.init_screen(30, 24);
+
+    @board = [] | list<int>;
+    !for @i in 0..200 {
+        @board.add(0);
+    }
+
+    @score = 0;
+    @lines_cleared = 0;
+    @level = 1;
+    @game_over = false;
+
+    @cur_type = sys.random(0, 7);
+    @cur_rot = 0;
+    @cur_x = 3;
+    @cur_y = 0;
+
+    @next_type = sys.random(0, 7);
+
+    @drop_timer = 0;
+    @drop_interval = 25; // frames per drop
+
+    rt.sound_coin();
+
+    !while !@game_over {
+        // --- 1. INPUT HANDLING ---
+        ?if rt.has_key() {
+            @k = rt.get_key();
+            ?if @k == "LEFT" || @k == "a" || @k == "A" {
+                ?if !collides(@board, @cur_type, @cur_rot, @cur_x - 1, @cur_y) {
+                    @cur_x = @cur_x - 1;
+                    rt.sound_bump();
+                }
+            }
+            ?elif @k == "RIGHT" || @k == "d" || @k == "D" {
+                ?if !collides(@board, @cur_type, @cur_rot, @cur_x + 1, @cur_y) {
+                    @cur_x = @cur_x + 1;
+                    rt.sound_bump();
+                }
+            }
+            ?elif @k == "UP" || @k == "w" || @k == "W" {
+                @next_rot = (@cur_rot + 1) % 4;
+                ?if !collides(@board, @cur_type, @next_rot, @cur_x, @cur_y) {
+                    @cur_rot = @next_rot;
+                    rt.sound_bump();
+                }
+            }
+            ?elif @k == "DOWN" || @k == "s" || @k == "S" {
+                ?if !collides(@board, @cur_type, @cur_rot, @cur_x, @cur_y + 1) {
+                    @cur_y = @cur_y + 1;
+                    @score = @score + 1;
+                }
+            }
+            ?elif @k == " " {
+                // Hard Drop
+                !while !collides(@board, @cur_type, @cur_rot, @cur_x, @cur_y + 1) {
+                    @cur_y = @cur_y + 1;
+                    @score = @score + 2;
+                }
+                @drop_timer = @drop_interval;
+                rt.sound_bump();
+            }
+            ?elif @k == "q" || @k == "Q" {
+                @game_over = true;
+            }
+        }
+
+        // --- 2. GRAVITY & LOCK ---
+        @drop_timer = @drop_timer + 1;
+        ?if @drop_timer >= @drop_interval {
+            @drop_timer = 0;
+            ?if !collides(@board, @cur_type, @cur_rot, @cur_x, @cur_y + 1) {
+                @cur_y = @cur_y + 1;
+            } ?else {
+                // Lock piece into board
+                @blocks = get_piece_blocks(@cur_type, @cur_rot);
+                @col = get_piece_color(@cur_type);
+                !for @i in 0..4 {
+                    @bx = @cur_x + @blocks[@i * 2];
+                    @by = @cur_y + @blocks[@i * 2 + 1];
+                    ?if @by >= 0 && @by < 20 && @bx >= 0 && @bx < 10 {
+                        @board[@by * 10 + @bx] = @col;
+                    }
+                }
+
+                // Check Line Clears
+                @cleared_this_step = 0;
+                !for @r in 0..20 {
+                    @row_full = true;
+                    !for @c in 0..10 {
+                        ?if @board[@r * 10 + @c] == 0 {
+                            @row_full = false;
+                        }
+                    }
+                    ?if @row_full {
+                        @cleared_this_step = @cleared_this_step + 1;
+                        // Shift down rows above
+                        @row_idx = @r;
+                        !while @row_idx > 0 {
+                            !for @c in 0..10 {
+                                @board[@row_idx * 10 + @c] = @board[(@row_idx - 1) * 10 + @c];
+                            }
+                            @row_idx = @row_idx - 1;
+                        }
+                        !for @c in 0..10 {
+                            @board[@c] = 0;
+                        }
+                    }
+                }
+
+                ?if @cleared_this_step > 0 {
+                    rt.sound_coin();
+                    @lines_cleared = @lines_cleared + @cleared_this_step;
+                    ?if @cleared_this_step == 1 { @score = @score + 100 * @level; }
+                    ?if @cleared_this_step == 2 { @score = @score + 300 * @level; }
+                    ?if @cleared_this_step == 3 { @score = @score + 500 * @level; }
+                    ?if @cleared_this_step >= 4 { @score = @score + 800 * @level; }
+                    
+                    @level = 1 + (@lines_cleared / 10);
+                    @drop_interval = 25 - (@level * 2);
+                    ?if @drop_interval < 5 { @drop_interval = 5; }
+                }
+
+                // Spawn Next Piece
+                @cur_type = @next_type;
+                @cur_rot = 0;
+                @cur_x = 3;
+                @cur_y = 0;
+                @next_type = sys.random(0, 7);
+
+                // Check Game Over
+                ?if collides(@board, @cur_type, @cur_rot, @cur_x, @cur_y) {
+                    @game_over = true;
+                    rt.sound_game_over();
+                }
+            }
+        }
+
+        // --- 3. RENDERING ---
+        rt.clear_screen(0);
+
+        // Draw Board Outer Frame
+        @OFFSET_X = 2;
+        @OFFSET_Y = 2;
+        rt.draw_rect(@OFFSET_X - 1, @OFFSET_Y - 1, 12, 22, 8); // Border frame
+        rt.draw_rect(@OFFSET_X, @OFFSET_Y, 10, 20, 0);         // Inner black board
+
+        // Draw Placed Blocks
+        !for @by in 0..20 {
+            !for @bx in 0..10 {
+                @val = @board[@by * 10 + @bx];
+                ?if @val != 0 {
+                    rt.draw_pixel(@OFFSET_X + @bx, @OFFSET_Y + @by, @val);
+                }
+            }
+        }
+
+        // Draw Falling Piece
+        @cur_blocks = get_piece_blocks(@cur_type, @cur_rot);
+        @cur_color = get_piece_color(@cur_type);
+        !for @i in 0..4 {
+            @fx = @cur_x + @cur_blocks[@i * 2];
+            @fy = @cur_y + @cur_blocks[@i * 2 + 1];
+            ?if @fy >= 0 && @fy < 20 && @fx >= 0 && @fx < 10 {
+                rt.draw_pixel(@OFFSET_X + @fx, @OFFSET_Y + @fy, @cur_color);
+            }
+        }
+
+        // UI Panel on the Right Side
+        rt.draw_text(16, 2, "VISS TETRIS", 14, 0);
+        rt.draw_text(16, 4, i"SCORE: {@score}", 15, 0);
+        rt.draw_text(16, 6, i"LEVEL: {@level}", 11, 0);
+        rt.draw_text(16, 8, i"LINES: {@lines_cleared}", 10, 0);
+
+        rt.draw_text(16, 11, "NEXT:", 7, 0);
+        rt.draw_rect(16, 13, 6, 4, 8);
+        rt.draw_rect(17, 14, 4, 2, 0);
+
+        // Draw Next Piece Preview
+        @next_blocks = get_piece_blocks(@next_type, 0);
+        @next_color = get_piece_color(@next_type);
+        !for @i in 0..4 {
+            @nx = 17 + @next_blocks[@i * 2];
+            @ny = 14 + @next_blocks[@i * 2 + 1];
+            rt.draw_pixel(@nx, @ny, @next_color);
+        }
+
+        rt.draw_text(16, 19, "A/D: Move", 7, 0);
+        rt.draw_text(16, 20, "W:   Rotate", 7, 0);
+        rt.draw_text(16, 21, "S:   Drop", 7, 0);
+        rt.draw_text(16, 22, "SPC: HardDrop", 7, 0);
+
+        rt.update_screen();
+        time.sleep(20);
+    }
+
+    // Game Over Screen
+    rt.draw_text(4, 10, " GAME OVER ", 15, 12);
+    rt.draw_text(3, 12, i"FINAL: {@score}", 14, 0);
+    rt.update_screen();
+    time.sleep(2500);
+}
