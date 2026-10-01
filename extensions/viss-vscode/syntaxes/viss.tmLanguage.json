@@ -224,7 +224,7 @@
       "patterns": [
         {
           "name": "support.class.standard.viss",
-          "match": "\\b(io|sys|fs|math|time|str|retrotech|rt|async|json|crypto|collections|env|net|media|audio|gui|gl|vk)\\b"
+          "match": "\\b(io|sys|fs|math|time|str|retrotech|rt|async|json|crypto|collections|env|net|media|audio|gui|gl|vk|mask|bytemask|colormask)\\b"
         }
       ]
     },
@@ -278,7 +278,7 @@
       "patterns": [
         {
           "name": "entity.name.type.viss",
-          "match": "\\b(str|int|dec|double|float|bool|bytes|bits|hybrid|grid|list|map|dict|inf|class|struct|enum|ptr|void|any|var|Str|Int|Dec|Bool|List|Map|Dict|Inf|Bytes|Bits|Task|Channel|Mutex|Stopwatch|Stack|Queue|Set|RingBuffer|Vec2|JsonValue|Socket|TcpClient)\\b"
+          "match": "\\b(str|int|dec|double|float|bool|bytes|bits|bytemask|colormask|mask|ByteMask|ColorMask|Bytemask|Colormask|hybrid|grid|list|map|dict|inf|class|struct|enum|ptr|void|any|var|Str|Int|Dec|Bool|List|Map|Dict|Inf|Bytes|Bits|Task|Channel|Mutex|Stopwatch|Stack|Queue|Set|RingBuffer|Vec2|JsonValue|Socket|TcpClient)\\b"
         }
       ]
     },

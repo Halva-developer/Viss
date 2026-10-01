@@ -227,5 +227,59 @@
       "b\"${1:binary data}\""
     ],
     "description": "ASCII byte literal string"
+  },
+  "Bytemask Buffer": {
+    "prefix": "bytemask",
+    "body": [
+      "&${1:mask} create | bytemask, ${2:16};",
+      "$0"
+    ],
+    "description": "Create a 1D byte-mask buffer"
+  },
+  "Colormask Palette": {
+    "prefix": "colormask",
+    "body": [
+      "&${1:pal} create | colormask, ${2:16};",
+      "&${1:pal}.preset(\"${3|tetris,gameboy,pico8,nes,fire,cyberpunk,monochrome,neon,c64,matrix,lava,pastel|}\");",
+      "&${1:pal}.apply();",
+      "$0"
+    ],
+    "description": "Create and apply an RGB colormask palette"
+  },
+  "Spatial Mask Grid": {
+    "prefix": "spatialmask",
+    "body": [
+      "&${1:stencil} create | mask, ${2:1024};",
+      "$0"
+    ],
+    "description": "Create a 2D spatial byte mask"
+  },
+  "Mask Preset": {
+    "prefix": "maskpreset",
+    "body": [
+      "mask.preset(&${1:mask}, \"${2|tetris,gameboy,pico8,nes,fire,cyberpunk,monochrome,neon,c64,matrix,lava,pastel|}\");"
+    ],
+    "description": "Load preset into byte-mask palette"
+  },
+  "Mask Stencil": {
+    "prefix": "maskstencil",
+    "body": [
+      "mask.apply_stencil(&${1:dest}, &${2:src}, &${3:stencil}, ${4:1});"
+    ],
+    "description": "Apply 2D stencil masking to buffer"
+  },
+  "Mask Alpha Blend": {
+    "prefix": "maskblend",
+    "body": [
+      "mask.blend(&${1:dest}, &${2:src_a}, &${3:src_b}, &${4:alpha_mask});"
+    ],
+    "description": "Alpha blend two buffers using 8-bit mask"
+  },
+  "Mask 2D Collision": {
+    "prefix": "maskcollision",
+    "body": [
+      "mask.collides_2d(&${1:a}, ${2:ax}, ${3:ay}, ${4:aw}, ${5:ah}, &${6:b}, ${7:bx}, ${8:by}, ${9:bw}, ${10:bh}, 0)"
+    ],
+    "description": "Pixel-perfect 2D mask collision check"
   }
 }

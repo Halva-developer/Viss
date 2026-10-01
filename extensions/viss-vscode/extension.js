@@ -230,7 +230,11 @@ function activate(context) {
         'list': '**list<T>: Dynamic Thread-Safe Array**\n\n- `@list = [1, 2, 3]`\n- `.size()`, `.append(item)`, `.pop()`, `.insert(i, item)`, `.remove(item)`, `.clear()`, `.slice(start, len)`',
         'map': '**map<K, V>: Dynamic Hash Map / Dictionary**\n\n- `@map = {"key": "val"}`\n- `.get(key)`, `.has(key)`, `.keys()`, `.values()`, `.remove(key)`',
         'bytes': '**bytes: High-Performance Binary Memory Buffer**\n\n- `&buf create | bytes, 1024;`\n- Methods: `.size()`, `&buf[i]`, `.set_bit()`, `.get_bit()`, `.fill()`, `.to_hex()`',
-        'bits': '**bits: High-Density Bitfield Array**\n\n- `&flags create | bits, 8192;`\n- Methods: `.get(i)`, `.set(i, val)`, `.count_ones()`, `.invert()`'
+        'bits': '**bits: High-Density Bitfield Array**\n\n- `&flags create | bits, 8192;`\n- Methods: `.get(i)`, `.set(i, val)`, `.count_ones()`, `.invert()`',
+        'mask': '**mask (bytemask, colormask): Hardware Byte-Mask & Palette Engine**\n\n- `mask.create(size)` / `mask.create_rgb(colors)` / `mask.create_2d(w, h)`\n- `mask.preset(m, name)` — Built-in color palettes ("tetris", "gameboy", "pico8", "nes", "fire", "neon", "matrix", etc.)\n- `mask.set_rgb(m, id, r, g, b)`, `mask.set_hsv(m, id, h, s, v)`\n- `mask.gradient(m, s, e, r1, g1, b1, r2, g2, b2)`\n- `mask.apply_stencil(dest, src, stencil)`\n- `mask.blend(dest, a, b, alpha)`\n- `mask.collides_2d(a, ax, ay, aw, ah, b, bx, by, bw, bh)`\n- `mask.threshold(src, thresh)`',
+        'bytemask': '**bytemask: Byte-Mask Buffer**\n\nContiguous 1D/2D byte-oriented mask buffer for palettes, stencils, and collision masks.\n\n```viss\n&mask create | bytemask, 16;\n&mask.preset("neon");\n&mask.apply();\n```',
+        'colormask': '**colormask: RGB Palette Buffer**\n\nHardware color palette buffer (3 bytes per color: R, G, B).\n\n```viss\n&pal create | colormask, 16;\n&pal.preset("tetris");\n&pal.apply();\n```',
+        'preset': '**preset(name): Built-in Color Mask Presets**\n\nAvailable presets: `"tetris"`, `"gameboy"`, `"pico8"`, `"nes"`, `"fire"`, `"cyberpunk"`, `"monochrome"`, `"neon"`, `"c64"`, `"matrix"`, `"lava"`, `"pastel"`.'
     };
 
     const hoverProvider = vscode.languages.registerHoverProvider('viss', {
@@ -282,6 +286,8 @@ function activate(context) {
             { label: 'PlayMusic', detail: 'rt.PlayMusic(melody, bpm): Play background chiptune track', snippet: 'PlayMusic("${1:E5:8 E5:8 . C5:8}", ${2:120});' },
             { label: 'StopMusic', detail: 'rt.StopMusic(): Stop background music', snippet: 'StopMusic();' },
             { label: 'mask', detail: 'rt.mask: Colormask & palette engine namespace', snippet: 'mask.' },
+            { label: 'SetColorMask', detail: 'rt.SetColorMask(&mask): Apply RGB colormask palette to screen', snippet: 'SetColorMask(${1:&mask});' },
+            { label: 'ColorScreen', detail: 'rt.ColorScreen(&mask): Set screen colormask and redraw', snippet: 'ColorScreen(${1:&mask});' },
             { label: 'sprite', detail: 'rt.sprite: Hardware sprite engine namespace', snippet: 'sprite.' },
             { label: 'screen', detail: 'rt.screen: Hardware screen buffer namespace', snippet: 'screen.' }
         ],
@@ -421,9 +427,65 @@ function activate(context) {
             { label: 'get', detail: 'env.get(key): Read environment variable', snippet: 'get("${1:PATH}")' },
             { label: 'set', detail: 'env.set(key, val): Write environment variable', snippet: 'set("${1:KEY}", "${2:VAL}");' },
             { label: 'exit', detail: 'env.exit(code): Terminate process', snippet: 'exit(${1:0});' }
+        ],
+        'mask': [
+            { label: 'create', detail: 'mask.create(size, fill): Allocate generic 1D byte-mask buffer', snippet: 'create(${1:48}, ${2:0})' },
+            { label: 'create_rgb', detail: 'mask.create_rgb(num_colors): Allocate RGB palette buffer (colors * 3 bytes)', snippet: 'create_rgb(${1:16})' },
+            { label: 'create_palette', detail: 'mask.create_palette(num_colors): Allocate RGB palette buffer', snippet: 'create_palette(${1:16})' },
+            { label: 'create_2d', detail: 'mask.create_2d(w, h, fill): Allocate 2D spatial byte-mask grid', snippet: 'create_2d(${1:32}, ${2:32}, ${3:0})' },
+            { label: 'set_rgb', detail: 'mask.set_rgb(m, id, r, g, b): Set palette RGB color at index', snippet: 'set_rgb(${1:&mask}, ${2:id}, ${3:r}, ${4:g}, ${5:b});' },
+            { label: 'set', detail: 'mask.set(m, id, r, g, b): Alias for set_rgb', snippet: 'set(${1:&mask}, ${2:id}, ${3:r}, ${4:g}, ${5:b});' },
+            { label: 'set_hsv', detail: 'mask.set_hsv(m, id, h, s, v): Set palette HSV color (h:0-360, s:0-1, v:0-1)', snippet: 'set_hsv(${1:&mask}, ${2:id}, ${3:h}, ${4:s}, ${5:v});' },
+            { label: 'get_r', detail: 'mask.get_r(m, id): Red component of palette index', snippet: 'get_r(${1:&mask}, ${2:id})' },
+            { label: 'get_g', detail: 'mask.get_g(m, id): Green component of palette index', snippet: 'get_g(${1:&mask}, ${2:id})' },
+            { label: 'get_b', detail: 'mask.get_b(m, id): Blue component of palette index', snippet: 'get_b(${1:&mask}, ${2:id})' },
+            { label: 'gradient', detail: 'mask.gradient(m, s, e, r1, g1, b1, r2, g2, b2): Linear RGB gradient', snippet: 'gradient(${1:&mask}, ${2:0}, ${3:15}, ${4:r1}, ${5:g1}, ${6:b1}, ${7:r2}, ${8:g2}, ${9:b2});' },
+            { label: 'gradient_hsv', detail: 'mask.gradient_hsv(m, s, e, h1, s1, v1, h2, s2, v2): HSV rainbow gradient', snippet: 'gradient_hsv(${1:&mask}, ${2:0}, ${3:15}, ${4:0}, ${5:1.0}, ${6:1.0}, ${7:360}, ${8:1.0}, ${9:1.0});' },
+            { label: 'preset', detail: 'mask.preset(m, name): Load built-in palette preset', snippet: 'preset(${1:&mask}, "${2|tetris,gameboy,pico8,nes,fire,cyberpunk,monochrome,neon,c64,matrix,lava,pastel|}");' },
+            { label: 'count', detail: 'mask.count(m): Total color count in palette buffer', snippet: 'count(${1:&mask})' },
+            { label: 'fade', detail: 'mask.fade(m, factor): Dim or brighten color mask (0.0 - 1.0)', snippet: 'fade(${1:&mask}, ${2:0.5});' },
+            { label: 'invert', detail: 'mask.invert(m): Invert all bytes in mask buffer', snippet: 'invert(${1:&mask});' },
+            { label: 'shift', detail: 'mask.shift(m, dr, dg, db): Delta shift all RGB channels', snippet: 'shift(${1:&mask}, ${2:dr}, ${3:dg}, ${4:db});' },
+            { label: 'brightness', detail: 'mask.brightness(m, delta): Adjust mask brightness (+/- delta)', snippet: 'brightness(${1:&mask}, ${2:delta});' },
+            { label: 'contrast', detail: 'mask.contrast(m, factor): Adjust contrast by factor', snippet: 'contrast(${1:&mask}, ${2:1.2});' },
+            { label: 'grayscale', detail: 'mask.grayscale(m): Convert mask palette to perceptual grayscale', snippet: 'grayscale(${1:&mask});' },
+            { label: 'nearest', detail: 'mask.nearest(m, r, g, b): Find closest matching color index', snippet: 'nearest(${1:&mask}, ${2:r}, ${3:g}, ${4:b})' },
+            { label: 'lerp', detail: 'mask.lerp(dest, a, b, t): Interpolate between two color masks', snippet: 'lerp(${1:&dest}, ${2:&a}, ${3:&b}, ${4:0.5});' },
+            { label: 'set_2d', detail: 'mask.set_2d(m, w, h, x, y, val): Set 2D grid cell value', snippet: 'set_2d(${1:&mask}, ${2:w}, ${3:h}, ${4:x}, ${5:y}, ${6:val});' },
+            { label: 'get_2d', detail: 'mask.get_2d(m, w, h, x, y): Get 2D grid cell value', snippet: 'get_2d(${1:&mask}, ${2:w}, ${3:h}, ${4:x}, ${5:y})' },
+            { label: 'rect_2d', detail: 'mask.rect_2d(m, w, h, x, y, rw, rh, val): Draw solid rectangle onto 2D mask', snippet: 'rect_2d(${1:&mask}, ${2:w}, ${3:h}, ${4:x}, ${5:y}, ${6:rw}, ${7:rh}, ${8:val});' },
+            { label: 'circle_2d', detail: 'mask.circle_2d(m, w, h, cx, cy, radius, val): Draw solid circle onto 2D mask', snippet: 'circle_2d(${1:&mask}, ${2:w}, ${3:h}, ${4:cx}, ${5:cy}, ${6:radius}, ${7:val});' },
+            { label: 'line_2d', detail: 'mask.line_2d(m, w, h, x0, y0, x1, y1, val): Draw line onto 2D mask', snippet: 'line_2d(${1:&mask}, ${2:w}, ${3:h}, ${4:x0}, ${5:y0}, ${6:x1}, ${7:y1}, ${8:val});' },
+            { label: 'threshold', detail: 'mask.threshold(src, thresh, high, low): Generate binary mask', snippet: 'threshold(${1:&src}, ${2:128}, ${3:1}, ${4:0})' },
+            { label: 'apply_stencil', detail: 'mask.apply_stencil(dest, src, stencil, pass_id): Copy where stencil matches', snippet: 'apply_stencil(${1:&dest}, ${2:&src}, ${3:&stencil}, ${4:1});' },
+            { label: 'apply_stencil_inverted', detail: 'mask.apply_stencil_inverted(dest, src, stencil, pass_id): Copy where stencil differs', snippet: 'apply_stencil_inverted(${1:&dest}, ${2:&src}, ${3:&stencil}, ${4:1});' },
+            { label: 'blend', detail: 'mask.blend(dest, src_a, src_b, alpha_mask): Alpha blend using 8-bit mask', snippet: 'blend(${1:&dest}, ${2:&src_a}, ${3:&src_b}, ${4:&alpha_mask});' },
+            { label: 'collides_2d', detail: 'mask.collides_2d(a, ax, ay, aw, ah, b, bx, by, bw, bh, trans): Pixel-perfect mask collision test', snippet: 'collides_2d(${1:&a}, ${2:ax}, ${3:ay}, ${4:aw}, ${5:ah}, ${6:&b}, ${7:bx}, ${8:by}, ${9:bw}, ${10:bh}, ${11:0})' },
+            { label: 'raycast_2d', detail: 'mask.raycast_2d(m, w, h, x0, y0, dx, dy, max_d, solid): Raycast through 2D mask', snippet: 'raycast_2d(${1:&m}, ${2:w}, ${3:h}, ${4:x0}, ${5:y0}, ${6:dir_x}, ${7:dir_y}, ${8:max_dist}, ${9:1})' },
+            { label: 'and_op', detail: 'mask.and_op(a, b): Bitwise AND returning new mask', snippet: 'and_op(${1:&a}, ${2:&b})' },
+            { label: 'or_op', detail: 'mask.or_op(a, b): Bitwise OR returning new mask', snippet: 'or_op(${1:&a}, ${2:&b})' },
+            { label: 'xor_op', detail: 'mask.xor_op(a, b): Bitwise XOR returning new mask', snippet: 'xor_op(${1:&a}, ${2:&b})' },
+            { label: 'not_op', detail: 'mask.not_op(a): Bitwise NOT returning new mask', snippet: 'not_op(${1:&a})' },
+            { label: 'and_into', detail: 'mask.and_into(dest, mask): In-place bitwise AND', snippet: 'and_into(${1:&dest}, ${2:&mask});' },
+            { label: 'or_into', detail: 'mask.or_into(dest, mask): In-place bitwise OR', snippet: 'or_into(${1:&dest}, ${2:&mask});' },
+            { label: 'xor_into', detail: 'mask.xor_into(dest, mask): In-place bitwise XOR', snippet: 'xor_into(${1:&dest}, ${2:&mask});' },
+            { label: 'not_into', detail: 'mask.not_into(dest): In-place bitwise NOT', snippet: 'not_into(${1:&dest});' },
+            { label: 'count_matching', detail: 'mask.count_matching(m, val): Count occurrences of byte value', snippet: 'count_matching(${1:&m}, ${2:val})' },
+            { label: 'find_first', detail: 'mask.find_first(m, val): Find index of first matching byte', snippet: 'find_first(${1:&m}, ${2:val})' },
+            { label: 'replace', detail: 'mask.replace(m, old_val, new_val): Replace byte values in-place', snippet: 'replace(${1:&m}, ${2:old_val}, ${3:new_val});' },
+            { label: 'to_hex', detail: 'mask.to_hex(m): Format mask as spaced hex string', snippet: 'to_hex(${1:&m})' },
+            { label: 'from_hex', detail: 'mask.from_hex(hex_str): Parse hex string to Bytes mask', snippet: 'from_hex("${1:FF 00 AA}")' },
+            { label: 'save_hex', detail: 'mask.save_hex(path, m): Save mask as hex file', snippet: 'save_hex("${1:mask.hex}", ${2:&m});' },
+            { label: 'load_hex', detail: 'mask.load_hex(path): Load mask from hex file', snippet: 'load_hex("${1:mask.hex}")' },
+            { label: 'save_bin', detail: 'mask.save_bin(path, m): Save raw binary mask file', snippet: 'save_bin("${1:mask.bin}", ${2:&m});' },
+            { label: 'load_bin', detail: 'mask.load_bin(path): Load raw binary mask file', snippet: 'load_bin("${1:mask.bin}")' }
         ]
     };
     moduleMethods['retrotech'] = moduleMethods['rt'];
+    moduleMethods['bytemask'] = moduleMethods['mask'];
+    moduleMethods['colormask'] = moduleMethods['mask'];
+    moduleMethods['rt.mask'] = moduleMethods['mask'];
+    moduleMethods['retrotech.mask'] = moduleMethods['mask'];
 
     // Object and Collection Methods
     const objectCollectionMethods = [
@@ -478,7 +540,74 @@ function activate(context) {
         { label: 'crc32', detail: 'crc32(): Hardware CRC-32 checksum', kind: vscode.CompletionItemKind.Method, snippet: 'crc32()' },
         { label: 'grid_clear', detail: 'grid_clear(): Clear all grid layers to 0', kind: vscode.CompletionItemKind.Method, snippet: 'grid_clear();' },
         { label: 'grid_fill', detail: 'grid_fill(val): Fill grid layers with value', kind: vscode.CompletionItemKind.Method, snippet: 'grid_fill(${1:0});' },
-        { label: 'grid_invert', detail: 'grid_invert(): Invert all grid layer bits', kind: vscode.CompletionItemKind.Method, snippet: 'grid_invert();' }
+        { label: 'grid_invert', detail: 'grid_invert(): Invert all grid layer bits', kind: vscode.CompletionItemKind.Method, snippet: 'grid_invert();' },
+
+        // Byte-Mask & Palette Methods
+        { label: 'set_rgb', detail: 'set_rgb(id, r, g, b): Set palette RGB color at index', kind: vscode.CompletionItemKind.Method, snippet: 'set_rgb(${1:0}, ${2:255}, ${3:255}, ${4:255});' },
+        { label: 'set_hsv', detail: 'set_hsv(id, h, s, v): Set palette HSV color (h:0-360, s:0-1, v:0-1)', kind: vscode.CompletionItemKind.Method, snippet: 'set_hsv(${1:0}, ${2:180}, ${3:1.0}, ${4:1.0});' },
+        { label: 'get_r', detail: 'get_r(id): Red component of palette index', kind: vscode.CompletionItemKind.Method, snippet: 'get_r(${1:0})' },
+        { label: 'get_g', detail: 'get_g(id): Green component of palette index', kind: vscode.CompletionItemKind.Method, snippet: 'get_g(${1:0})' },
+        { label: 'get_b', detail: 'get_b(id): Blue component of palette index', kind: vscode.CompletionItemKind.Method, snippet: 'get_b(${1:0})' },
+        { label: 'gradient', detail: 'gradient(start, end, r1, g1, b1, r2, g2, b2): Linear RGB gradient', kind: vscode.CompletionItemKind.Method, snippet: 'gradient(${1:0}, ${2:15}, ${3:0}, ${4:0}, ${5:0}, ${6:255}, ${7:255}, ${8:255});' },
+        { label: 'gradient_hsv', detail: 'gradient_hsv(start, end, h1, s1, v1, h2, s2, v2): HSV rainbow gradient', kind: vscode.CompletionItemKind.Method, snippet: 'gradient_hsv(${1:0}, ${2:15}, ${3:0}, ${4:1.0}, ${5:1.0}, ${6:360}, ${7:1.0}, ${8:1.0});' },
+        { label: 'preset', detail: 'preset(name): Load built-in palette preset', kind: vscode.CompletionItemKind.Method, snippet: 'preset("${1|tetris,gameboy,pico8,nes,fire,cyberpunk,monochrome,neon,c64,matrix,lava,pastel|}");' },
+        { label: 'fade', detail: 'fade(factor): Dim or brighten color mask (0.0 - 1.0)', kind: vscode.CompletionItemKind.Method, snippet: 'fade(${1:0.5});' },
+        { label: 'brightness', detail: 'brightness(delta): Shift mask brightness (+/- delta)', kind: vscode.CompletionItemKind.Method, snippet: 'brightness(${1:10});' },
+        { label: 'contrast', detail: 'contrast(factor): Adjust contrast by factor', kind: vscode.CompletionItemKind.Method, snippet: 'contrast(${1:1.2});' },
+        { label: 'grayscale', detail: 'grayscale(): Convert mask palette to perceptual grayscale', kind: vscode.CompletionItemKind.Method, snippet: 'grayscale();' },
+        { label: 'nearest', detail: 'nearest(r, g, b): Find closest matching color index', kind: vscode.CompletionItemKind.Method, snippet: 'nearest(${1:r}, ${2:g}, ${3:b})' },
+        { label: 'shift', detail: 'shift(dr, dg, db): Delta shift all RGB channels', kind: vscode.CompletionItemKind.Method, snippet: 'shift(${1:dr}, ${2:dg}, ${3:db});' },
+        { label: 'lerp', detail: 'lerp(target, t): Interpolate between two color masks', kind: vscode.CompletionItemKind.Method, snippet: 'lerp(${1:&target}, ${2:0.5});' },
+        { label: 'colors', detail: 'colors(): Number of RGB colors (size / 3)', kind: vscode.CompletionItemKind.Method, snippet: 'colors()' },
+        { label: 'color_count', detail: 'color_count(): Number of RGB colors (size / 3)', kind: vscode.CompletionItemKind.Method, snippet: 'color_count()' },
+        { label: 'apply', detail: 'apply(): Apply colormask directly to retrotech screen palette', kind: vscode.CompletionItemKind.Method, snippet: 'apply();' },
+
+        // Flag and Pattern Masking Methods
+        { label: 'has_flag', detail: 'has_flag(byte_idx, flag_mask): Check if bitflag mask is active', kind: vscode.CompletionItemKind.Method, snippet: 'has_flag(${1:0}, ${2:0x01})' },
+        { label: 'set_flag', detail: 'set_flag(byte_idx, flag_mask): Set bitflag mask', kind: vscode.CompletionItemKind.Method, snippet: 'set_flag(${1:0}, ${2:0x01});' },
+        { label: 'clear_flag', detail: 'clear_flag(byte_idx, flag_mask): Clear bitflag mask', kind: vscode.CompletionItemKind.Method, snippet: 'clear_flag(${1:0}, ${2:0x01});' },
+        { label: 'toggle_flag', detail: 'toggle_flag(byte_idx, flag_mask): Toggle bitflag mask', kind: vscode.CompletionItemKind.Method, snippet: 'toggle_flag(${1:0}, ${2:0x01});' },
+        { label: 'find_pattern', detail: 'find_pattern(pattern): Find byte sequence offset', kind: vscode.CompletionItemKind.Method, snippet: 'find_pattern([${1:0xAA, 0xBB}])' },
+        { label: 'contains_pattern', detail: 'contains_pattern(pattern): Check if byte sequence exists', kind: vscode.CompletionItemKind.Method, snippet: 'contains_pattern([${1:0xAA, 0xBB}])' },
+
+        // Spatial 2D Mask Operations
+        { label: 'get_2d', detail: 'get_2d(x, y, pitch): Get 2D grid mask byte', kind: vscode.CompletionItemKind.Method, snippet: 'get_2d(${1:x}, ${2:y}, ${3:pitch})' },
+        { label: 'set_2d', detail: 'set_2d(x, y, pitch, val): Set 2D grid mask byte', kind: vscode.CompletionItemKind.Method, snippet: 'set_2d(${1:x}, ${2:y}, ${3:pitch}, ${4:val});' },
+        { label: 'rect_2d', detail: 'rect_2d(w, h, x, y, rw, rh, val): Draw solid rectangle onto 2D mask', kind: vscode.CompletionItemKind.Method, snippet: 'rect_2d(${1:w}, ${2:h}, ${3:x}, ${4:y}, ${5:rw}, ${6:rh}, ${7:val});' },
+        { label: 'rect', detail: 'rect(x, y, rw, rh, val, pitch): Draw solid rectangle onto 2D mask', kind: vscode.CompletionItemKind.Method, snippet: 'rect(${1:x}, ${2:y}, ${3:rw}, ${4:rh}, ${5:val}, ${6:pitch});' },
+        { label: 'circle_2d', detail: 'circle_2d(w, h, cx, cy, radius, val): Draw solid circle onto 2D mask', kind: vscode.CompletionItemKind.Method, snippet: 'circle_2d(${1:w}, ${2:h}, ${3:cx}, ${4:cy}, ${5:radius}, ${6:val});' },
+        { label: 'circle', detail: 'circle(cx, cy, radius, val, pitch): Draw solid circle onto 2D mask', kind: vscode.CompletionItemKind.Method, snippet: 'circle(${1:cx}, ${2:cy}, ${3:radius}, ${4:val}, ${5:pitch});' },
+        { label: 'line_2d', detail: 'line_2d(w, h, x0, y0, x1, y1, val): Draw line onto 2D mask', kind: vscode.CompletionItemKind.Method, snippet: 'line_2d(${1:w}, ${2:h}, ${3:x0}, ${4:y0}, ${5:x1}, ${6:y1}, ${7:val});' },
+        { label: 'line', detail: 'line(x0, y0, x1, y1, val, pitch): Draw line onto 2D mask', kind: vscode.CompletionItemKind.Method, snippet: 'line(${1:x0}, ${2:y0}, ${3:x1}, ${4:y1}, ${5:val}, ${6:pitch});' },
+        { label: 'threshold', detail: 'threshold(thresh, high, low): Convert mask to binary threshold', kind: vscode.CompletionItemKind.Method, snippet: 'threshold(${1:128}, ${2:1}, ${3:0});' },
+        { label: 'apply_stencil', detail: 'apply_stencil(stencil, pass_id): Mask buffer using stencil', kind: vscode.CompletionItemKind.Method, snippet: 'apply_stencil(${1:&stencil}, ${2:1});' },
+        { label: 'blend', detail: 'blend(other, alpha_mask): Blend two buffers using 8-bit alpha mask', kind: vscode.CompletionItemKind.Method, snippet: 'blend(${1:&other}, ${2:&alpha_mask});' },
+        { label: 'scroll_2d', detail: 'scroll_2d(dx, dy, w, h): Scroll/wrap 2D mask grid', kind: vscode.CompletionItemKind.Method, snippet: 'scroll_2d(${1:dx}, ${2:dy}, ${3:w}, ${4:h});' },
+        { label: 'flip_h', detail: 'flip_h(w, h): Mirror 2D mask horizontally', kind: vscode.CompletionItemKind.Method, snippet: 'flip_h(${1:w}, ${2:h});' },
+        { label: 'flip_v', detail: 'flip_v(w, h): Mirror 2D mask vertically', kind: vscode.CompletionItemKind.Method, snippet: 'flip_v(${1:w}, ${2:h});' },
+        { label: 'collides_2d', detail: 'collides_2d(ax, ay, aw, ah, b, bx, by, bw, bh, trans): Pixel-perfect mask collision test', kind: vscode.CompletionItemKind.Method, snippet: 'collides_2d(${1:ax}, ${2:ay}, ${3:aw}, ${4:ah}, ${5:&b}, ${6:bx}, ${7:by}, ${8:bw}, ${9:bh}, ${10:0})' },
+        { label: 'raycast_2d', detail: 'raycast_2d(x0, y0, dir_x, dir_y, max_dist, pitch, solid): Raycast through 2D mask', kind: vscode.CompletionItemKind.Method, snippet: 'raycast_2d(${1:x0}, ${2:y0}, ${3:dir_x}, ${4:dir_y}, ${5:max_dist}, ${6:pitch}, ${7:1})' },
+
+        // In-Place Bitwise Masking
+        { label: 'and_into', detail: 'and_into(mask): In-place bitwise AND with mask', kind: vscode.CompletionItemKind.Method, snippet: 'and_into(${1:&mask});' },
+        { label: 'or_into', detail: 'or_into(mask): In-place bitwise OR with mask', kind: vscode.CompletionItemKind.Method, snippet: 'or_into(${1:&mask});' },
+        { label: 'xor_into', detail: 'xor_into(mask): In-place bitwise XOR with mask', kind: vscode.CompletionItemKind.Method, snippet: 'xor_into(${1:&mask});' },
+        { label: 'not_into', detail: 'not_into(): In-place bitwise NOT inversion', kind: vscode.CompletionItemKind.Method, snippet: 'not_into();' }
+    ];
+
+    const presetCompletions = [
+        { label: 'tetris', name: 'tetris', detail: 'Tetris 16-color Guideline palette', doc: '**Tetris Guideline Palette (16 colors)**\n- 0: Board background (Dark slate)\n- 1: I (Cyan)\n- 2: J (Blue)\n- 3: L (Orange)\n- 4: O (Yellow)\n- 5: S (Green)\n- 6: T (Purple)\n- 7: Z (Red)\n- 8: Wall/Border (Steel gray)\n- 9: Ghost shadow\n- 10: White text\n- 11: Gold accent\n- 12: Clear flash\n- 13: UI dark slate\n- 14: Sky cyan\n- 15: Game over red' },
+        { label: 'gameboy', name: 'gameboy', detail: 'Game Boy original 4-shade greenish palette', doc: '**Game Boy Classic Palette (4 colors)**\n- 0: Lightest green (#9BBC0F)\n- 1: Light green (#8BAC0F)\n- 2: Dark green (#306230)\n- 3: Darkest green (#0F380F)' },
+        { label: 'pico8', name: 'pico8', detail: 'PICO-8 authentic 16-color fantasy console palette', doc: '**PICO-8 Palette (16 colors)**\nStandard fantasy console colors: Black, Dark Blue, Dark Purple, Dark Green, Brown, Dark Gray, Light Gray, White, Red, Orange, Yellow, Green, Blue, Indigo, Pink, Peach.' },
+        { label: 'nes', name: 'nes', detail: 'NES authentic 16-color arcade palette', doc: '**NES Classic Arcade Palette (16 colors)**\nAuthentic arcade hardware colors (sky blue, brick red, crimson, cobalt blue, peach skin, emerald, mario gold, white, black, brown, dark green, orange).' },
+        { label: 'fire', name: 'fire', detail: '16-color flame heat gradient (black -> red -> orange -> yellow -> white)', doc: '**Fire Heat Gradient (16 colors)**\nContinuous smooth gradient from deep black through dark crimson, bright orange, burning yellow to searing white.' },
+        { label: 'cyberpunk', name: 'cyberpunk', detail: 'Neon synthwave gradient (deep violet -> cyan -> pink -> gold)', doc: '**Cyberpunk Synthwave Palette (16 colors)**\nHigh-contrast futuristic gradient: dark midnight violet, electric cyan, hot magenta pink, neon gold, white.' },
+        { label: 'monochrome', name: 'monochrome', detail: '2-color 1-bit high contrast palette (black & white)', doc: '**Monochrome Palette (2 colors)**\n- 0: Pure Black (#000000)\n- 1: Pure White (#FFFFFF)' },
+        { label: 'neon', name: 'neon', detail: '16-color vibrant neon glow palette', doc: '**Vibrant Neon Palette (16 colors)**\nVivid fluorescent glowing colors: Neon Pink, Neon Cyan, Neon Green, Neon Yellow, Neon Purple, Neon Orange, Deep Sky.' },
+        { label: 'c64', name: 'c64', detail: 'Commodore 64 iconic 16-color vintage computer palette', doc: '**Commodore 64 Palette (16 colors)**\nClassic 1982 home computer palette: Black, White, Red, Cyan, Purple, Green, Blue, Yellow, Orange, Brown, Light Red, Dark Gray, Gray, Light Green, Light Blue, Light Gray.' },
+        { label: 'matrix', name: 'matrix', detail: 'Matrix digital rain green gradient', doc: '**Matrix Digital Rain Gradient (16 colors)**\nSmooth phosphor terminal gradient from deep void through matrix forest green to glowing emerald and core white-green.' },
+        { label: 'lava', name: 'lava', detail: 'Magma molten lava heat gradient', doc: '**Molten Lava Gradient (16 colors)**\nDeep obsidian basalt rock through incandescent magma crimson, blazing orange to incandescent yellow.' },
+        { label: 'pastel', name: 'pastel', detail: 'Soft aesthetic 16-color pastel palette', doc: '**Aesthetic Pastel Palette (16 colors)**\nDelicate soft tones: Pastel Pink, Pastel Orange, Pastel Yellow, Pastel Green, Pastel Blue, Pastel Lavender, Pastel Rose.' }
     ];
 
     const completionProvider = vscode.languages.registerCompletionItemProvider('viss', {
@@ -488,13 +617,51 @@ function activate(context) {
             const items = [];
 
             // -----------------------------------------------------------
+            // 0. Preset completions: preset(...) or preset("...")
+            // -----------------------------------------------------------
+            const presetMatch = linePrefix.match(/(?:preset|\.preset)\s*\(\s*(?:&[a-zA-Z0-9_]+\s*,\s*)?["']?([a-zA-Z0-9_]*)$/);
+            if (presetMatch) {
+                const quoteOpen = linePrefix.endsWith('"') || linePrefix.endsWith("'") || linePrefix.includes('"') || linePrefix.includes("'");
+                presetCompletions.forEach(p => {
+                    const item = new vscode.CompletionItem(p.label, vscode.CompletionItemKind.Constant);
+                    item.detail = p.detail;
+                    item.documentation = new vscode.MarkdownString(p.doc);
+                    item.insertText = quoteOpen ? p.name : `"${p.name}"`;
+                    items.push(item);
+                });
+                return items;
+            }
+
+            // -----------------------------------------------------------
+            // 0.1. Buffer creation: create | 
+            // -----------------------------------------------------------
+            if (/create\s*\|\s*$/.test(linePrefix)) {
+                const bufferKinds = [
+                    { label: 'bytemask', detail: 'Byte-mask buffer (default 48 bytes = 16 RGB colors)', snippet: 'bytemask, ${1:16};' },
+                    { label: 'colormask', detail: 'RGB palette buffer (default 16 colors = 48 bytes)', snippet: 'colormask, ${1:16};' },
+                    { label: 'mask', detail: 'Spatial byte mask buffer (default 1024 bytes)', snippet: 'mask, ${1:1024};' },
+                    { label: 'bytes', detail: 'Raw byte buffer (default 1024 bytes)', snippet: 'bytes, ${1:1024};' },
+                    { label: 'bits', detail: 'Bitfield array (default 8192 bits)', snippet: 'bits, ${1:8192};' },
+                    { label: 'hybrid', detail: 'Hybrid byte/bit buffer', snippet: 'hybrid, bytes, ${1:512}, bits, ${2:1024};' },
+                    { label: 'grid', detail: 'Volumetric 2D grid matrix', snippet: 'grid, ${1:32}, ${2:32};' }
+                ];
+                bufferKinds.forEach(bk => {
+                    const item = new vscode.CompletionItem(bk.label, vscode.CompletionItemKind.TypeParameter);
+                    item.detail = bk.detail;
+                    item.insertText = new vscode.SnippetString(bk.snippet);
+                    items.push(item);
+                });
+                return items;
+            }
+
+            // -----------------------------------------------------------
             // 1. Module Member Completions: <module>.
             // -----------------------------------------------------------
-            const dotMatch = linePrefix.match(/([@&]?[a-zA-Z0-9_]+)\.$/);
+            const dotMatch = linePrefix.match(/([@&]?[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\.$/);
             if (dotMatch) {
                 const target = dotMatch[1];
 
-                // Known Standard Module
+                // Known Standard Module or Submodule
                 if (moduleMethods[target]) {
                     moduleMethods[target].forEach(m => {
                         const item = new vscode.CompletionItem(m.label, vscode.CompletionItemKind.Method);
@@ -512,6 +679,23 @@ function activate(context) {
                         item.detail = m.detail;
                         item.insertText = new vscode.SnippetString(m.snippet);
                         items.push(item);
+                    });
+                    return items;
+                }
+
+                // If variable suggests mask / palette / buffer
+                const lowerTarget = target.toLowerCase();
+                if (lowerTarget.includes('mask') || lowerTarget.includes('pal') || lowerTarget.includes('stencil') || lowerTarget.includes('buf')) {
+                    const combined = [...bufferMethods, ...objectCollectionMethods];
+                    const seen = new Set();
+                    combined.forEach(m => {
+                        if (!seen.has(m.label)) {
+                            seen.add(m.label);
+                            const item = new vscode.CompletionItem(m.label, m.kind);
+                            item.detail = m.detail;
+                            item.insertText = new vscode.SnippetString(m.snippet);
+                            items.push(item);
+                        }
                     });
                     return items;
                 }
@@ -554,7 +738,7 @@ function activate(context) {
 
                 uniqueBufs.forEach(bname => {
                     const item = new vscode.CompletionItem(bname, vscode.CompletionItemKind.Variable);
-                    item.detail = `&${bname} (hardware buffer)`;
+                    item.detail = `&${bname} (hardware buffer / mask)`;
                     items.push(item);
                 });
                 return items;
@@ -569,13 +753,16 @@ function activate(context) {
                     { label: 'str', detail: 'UTF-8 string type' },
                     { label: 'dec', detail: '64-bit float type' },
                     { label: 'bool', detail: 'Boolean flag type' },
+                    { label: 'bytemask', detail: 'Byte-mask buffer (default 48 bytes = 16 RGB colors)' },
+                    { label: 'colormask', detail: 'RGB palette buffer (default 16 colors = 48 bytes)' },
+                    { label: 'mask', detail: 'Spatial or generic byte mask buffer (default 1024 bytes)' },
+                    { label: 'bytes', detail: 'Raw byte buffer' },
+                    { label: 'bits', detail: 'Bitfield array' },
                     { label: 'list', detail: 'Generic dynamic list' },
                     { label: 'list<int>', detail: 'Typed integer list' },
                     { label: 'list<str>', detail: 'Typed string list' },
                     { label: 'map', detail: 'Key-value map' },
                     { label: 'map<str, var>', detail: 'Typed dictionary' },
-                    { label: 'bytes', detail: 'Raw byte buffer' },
-                    { label: 'bits', detail: 'Bitfield array' },
                     { label: 'const', detail: 'Immutable constant modifier' },
                     { label: 'hybrid', detail: 'Packed byte/bit buffer' },
                     { label: 'grid', detail: 'Volumetric multi-layer grid' }
@@ -691,7 +878,10 @@ function activate(context) {
                 { name: 'json', desc: 'JSON parser and serializer' },
                 { name: 'time', desc: 'High-precision timers and sleep' },
                 { name: 'math', desc: 'Math functions, physics, and noise' },
-                { name: 'async', desc: 'Concurrency and multithreading' }
+                { name: 'async', desc: 'Concurrency and multithreading' },
+                { name: 'mask', desc: 'Hardware byte-masks, RGB palettes, and spatial stencils' },
+                { name: 'bytemask', desc: 'Alias for mask module' },
+                { name: 'colormask', desc: 'RGB palette engine' }
             ];
 
             stdModules.forEach(m => {
@@ -702,7 +892,7 @@ function activate(context) {
 
             return items;
         }
-    }, '.', '@', '&', '!', '?', '|', '$');
+    }, '.', '@', '&', '!', '?', '|', '$', '(', '"', '\'');
 
     // ==========================================
     // 6. Inlay Parameter Name Hints
@@ -716,6 +906,16 @@ function activate(context) {
         'rt.draw_text': ['x:', 'y:', 'text:', 'fg:', 'bg:'],
         'rt.open_window': ['title:', 'scale:'],
         'rt.is_down': ['key:'],
+        'rt.SetColorMask': ['mask:'],
+        'rt.ColorScreen': ['mask:'],
+        'mask.set_rgb': ['mask:', 'id:', 'r:', 'g:', 'b:'],
+        'mask.set_hsv': ['mask:', 'id:', 'h:', 's:', 'v:'],
+        'mask.gradient': ['mask:', 'start:', 'end:', 'r1:', 'g1:', 'b1:', 'r2:', 'g2:', 'b2:'],
+        'mask.preset': ['mask:', 'name:'],
+        'mask.fade': ['mask:', 'factor:'],
+        'mask.blend': ['dest:', 'src_a:', 'src_b:', 'alpha:'],
+        'mask.apply_stencil': ['dest:', 'src:', 'stencil:', 'pass_id:'],
+        'mask.collides_2d': ['a:', 'ax:', 'ay:', 'aw:', 'ah:', 'b:', 'bx:', 'by:', 'bw:', 'bh:'],
         'sys.random': ['min:', 'max:'],
         'str.split': ['str:', 'delim:'],
         'str.sub': ['str:', 'start:', 'len:'],
@@ -818,11 +1018,11 @@ function activate(context) {
                 }
 
                 // Match Raw Buffers
-                const mBuf = text.match(/^\s*&([a-zA-Z0-9_]+)\s+create\s*\|\s*(bytes|bits)/);
+                const mBuf = text.match(/^\s*&([a-zA-Z0-9_]+)\s+create\s*\|\s*(bytes|bits|bytemask|colormask|mask)/);
                 if (mBuf) {
                     const bname = mBuf[1];
                     const btype = mBuf[2];
-                    symbols.push(new vscode.DocumentSymbol('&' + bname, `Raw ${btype} buffer`, vscode.SymbolKind.Variable, line.range, line.range));
+                    symbols.push(new vscode.DocumentSymbol('&' + bname, `Hardware ${btype} buffer`, vscode.SymbolKind.Variable, line.range, line.range));
                 }
             }
             return symbols;
