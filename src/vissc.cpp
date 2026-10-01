@@ -25,8 +25,8 @@
 
 namespace fs = std::filesystem;
 
-const std::string VERSION = "0.2.0";
-const std::string CODENAME = "Marceline";
+const std::string VERSION = "0.2.1";
+const std::string CODENAME = "Hambo";
 
 // =============================================================================
 // 1. UTILITY FUNCTIONS
@@ -305,6 +305,45 @@ std::vector<std::pair<std::string, int>> splitIntoStatements(const std::string& 
             }
         }
 
+        // Dict literal atomic capture: @var = { ... } or return { ... }
+        if (!in_string && c == '{') {
+            std::string trimmed_cur = trim(cur);
+            if (trimmed_cur.find('=') != std::string::npos || startsWith(trimmed_cur, "!return") || startsWith(trimmed_cur, "return")) {
+                int dict_depth = 1;
+                cur += c;
+                i++;
+                while (i < n && dict_depth > 0) {
+                    char dc = code[i];
+                    if (dc == '\n') current_line++;
+                    if (dc == '"' || (dc == 'i' && i + 1 < n && code[i + 1] == '"')) {
+                        if (dc == 'i') { cur += dc; i++; dc = code[i]; }
+                        char q = dc;
+                        cur += dc;
+                        i++;
+                        while (i < n) {
+                            if (code[i] == '\n') current_line++;
+                            if (code[i] == '\\' && i + 1 < n) {
+                                cur += code[i++];
+                                cur += code[i++];
+                                continue;
+                            }
+                            if (code[i] == q) {
+                                cur += code[i++];
+                                break;
+                            }
+                            cur += code[i++];
+                        }
+                        continue;
+                    }
+                    if (dc == '{') dict_depth++;
+                    else if (dc == '}') dict_depth--;
+                    cur += dc;
+                    i++;
+                }
+                continue;
+            }
+        }
+
         // Parens and brackets tracking
         if (c == '(') paren_depth++;
         else if (c == ')') { if (paren_depth > 0) paren_depth--; }
@@ -322,7 +361,7 @@ std::vector<std::pair<std::string, int>> splitIntoStatements(const std::string& 
             bool keyword_boundary = false;
             if (c == '$' && (code.compare(i, 7, "$import") == 0 || code.compare(i, 7, "$impoer") == 0 || code.compare(i, 7, "$kernel") == 0)) {
                 keyword_boundary = true;
-            } else if (c == '!' && (code.compare(i, 5, "!func") == 0 || code.compare(i, 5, "!main") == 0 || code.compare(i, 6, "!class") == 0 || code.compare(i, 11, "!async.func") == 0)) {
+            } else if (c == '!' && (code.compare(i, 5, "!func") == 0 || code.compare(i, 5, "!main") == 0 || code.compare(i, 6, "!class") == 0 || code.compare(i, 11, "!async.func") == 0 || code.compare(i, 11, "!async func") == 0)) {
                 keyword_boundary = true;
             }
             if (keyword_boundary) {
@@ -420,6 +459,154 @@ std::vector<std::pair<std::string, int>> splitIntoStatements(const std::string& 
 }
 
 // =============================================================================
+// 3.5 STRING KINDS PREPROCESSOR (r"...", b"...", """...""")
+// =============================================================================
+
+std::string preprocessStringKinds(const std::string& code) {
+    std::string out;
+    size_t i = 0;
+    size_t n = code.size();
+
+    while (i < n) {
+        // Skip line comments
+        if (code[i] == '/' && i + 1 < n && code[i + 1] == '/') {
+            while (i < n && code[i] != '\n') out += code[i++];
+            continue;
+        }
+        // Skip block comments
+        if (code[i] == '/' && i + 1 < n && code[i + 1] == '*') {
+            out += code[i++]; out += code[i++];
+            while (i + 1 < n && !(code[i] == '*' && code[i + 1] == '/')) out += code[i++];
+            if (i < n) out += code[i++];
+            if (i < n) out += code[i++];
+            continue;
+        }
+
+        bool is_ident_before = (i > 0 && (std::isalnum((unsigned char)code[i - 1]) || code[i - 1] == '_'));
+        bool is_escaped = (i > 0 && code[i - 1] == '\\');
+        if (is_escaped) {
+            out += code[i++];
+            continue;
+        }
+
+        // 1. Multiline strings: """...""", i"""...""", r"""..."""
+        bool is_interp_multi = (!is_ident_before && code[i] == 'i' && i + 3 < n && code.compare(i + 1, 3, "\"\"\"") == 0);
+        bool is_raw_multi = (!is_ident_before && code[i] == 'r' && i + 3 < n && code.compare(i + 1, 3, "\"\"\"") == 0);
+        bool is_plain_multi = (code.compare(i, 3, "\"\"\"") == 0);
+
+        if (is_interp_multi || is_raw_multi || is_plain_multi) {
+            size_t start_offset = (is_interp_multi || is_raw_multi) ? 4 : 3;
+            i += start_offset;
+            // Trim leading newline if present
+            if (i < n && code[i] == '\r') i++;
+            if (i < n && code[i] == '\n') i++;
+
+            std::string content;
+            while (i < n && (code.compare(i, 3, "\"\"\"") != 0 || (i > 0 && code[i - 1] == '\\'))) {
+                char c = code[i];
+                if (c == '\n') {
+                    content += "\\n";
+                    i++;
+                } else if (c == '\r') {
+                    i++;
+                } else if (c == '\t') {
+                    content += "\\t";
+                    i++;
+                } else if (c == '"') {
+                    content += "\\\"";
+                    i++;
+                } else if (c == '\\') {
+                    if (is_raw_multi) {
+                        content += "\\\\";
+                        i++;
+                    } else if (i + 1 < n) {
+                        content += "\\";
+                        content += code[++i];
+                        i++;
+                    } else {
+                        content += "\\\\";
+                        i++;
+                    }
+                } else {
+                    content += c;
+                    i++;
+                }
+            }
+            if (i < n && code.compare(i, 3, "\"\"\"") == 0) {
+                i += 3;
+            }
+
+            if (is_interp_multi) {
+                out += "i\"" + content + "\"";
+            } else {
+                out += "\"" + content + "\"";
+            }
+            continue;
+        }
+
+        // 2. Raw string: r"..."
+        if (!is_ident_before && code[i] == 'r' && i + 1 < n && code[i + 1] == '"') {
+            i += 2;
+            std::string content;
+            while (i < n && code[i] != '"') {
+                if (code[i] == '\\') {
+                    content += "\\\\";
+                    i++;
+                    if (i < n && code[i] == '"') {
+                        content += "\\\"";
+                        i++;
+                    }
+                    continue;
+                }
+                content += code[i++];
+            }
+            if (i < n && code[i] == '"') i++;
+            out += "\"" + content + "\"";
+            continue;
+        }
+
+        // 3. Byte string: b"..."
+        if (!is_ident_before && code[i] == 'b' && i + 1 < n && code[i + 1] == '"') {
+            i += 2;
+            std::string content;
+            while (i < n && code[i] != '"') {
+                if (code[i] == '\\' && i + 1 < n) {
+                    content += code[i++];
+                    content += code[i++];
+                    continue;
+                }
+                content += code[i++];
+            }
+            if (i < n && code[i] == '"') i++;
+            out += "viss::Bytes(\"" + content + "\")";
+            continue;
+        }
+
+        // Regular string literal or non-multiline i"..."
+        if (code[i] == '"' || (!is_ident_before && code[i] == 'i' && i + 1 < n && code[i + 1] == '"')) {
+            if (code[i] == 'i') out += code[i++];
+            out += code[i++];
+            while (i < n) {
+                if (code[i] == '\\' && i + 1 < n) {
+                    out += code[i++];
+                    out += code[i++];
+                    continue;
+                }
+                if (code[i] == '"') {
+                    out += code[i++];
+                    break;
+                }
+                out += code[i++];
+            }
+            continue;
+        }
+
+        out += code[i++];
+    }
+    return out;
+}
+
+// =============================================================================
 // 4. STRING INTERPOLATION
 // =============================================================================
 
@@ -463,6 +650,11 @@ std::string translateInterpolation(const std::string& code) {
                     i++;
                     std::string expr;
                     while (i < n && code[i] != '}') {
+                        if (code[i] == '\\' && i + 1 < n && code[i + 1] == '"') {
+                            expr += '"';
+                            i += 2;
+                            continue;
+                        }
                         expr += code[i++];
                     }
                     if (i < n && code[i] == '}') i++;
@@ -676,17 +868,314 @@ inline std::string vissTypeName(VissType t) {
 }
 
 inline VissType parseVissType(const std::string& name) {
-    if (name == "int" || name == "i8" || name == "u8" || name == "i16" || name == "u16" || name == "i32" || name == "u32" || name == "i64" || name == "u64" || name == "byte") return VissType::Int;
-    if (name == "dec" || name == "double" || name == "float") return VissType::Dec;
-    if (name == "str" || name == "string") return VissType::Str;
-    if (name == "bool") return VissType::Bool;
-    if (name == "bytes" || name == "bytemask" || name == "mask") return VissType::Bytes;
-    if (name == "bits" || name == "bites") return VissType::Bits;
-    if (name == "hybrid") return VissType::Hybrid;
-    if (name == "grid") return VissType::Grid;
-    if (name == "list") return VissType::List;
-    if (name == "map") return VissType::Map;
+    std::string t = trim(name);
+    if (t == "int" || t == "i8" || t == "u8" || t == "i16" || t == "u16" || t == "i32" || t == "u32" || t == "i64" || t == "u64" || t == "byte") return VissType::Int;
+    if (t == "dec" || t == "double" || t == "float") return VissType::Dec;
+    if (t == "str" || t == "string") return VissType::Str;
+    if (t == "bool") return VissType::Bool;
+    if (t == "bytes" || t == "bytemask" || t == "mask") return VissType::Bytes;
+    if (t == "bits" || t == "bites") return VissType::Bits;
+    if (t == "hybrid") return VissType::Hybrid;
+    if (t == "grid") return VissType::Grid;
+    if (t == "list" || startsWith(t, "[") || startsWith(t, "list<") || startsWith(t, "List<")) return VissType::List;
+    if (t == "map" || t == "dict" || startsWith(t, "map<") || startsWith(t, "Map<") || startsWith(t, "dict<") || startsWith(t, "Dict<")) return VissType::Map;
     return VissType::Any;
+}
+
+inline std::string resolveVissCppType(const std::string& type_name) {
+    std::string t = trim(type_name);
+    if (t == "str" || t == "string") return "viss::Str";
+    if (t == "int" || t == "i8" || t == "u8" || t == "i16" || t == "u16" || t == "i32" || t == "u32" || t == "i64" || t == "u64" || t == "byte") return "viss::Int";
+    if (t == "dec" || t == "double" || t == "float") return "viss::Dec";
+    if (t == "bool") return "viss::Bool";
+    if (t == "bytes" || t == "bytemask" || t == "mask") return "viss::Bytes";
+    if (t == "bits" || t == "bites") return "viss::Bits";
+    if (t == "hybrid") return "viss::Hybrid";
+    if (t == "grid") return "viss::Grid";
+    if (t == "var" || t == "any") return "viss::Var";
+    if (t == "list" || t == "List" || t == "[]") return "viss::List<viss::Var>";
+    if (t == "map" || t == "Map" || t == "dict" || t == "Dict" || t == "{}") return "viss::Map<viss::Str, viss::Var>";
+    if (t == "inf" || t == "Inf") return "viss::Inf";
+
+    // Typed lists: [str], list<str>, List<int>, etc.
+    if ((startsWith(t, "[") && endsWith(t, "]")) || (startsWith(t, "list<") && endsWith(t, ">")) || (startsWith(t, "List<") && endsWith(t, ">"))) {
+        std::string inner;
+        if (startsWith(t, "[")) inner = trim(t.substr(1, t.size() - 2));
+        else if (startsWith(t, "list<")) inner = trim(t.substr(5, t.size() - 6));
+        else if (startsWith(t, "List<")) inner = trim(t.substr(5, t.size() - 6));
+        if (inner.empty() || inner == "any" || inner == "var") return "viss::List<viss::Var>";
+        return "viss::List<" + resolveVissCppType(inner) + ">";
+    }
+
+    // Typed maps/dicts: map<str, int>, dict<str, var>, Map<str, int>
+    if ((startsWith(t, "map<") && endsWith(t, ">")) || (startsWith(t, "Map<") && endsWith(t, ">")) ||
+        (startsWith(t, "dict<") && endsWith(t, ">")) || (startsWith(t, "Dict<") && endsWith(t, ">"))) {
+        size_t start_idx = t.find('<');
+        std::string inner = trim(t.substr(start_idx + 1, t.size() - start_idx - 2));
+        size_t comma = inner.find(',');
+        if (comma != std::string::npos) {
+            std::string k_t = trim(inner.substr(0, comma));
+            std::string v_t = trim(inner.substr(comma + 1));
+            return "viss::Map<" + resolveVissCppType(k_t) + ", " + resolveVissCppType(v_t) + ">";
+        }
+        return "viss::Map<viss::Str, " + resolveVissCppType(inner) + ">";
+    }
+
+    return t;
+}
+
+inline bool isDictLiteral(const std::string& str) {
+    std::string s = trim(str);
+    if (s.size() < 2) return false;
+    if (s.front() != '{' || s.back() != '}') return false;
+    if (s == "{}") return true;
+    bool in_str = false;
+    int depth = 0;
+    for (size_t i = 1; i < s.size() - 1; ++i) {
+        char c = s[i];
+        if (c == '"' && (i == 1 || s[i-1] != '\\')) in_str = !in_str;
+        else if (!in_str) {
+            if (c == '{' || c == '[' || c == '(') depth++;
+            else if (c == '}' || c == ']' || c == ')') depth--;
+            else if (depth == 0 && c == ':') return true;
+        }
+    }
+    return false;
+}
+
+inline std::string transformDictLiteral(const std::string& dict_str, const std::string& target_type = "") {
+    std::string s = trim(dict_str);
+    std::string cpp_t = target_type.empty() ? "viss::Map<viss::Str, viss::Var>" : target_type;
+    if (s == "{}") return cpp_t + "{}";
+    std::string inner = trim(s.substr(1, s.size() - 2));
+    if (inner.empty()) return cpp_t + "{}";
+
+    std::vector<std::string> entries;
+    std::string cur = "";
+    bool in_str = false;
+    int depth = 0;
+    for (size_t i = 0; i < inner.size(); ++i) {
+        char c = inner[i];
+        if (c == '"' && (i == 0 || inner[i-1] != '\\')) in_str = !in_str;
+        else if (!in_str) {
+            if (c == '{' || c == '[' || c == '(') depth++;
+            else if (c == '}' || c == ']' || c == ')') depth--;
+            else if (depth == 0 && c == ',') {
+                entries.push_back(trim(cur));
+                cur.clear();
+                continue;
+            }
+        }
+        cur += c;
+    }
+    if (!cur.empty()) entries.push_back(trim(cur));
+
+    std::string out = cpp_t + "{";
+    for (size_t ei = 0; ei < entries.size(); ++ei) {
+        const auto& entry = entries[ei];
+        size_t col_pos = std::string::npos;
+        bool q = false;
+        int d = 0;
+        for (size_t ci = 0; ci < entry.size(); ++ci) {
+            char c = entry[ci];
+            if (c == '"' && (ci == 0 || entry[ci-1] != '\\')) q = !q;
+            else if (!q) {
+                if (c == '{' || c == '[' || c == '(') d++;
+                else if (c == '}' || c == ']' || c == ')') d--;
+                else if (d == 0 && c == ':') { col_pos = ci; break; }
+            }
+        }
+        if (col_pos != std::string::npos) {
+            std::string k = trim(entry.substr(0, col_pos));
+            std::string v = trim(entry.substr(col_pos + 1));
+            if (!startsWith(k, "\"") && !startsWith(k, "__VISS_STR_LIT_") && !startsWith(k, "viss::Str(")) {
+                k = "\"" + k + "\"";
+            }
+            out += "{" + k + ", " + v + "}";
+        } else {
+            out += "{" + entry + ", \"\"}";
+        }
+        if (ei + 1 < entries.size()) out += ", ";
+    }
+    out += "}";
+    return out;
+}
+
+inline std::string transformSlices(const std::string& expr) {
+    if (expr.find("..") == std::string::npos) return expr;
+    std::string res;
+    size_t i = 0;
+    bool in_str = false;
+    while (i < expr.size()) {
+        char c = expr[i];
+        if (c == '"' && (i == 0 || expr[i-1] != '\\')) {
+            in_str = !in_str;
+            res += c;
+            i++;
+            continue;
+        }
+        if (in_str) {
+            res += c;
+            i++;
+            continue;
+        }
+
+        if (c == '[' && i > 0 && (isalnum((unsigned char)expr[i-1]) || expr[i-1] == '_' || expr[i-1] == ')' || expr[i-1] == ']')) {
+            size_t close_bracket = std::string::npos;
+            int depth = 1;
+            bool s_in_str = false;
+            size_t dotdot_pos = std::string::npos;
+
+            for (size_t j = i + 1; j < expr.size(); ++j) {
+                char sc = expr[j];
+                if (sc == '"' && (j == 0 || expr[j-1] != '\\')) s_in_str = !s_in_str;
+                else if (!s_in_str) {
+                    if (sc == '[') depth++;
+                    else if (sc == ']') {
+                        depth--;
+                        if (depth == 0) { close_bracket = j; break; }
+                    } else if (depth == 1 && sc == '.' && j + 1 < expr.size() && expr[j+1] == '.') {
+                        dotdot_pos = j;
+                    }
+                }
+            }
+
+            if (close_bracket != std::string::npos && dotdot_pos != std::string::npos) {
+                size_t t_end = res.size();
+                size_t t_start = t_end;
+                int paren_depth = 0;
+                int b_depth = 0;
+                while (t_start > 0) {
+                    char prev = res[t_start - 1];
+                    if (prev == ')') paren_depth++;
+                    else if (prev == '(') {
+                        if (paren_depth > 0) paren_depth--;
+                        else break;
+                    } else if (prev == ']') b_depth++;
+                    else if (prev == '[') {
+                        if (b_depth > 0) b_depth--;
+                        else break;
+                    } else if (paren_depth == 0 && b_depth == 0) {
+                        if (!isalnum((unsigned char)prev) && prev != '_' && prev != '@' && prev != '.') {
+                            break;
+                        }
+                    }
+                    t_start--;
+                }
+                std::string target = res.substr(t_start, t_end - t_start);
+                res.erase(t_start, t_end - t_start);
+
+                std::string start_s = trim(expr.substr(i + 1, dotdot_pos - (i + 1)));
+                std::string end_s = trim(expr.substr(dotdot_pos + 2, close_bracket - (dotdot_pos + 2)));
+
+                if (start_s.empty()) start_s = "0";
+                if (end_s.empty()) end_s = "2147483647";
+
+                res += "viss::slice(" + target + ", " + start_s + ", " + end_s + ")";
+                i = close_bracket + 1;
+                continue;
+            }
+        }
+
+        res += c;
+        i++;
+    }
+    return res;
+}
+
+inline std::string transformInOperator(const std::string& expr) {
+    if (expr.find("in") == std::string::npos) return expr;
+    std::string s = expr;
+    bool in_str = false;
+    for (size_t i = 0; i < s.size(); ++i) {
+        char c = s[i];
+        if (c == '"' && (i == 0 || s[i-1] != '\\')) {
+            in_str = !in_str;
+            continue;
+        }
+        if (in_str) continue;
+
+        if (s.compare(i, 2, "in") == 0) {
+            bool left_ok = (i == 0 || (!isalnum((unsigned char)s[i-1]) && s[i-1] != '_'));
+            bool right_ok = (i + 2 >= s.size() || (!isalnum((unsigned char)s[i+2]) && s[i+2] != '_'));
+            if (left_ok && right_ok) {
+                size_t p = i;
+                while (p > 0 && (s[p-1] == ' ' || s[p-1] == '\t')) p--;
+                bool is_neg = false;
+                size_t op_start = i;
+                if (p > 0 && s[p-1] == '!') {
+                    is_neg = true;
+                    op_start = p - 1;
+                } else if (p >= 3 && s.substr(p - 3, 3) == "not" && (p == 3 || (!isalnum((unsigned char)s[p-4]) && s[p-4] != '_'))) {
+                    is_neg = true;
+                    op_start = p - 3;
+                }
+
+                size_t lhs_end = op_start;
+                while (lhs_end > 0 && (s[lhs_end - 1] == ' ' || s[lhs_end - 1] == '\t')) lhs_end--;
+                if (lhs_end == 0) continue;
+
+                size_t lhs_start = lhs_end;
+                int paren_d = 0;
+                int brk_d = 0;
+                while (lhs_start > 0) {
+                    char prev = s[lhs_start - 1];
+                    if (prev == ')') paren_d++;
+                    else if (prev == '(') {
+                        if (paren_d > 0) paren_d--;
+                        else break;
+                    } else if (prev == ']') brk_d++;
+                    else if (prev == '[') {
+                        if (brk_d > 0) brk_d--;
+                        else break;
+                    } else if (paren_d == 0 && brk_d == 0) {
+                        if (prev == '&' || prev == '|' || prev == '=' || prev == '<' || prev == '>' || prev == '?' || prev == ',') {
+                            break;
+                        }
+                    }
+                    lhs_start--;
+                }
+                std::string lhs = trim(s.substr(lhs_start, lhs_end - lhs_start));
+
+                size_t rhs_start = i + 2;
+                while (rhs_start < s.size() && (s[rhs_start] == ' ' || s[rhs_start] == '\t')) rhs_start++;
+                if (rhs_start >= s.size()) continue;
+
+                size_t rhs_end = rhs_start;
+                paren_d = 0;
+                brk_d = 0;
+                while (rhs_end < s.size()) {
+                    char next = s[rhs_end];
+                    if (next == '(') paren_d++;
+                    else if (next == ')') {
+                        if (paren_d > 0) paren_d--;
+                        else break;
+                    } else if (next == '[') brk_d++;
+                    else if (next == ']') {
+                        if (brk_d > 0) brk_d--;
+                        else break;
+                    } else if (paren_d == 0 && brk_d == 0) {
+                        if (next == '&' || next == '|' || next == '=' || next == '<' || next == '>' || next == '?' || next == ',' || next == ';' || next == '{' || next == '}') {
+                            break;
+                        }
+                    }
+                    rhs_end++;
+                }
+                std::string rhs = trim(s.substr(rhs_start, rhs_end - rhs_start));
+
+                std::string replacement;
+                if (is_neg) {
+                    replacement = "(!viss::contains(" + rhs + ", " + lhs + "))";
+                } else {
+                    replacement = "(viss::contains(" + rhs + ", " + lhs + "))";
+                }
+
+                s.replace(lhs_start, rhs_end - lhs_start, replacement);
+                i = lhs_start + replacement.size();
+            }
+        }
+    }
+    return s;
 }
 
 struct VarSymbol {
@@ -838,6 +1327,17 @@ std::string transformExpression(
     std::string& err_out
 ) {
     std::string raw_expr = processPipeline(input_raw_expr);
+    raw_expr = transformSlices(raw_expr);
+    raw_expr = transformInOperator(raw_expr);
+    while (raw_expr.find("!await") != std::string::npos || std::regex_search(raw_expr, std::regex(R"(\bawait\s+)"))) {
+        std::string replaced = std::regex_replace(
+            raw_expr,
+            std::regex(R"(!?await\s+([@&a-zA-Z0-9_.:]+(?:\([^)]*\))?|\([^\)]+\)))"),
+            "viss::async::await($1)"
+        );
+        if (replaced == raw_expr) break;
+        raw_expr = replaced;
+    }
     while (raw_expr.find("?:") != std::string::npos) {
         std::string replaced = std::regex_replace(
             raw_expr,
@@ -1180,7 +1680,7 @@ std::string transformExpression(
 }
 
 std::string transpile(const std::string& raw_viss_code, const std::string& filename, const std::string& current_dir = ".", bool is_module = false) {
-    std::string viss_code = translateInterpolation(raw_viss_code);
+    std::string viss_code = translateInterpolation(preprocessStringKinds(raw_viss_code));
     std::vector<std::string> string_literals;
     viss_code = extractStringLiterals(viss_code, string_literals);
 
@@ -1191,12 +1691,12 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
     for (const auto& item : statements) {
         std::string s = trim(item.first);
         std::smatch m_f;
-        if (std::regex_match(s, m_f, std::regex(R"(^!(async\.)?func\s+([a-zA-Z0-9_?!]+)\s*\(([^)]*)\)(?:\s+(?:to|as|->)\s+([a-zA-Z0-9_<>]+))?\s*\{$)"))) {
-            std::string raw_name = m_f[2].str();
+        if (std::regex_match(s, m_f, std::regex(R"(^!?(?:async[\.\s]+)?func\s+([a-zA-Z0-9_?!]+)\s*\(([^)]*)\)(?:\s+(?:to|as|->)\s+([a-zA-Z0-9_<>]+))?\s*\{$)"))) {
+            std::string raw_name = m_f[1].str();
             if (raw_name == "main") continue;
             std::string fname = replaceAll(replaceAll(raw_name, "?", "_q"), "!", "_bang");
-            std::string params_str = m_f[3].str();
-            std::string ret_type = m_f[4].str();
+            std::string params_str = m_f[2].str();
+            std::string ret_type = m_f[3].str();
 
             std::vector<std::string> param_tokens = splitByChar(params_str, ',');
             std::vector<std::string> cpp_params;
@@ -1238,13 +1738,11 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             }
 
             if (!ret_type.empty()) {
-                std::string cpp_ret = ret_type;
-                if (ret_type == "str") cpp_ret = "viss::Str";
-                else if (ret_type == "int") cpp_ret = "viss::Int";
-                else if (ret_type == "dec" || ret_type == "double" || ret_type == "float") cpp_ret = "viss::Dec";
-                else if (ret_type == "bool") cpp_ret = "viss::Bool";
-                else if (ret_type == "bytes") cpp_ret = "viss::Bytes";
-                else if (ret_type == "bits") cpp_ret = "viss::Bits";
+                std::string cpp_ret = resolveVissCppType(ret_type);
+                bool is_async_f = startsWith(s, "!async") || startsWith(s, "async");
+                if (is_async_f) {
+                    cpp_ret = "viss::async::Task<" + cpp_ret + ">";
+                }
                 forward_decl_section.push_back(tmpl_clause + cpp_ret + " " + fname + "(" + joined_params + ");");
             }
         }
@@ -1543,12 +2041,12 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
         }
 
         std::smatch m_fn;
-        if (std::regex_match(stripped, m_fn, std::regex(R"(^!?(async\.)?func\s+([a-zA-Z0-9_?!]+)\s*\(([^)]*)\)(?:\s+(?:to|as|->)\s+([a-zA-Z0-9_<>]+))?\s*\{$)"))) {
-            bool is_async = !m_fn[1].str().empty();
-            std::string raw_name = m_fn[2].str();
+        if (std::regex_match(stripped, m_fn, std::regex(R"(^!?(?:async[\.\s]+)?func\s+([a-zA-Z0-9_?!]+)\s*\(([^)]*)\)(?:\s+(?:to|as|->)\s+([a-zA-Z0-9_<>]+))?\s*\{$)"))) {
+            bool is_async = (stripped.find("async.") != std::string::npos || stripped.find("async ") != std::string::npos);
+            std::string raw_name = m_fn[1].str();
             std::string fname = replaceAll(replaceAll(raw_name, "?", "_q"), "!", "_bang");
-            std::string params_str = m_fn[3].str();
-            std::string ret_type = m_fn[4].str();
+            std::string params_str = m_fn[2].str();
+            std::string ret_type = m_fn[3].str();
             declared_vars.enter_function();
             if (!current_struct_name.empty()) {
                 for (const auto& f : struct_fields[current_struct_name]) {
@@ -1625,8 +2123,10 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
 
             if (is_async) {
                 block_stack.push_back({"async_func", fname});
-                current_target = &functions_section;
-                current_target->push_back("inline auto " + fname + "(" + joined_params + ") { return viss::getGlobalThreadPool().enqueue([=]() {");
+                std::string resolved_ret = (!ret_type.empty()) ? resolveVissCppType(ret_type) : "";
+                std::string async_ret = (!resolved_ret.empty()) ? ("viss::async::Task<" + resolved_ret + ">") : "auto";
+                std::string lambda_ret = (!resolved_ret.empty()) ? (" -> " + resolved_ret) : "";
+                current_target->push_back(tmpl_clause + "inline " + async_ret + " " + fname + "(" + joined_params + ") { return viss::async::spawn([=]()" + lambda_ret + " {");
             } else if (!current_struct_name.empty()) {
                 block_stack.push_back({"struct_func", fname});
                 current_target = &classes_section;
@@ -2204,10 +2704,92 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             continue;
         }
 
-        if (std::regex_match(stripped, m_pipe, std::regex(R"(^@([a-zA-Z0-9_]+)\s*=\s*([\s\S]+?)\s*\|\s*([a-zA-Z0-9_]+);?$)"))) {
-            std::string vname = m_pipe[1].str();
-            std::string val = trim(m_pipe[2].str());
-            std::string ptype = m_pipe[3].str();
+        // 14.4 Multi-assignment / Tuple unpacking: (@a, @b) = (1, 2) or (@a, @b) = @coll or (@a, @b) = (@b, @a)
+        std::smatch m_tuple_asn;
+        if (std::regex_match(stripped, m_tuple_asn, std::regex(R"(^\(\s*(@[a-zA-Z0-9_]+(?:\s*,\s*@[a-zA-Z0-9_]+)+)\s*\)\s*=\s*([\s\S]+?);?$)"))) {
+            std::string vars_str = m_tuple_asn[1].str();
+            std::string rhs = trim(m_tuple_asn[2].str());
+
+            std::vector<std::string> var_names;
+            std::stringstream ss_vars(vars_str);
+            std::string v_item;
+            while (std::getline(ss_vars, v_item, ',')) {
+                v_item = trim(v_item);
+                if (startsWith(v_item, "@")) v_item = v_item.substr(1);
+                if (!v_item.empty()) var_names.push_back(v_item);
+            }
+
+            if (startsWith(rhs, "(") && endsWith(rhs, ")")) {
+                std::string inner_rhs = trim(rhs.substr(1, rhs.size() - 2));
+                std::vector<std::string> rhs_items;
+                std::string cur = "";
+                bool in_q = false;
+                int depth = 0;
+                for (size_t ci = 0; ci < inner_rhs.size(); ++ci) {
+                    char c = inner_rhs[ci];
+                    if (c == '"' && (ci == 0 || inner_rhs[ci-1] != '\\')) in_q = !in_q;
+                    else if (!in_q) {
+                        if (c == '(' || c == '[' || c == '{') depth++;
+                        else if (c == ')' || c == ']' || c == '}') depth--;
+                        else if (depth == 0 && c == ',') {
+                            rhs_items.push_back(trim(cur));
+                            cur.clear();
+                            continue;
+                        }
+                    }
+                    cur += c;
+                }
+                if (!cur.empty()) rhs_items.push_back(trim(cur));
+
+                current_target->push_back("#line " + std::to_string(line_num) + " \"" + filename + "\"");
+                for (size_t i = 0; i < var_names.size() && i < rhs_items.size(); ++i) {
+                    std::string err;
+                    std::string t_item = transformExpression(rhs_items[i], imported_aliases, declared_vars, line_num, filename, err);
+                    current_target->push_back("auto _t_unpack_" + std::to_string(line_num) + "_" + std::to_string(i) + " = " + t_item + ";");
+                }
+                for (size_t i = 0; i < var_names.size() && i < rhs_items.size(); ++i) {
+                    const auto& v = var_names[i];
+                    std::string tmp_val = "_t_unpack_" + std::to_string(line_num) + "_" + std::to_string(i);
+                    if (declared_vars.count(v)) {
+                        current_target->push_back(v + " = " + tmp_val + ";");
+                    } else {
+                        declared_vars.insert(v);
+                        current_target->push_back("auto " + v + " = " + tmp_val + ";");
+                    }
+                }
+            } else {
+                std::string err;
+                rhs = transformExpression(rhs, imported_aliases, declared_vars, line_num, filename, err);
+                current_target->push_back("#line " + std::to_string(line_num) + " \"" + filename + "\"");
+                std::string coll_tmp = "_unpack_coll_" + std::to_string(line_num);
+                current_target->push_back("auto " + coll_tmp + " = " + rhs + ";");
+                for (size_t i = 0; i < var_names.size(); ++i) {
+                    const auto& v = var_names[i];
+                    std::string elem_expr = coll_tmp + "[" + std::to_string(i) + "]";
+                    if (declared_vars.count(v)) {
+                        current_target->push_back(v + " = " + elem_expr + ";");
+                    } else {
+                        declared_vars.insert(v);
+                        current_target->push_back("auto " + v + " = " + elem_expr + ";");
+                    }
+                }
+            }
+            continue;
+        }
+
+        // 14.5 Explicitly typed variable declaration: @var as type = val; or @var: type = val;
+        std::smatch m_as_var;
+        if (std::regex_match(stripped, m_as_var, std::regex(R"(^@([a-zA-Z0-9_]+)(?:\s+as\s+|\s*:\s*)([a-zA-Z0-9_<>[\]]+)\s*=\s*([\s\S]+?);?$)"))) {
+            std::string vname = m_as_var[1].str();
+            std::string ptype = trim(m_as_var[2].str());
+            std::string val = trim(m_as_var[3].str());
+            std::string cpp_t = resolveVissCppType(ptype);
+            if (startsWith(val, "[") && endsWith(val, "]")) {
+                std::string inner = trim(val.substr(1, val.size() - 2));
+                val = inner.empty() ? (cpp_t + "{}") : (cpp_t + "{" + inner + "}");
+            } else if (isDictLiteral(val)) {
+                val = transformDictLiteral(val, cpp_t);
+            }
             std::string err;
             val = transformExpression(val, imported_aliases, declared_vars, line_num, filename, err);
             if (!err.empty()) {
@@ -2219,33 +2801,36 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             bool already = declared_vars.count(vname) > 0;
             declared_vars.insert(vname, parseVissType(ptype), line_num);
             current_target->push_back("#line " + std::to_string(line_num) + " \"" + filename + "\"");
+            current_target->push_back(already ? (vname + " = " + val + ";") : (cpp_t + " " + vname + " = " + val + ";"));
+            continue;
+        }
 
-            if (ptype == "list") {
-                if (startsWith(val, "[") && endsWith(val, "]")) {
-                    std::string inner = trim(val.substr(1, val.size() - 2));
-                    val = inner.empty() ? "viss::List<viss::Int>{}" : "viss::List{" + inner + "}";
-                }
-                current_target->push_back(already ? (vname + " = " + val + ";") : ("viss::List " + vname + " = " + val + ";"));
-            } else if (ptype == "map") current_target->push_back(already ? (vname + " = " + val + ";") : ("viss::Map " + vname + " = " + val + ";"));
-            else if (ptype == "inf") current_target->push_back(already ? (vname + " = " + val + ";") : ("viss::Inf " + vname + " = " + val + ";"));
-            else if (ptype == "bytes" || ptype == "bytemask" || ptype == "mask") current_target->push_back(already ? (vname + " = " + val + ";") : ("viss::Bytes " + vname + " = " + val + ";"));
-            else if (ptype == "bits" || ptype == "bites") current_target->push_back(already ? (vname + " = " + val + ";") : ("viss::Bits " + vname + " = " + val + ";"));
-            else if (ptype == "hybrid") current_target->push_back(already ? (vname + " = " + val + ";") : ("viss::Hybrid " + vname + " = " + val + ";"));
-            else if (ptype == "grid") current_target->push_back(already ? (vname + " = " + val + ";") : ("viss::Grid " + vname + " = " + val + ";"));
-            else if (ptype == "str") current_target->push_back(already ? (vname + " = viss::toStr(" + val + ");") : ("viss::Str " + vname + " = viss::toStr(" + val + ");"));
-            else if (ptype == "int") current_target->push_back(already ? (vname + " = (viss::Int)(" + val + ");") : ("viss::Int " + vname + " = (viss::Int)(" + val + ");"));
-            else if (ptype == "dec" || ptype == "double" || ptype == "float") current_target->push_back(already ? (vname + " = (viss::Dec)(" + val + ");") : ("viss::Dec " + vname + " = (viss::Dec)(" + val + ");"));
-            else if (ptype == "bool") current_target->push_back(already ? (vname + " = (viss::Bool)(" + val + ");") : ("viss::Bool " + vname + " = (viss::Bool)(" + val + ");"));
-            else if (known_classes.count(ptype)) {
-                if (startsWith(val, "[") && endsWith(val, "]")) {
-                    std::string inner = trim(val.substr(1, val.size() - 2));
-                    val = inner.empty() ? ("viss::List<" + ptype + ">{}") : ("viss::List<" + ptype + ">{" + inner + "}");
-                    current_target->push_back(already ? (vname + " = " + val + ";") : ("viss::List<" + ptype + "> " + vname + " = " + val + ";"));
-                } else {
-                    current_target->push_back(already ? (vname + " = " + val + ";") : (ptype + " " + vname + " = " + val + ";"));
-                }
+        // 15. Pipe variable declaration: @var = val | type, const; or @var = val | type;
+        if (std::regex_match(stripped, m_pipe, std::regex(R"(^@([a-zA-Z0-9_]+)\s*=\s*([\s\S]+?)\s*\|\s*([a-zA-Z0-9_<>, \t[\]]+?)(?:,\s*(const))?\s*;?$)"))) {
+            std::string vname = m_pipe[1].str();
+            std::string val = trim(m_pipe[2].str());
+            std::string ptype = trim(m_pipe[3].str());
+            bool is_const = m_pipe[4].matched;
+            std::string cpp_t = resolveVissCppType(ptype);
+            if (is_const) cpp_t = "const " + cpp_t;
+            if (startsWith(val, "[") && endsWith(val, "]")) {
+                std::string inner = trim(val.substr(1, val.size() - 2));
+                val = inner.empty() ? (cpp_t + "{}") : (cpp_t + "{" + inner + "}");
+            } else if (isDictLiteral(val)) {
+                val = transformDictLiteral(val, cpp_t);
             }
-            else current_target->push_back(already ? (vname + " = " + val + ";") : ("auto " + vname + " = " + val + ";"));
+            std::string err;
+            val = transformExpression(val, imported_aliases, declared_vars, line_num, filename, err);
+            if (!err.empty()) {
+                std::cerr << "\n[Viss " << (err.find("Cannot apply") != std::string::npos ? "TypeError" : "NameError") << "] " << filename << ":" << line_num << "\n";
+                std::cerr << "    " << stripped << "\n";
+                std::cerr << "    " << err << "\n";
+                return "";
+            }
+            bool already = declared_vars.count(vname) > 0;
+            declared_vars.insert(vname, parseVissType(ptype), line_num);
+            current_target->push_back("#line " + std::to_string(line_num) + " \"" + filename + "\"");
+            current_target->push_back(already ? (vname + " = " + val + ";") : (cpp_t + " " + vname + " = " + val + ";"));
             continue;
         }
 
@@ -2273,6 +2858,12 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
         if (std::regex_match(stripped, m_asn, std::regex(R"(^@([a-zA-Z0-9_]+)\s*=\s*([\s\S]+?);?$)"))) {
             std::string vname = m_asn[1].str();
             std::string val = trim(m_asn[2].str());
+            if (startsWith(val, "[") && endsWith(val, "]")) {
+                std::string inner = trim(val.substr(1, val.size() - 2));
+                val = inner.empty() ? "viss::List<viss::Var>{}" : "viss::List{" + inner + "}";
+            } else if (isDictLiteral(val)) {
+                val = transformDictLiteral(val, "viss::Map<viss::Str, viss::Var>");
+            }
             std::string err;
             val = transformExpression(val, imported_aliases, declared_vars, line_num, filename, err);
             if (!err.empty()) {
@@ -2281,10 +2872,6 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
                 std::cerr << "    " << err << "\n";
                 return "";
             }
-            if (startsWith(val, "[") && endsWith(val, "]")) {
-                std::string inner = trim(val.substr(1, val.size() - 2));
-                val = inner.empty() ? "viss::List<viss::Int>{}" : "viss::List{" + inner + "}";
-            }
             current_target->push_back("#line " + std::to_string(line_num) + " \"" + filename + "\"");
             if (declared_vars.count(vname)) {
                 current_target->push_back(vname + " = " + val + ";");
@@ -2292,6 +2879,17 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
                 declared_vars.insert(vname, declared_vars.infer_type_from_literal(val), line_num);
                 current_target->push_back("auto " + vname + " = " + val + ";");
             }
+            continue;
+        }
+
+        // Await statement: !await @task; or await @task;
+        std::smatch m_await_stmt;
+        if (std::regex_match(stripped, m_await_stmt, std::regex(R"(^!?await\s+([\s\S]+?);?$)"))) {
+            std::string task_expr = m_await_stmt[1].str();
+            std::string err;
+            task_expr = transformExpression(task_expr, imported_aliases, declared_vars, line_num, filename, err);
+            current_target->push_back("#line " + std::to_string(line_num) + " \"" + filename + "\"");
+            current_target->push_back("viss::async::await(" + task_expr + ");");
             continue;
         }
 
@@ -2616,7 +3214,11 @@ void printHelp() {
               << "  fmt [--check] <file.viss> Format Viss source code to canonical style\n"
               << "  repl                      Start interactive Viss shell (or run 'viss' with no args)\n"
               << "  clean                     Remove cached binaries (.viss_cache/)\n"
-              << "  version                   Print Viss version\n";
+              << "  version                   Print Viss version\n\n"
+              << "Options:\n"
+              << "  -o <output.exe>           Specify output binary path\n"
+              << "  --gui, --windowed, -w     Build Windows GUI/windowed application (no console window)\n"
+              << "  --icon <icon.ico>         Embed application icon via Windows resource (.ico)\n";
 }
 
 int main(int argc, char* argv[]) {

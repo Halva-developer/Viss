@@ -1,2 +1,2 @@
 @echo off
-python "%~dp0viss.py" %*
+"%~dp0viss.exe" %*

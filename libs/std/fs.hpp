@@ -261,5 +261,89 @@ namespace viss {
             return false;
 #endif
         }
+
+        inline bool glob_match(const std::string& pattern, const std::string& str) {
+            size_t p = 0, s = 0;
+            size_t star_p = std::string::npos, star_s = 0;
+            while (s < str.size()) {
+                if (p < pattern.size() && (pattern[p] == '?' || pattern[p] == str[s])) {
+                    p++;
+                    s++;
+                } else if (p < pattern.size() && pattern[p] == '*') {
+                    star_p = p++;
+                    star_s = s;
+                } else if (star_p != std::string::npos) {
+                    p = star_p + 1;
+                    s = ++star_s;
+                } else {
+                    return false;
+                }
+            }
+            while (p < pattern.size() && pattern[p] == '*') p++;
+            return p == pattern.size();
+        }
+
+        inline List<Str> glob(const Str& dir, const Str& pattern, bool recursive = true) {
+            List<Str> results;
+            std::error_code ec;
+            std::string norm_pattern = pattern;
+            std::replace(norm_pattern.begin(), norm_pattern.end(), '\\', '/');
+
+            bool is_recursive = recursive || (norm_pattern.find("**") != std::string::npos);
+            std::string file_pat = norm_pattern;
+            size_t last_slash = norm_pattern.rfind('/');
+            if (last_slash != std::string::npos) {
+                file_pat = norm_pattern.substr(last_slash + 1);
+            }
+
+            if (is_recursive) {
+                auto opts = std::filesystem::directory_options::skip_permission_denied;
+                std::filesystem::recursive_directory_iterator it(dir, opts, ec);
+                std::filesystem::recursive_directory_iterator end;
+                if (ec) return results;
+                while (it != end) {
+                    try {
+                        if (!ec && it->is_regular_file()) {
+                            std::string fname = it->path().filename().string();
+                            if (glob_match(file_pat, fname)) {
+                                results.add(it->path().string());
+                            }
+                        }
+                    } catch (...) {}
+                    it.increment(ec);
+                    if (ec) ec.clear();
+                }
+            } else {
+                std::filesystem::directory_iterator it(dir, ec);
+                std::filesystem::directory_iterator end;
+                if (ec) return results;
+                while (it != end) {
+                    try {
+                        if (!ec && it->is_regular_file()) {
+                            std::string fname = it->path().filename().string();
+                            if (glob_match(file_pat, fname)) {
+                                results.add(it->path().string());
+                            }
+                        }
+                    } catch (...) {}
+                    it.increment(ec);
+                    if (ec) ec.clear();
+                }
+            }
+            return results;
+        }
+
+        inline List<Str> glob(const Str& pattern) {
+            std::string norm = pattern;
+            std::replace(norm.begin(), norm.end(), '\\', '/');
+            size_t last_slash = norm.rfind('/');
+            if (last_slash != std::string::npos) {
+                std::string dir = norm.substr(0, last_slash);
+                std::string pat = norm.substr(last_slash + 1);
+                return glob(dir, pat, norm.find("**") != std::string::npos);
+            }
+            return glob(".", norm, false);
+        }
     }
 }
+

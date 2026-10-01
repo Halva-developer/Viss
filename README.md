@@ -37,7 +37,8 @@ Following the beloved Debian tradition with *Toy Story*, Viss codenames each off
 | `v0.0.1` | **"Finn"** | Finn the Human | The initial prototype, prefix syntax discovery, and native proof-of-concept. |
 | `v0.1.0` | **"Jake"** | Jake the Dog | Modular runtime refactor, standard libraries (`io`, `math`, `fs`, `sys`). |
 | `v0.1.2` | **"BMO"** | BMO | Retro-tech audio synthesizer, pixel screen buffer, and sound chip. |
-| `v0.2.0` | **"Marceline"** | Marceline the Vampire Queen | **Current Release:** Struct member methods, enums, `Vec2`/`Vec3` vector math, pipelines (`\|>`), Elvis (`?:`), `!defer`, and complete handbook specs. |
+| `v0.2.0` | **"Marceline"** | Marceline the Vampire Queen | Struct member methods, enums, `Vec2`/`Vec3` vector math, pipelines (`\|>`), Elvis (`?:`), `!defer`, and complete handbook specs. |
+| `v0.2.1` | **"Hambo"** | Hambo | **Current Release:** Dynamic auto-lists, Map/Dict literals (`{}`), range slicing (`..`), `in`/`!in` membership operators, tuple unpacking, native `!async`/`!await`, string kinds (`r""`, `b""`, `""""""`), `fs.glob`, `json.loads`/`dumps`, pure native C++ runtime. |
 
 > 🍋 **Unstable Development Branch:** Named **"Lemongrab"** (*"UNACCEPTABLE!"*) for cutting-edge nightly builds.
 

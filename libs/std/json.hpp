@@ -29,6 +29,27 @@ namespace viss {
             JsonValue(Dec d) : type(JsonType::Number), num_val(d), int_val((Int)d) {}
             JsonValue(const Str& s) : type(JsonType::String), str_val(s) {}
             JsonValue(const char* s) : type(JsonType::String), str_val(s) {}
+            JsonValue(const Var& v) {
+                switch (v.type) {
+                    case Var::Type::Int: type = JsonType::Int; int_val = v.i_val; num_val = (Dec)v.i_val; break;
+                    case Var::Type::Dec: type = JsonType::Number; num_val = v.d_val; int_val = (Int)v.d_val; break;
+                    case Var::Type::Str: type = JsonType::String; str_val = v.s_val; break;
+                    case Var::Type::Bool: type = JsonType::Bool; bool_val = v.b_val; break;
+                    default: type = JsonType::Null; break;
+                }
+            }
+
+            operator Var() const {
+                if (type == JsonType::Int) return Var(int_val);
+                if (type == JsonType::Number) return Var(num_val);
+                if (type == JsonType::Bool) return Var(bool_val);
+                if (type == JsonType::String) return Var(str_val);
+                return Var(as_str());
+            }
+            operator Str() const { return as_str(); }
+            operator Int() const { return as_int(); }
+            operator Dec() const { return as_dec(); }
+            operator Bool() const { return as_bool(); }
 
             inline Bool is_null() const { return type == JsonType::Null; }
             inline Bool is_bool() const { return type == JsonType::Bool; }
@@ -301,5 +322,60 @@ namespace viss {
             JsonParser p(src);
             return p.parse_value();
         }
+
+        inline JsonValue loads(const Str& src) {
+            return parse(src);
+        }
+
+        inline Str dumps(const JsonValue& v, Bool pretty = false) {
+            return stringify(v, pretty);
+        }
+
+        template<typename K, typename V>
+        inline Str dumps(const Map<K, V>& map, Bool pretty = false) {
+            std::stringstream ss;
+            ss << "{";
+            auto keys = map.keys();
+            for (Int i = 0; i < keys.size(); ++i) {
+                auto k = keys.get(i);
+                ss << "\"" << k << "\": ";
+                V val = map.get(k);
+                Str s = toStr(val);
+                if (s == "true" || s == "false" || (!s.empty() && (isdigit((unsigned char)s[0]) || s[0] == '-'))) {
+                    ss << s;
+                } else {
+                    ss << "\"" << s << "\"";
+                }
+                if (i + 1 < keys.size()) ss << ", ";
+            }
+            ss << "}";
+            return ss.str();
+        }
+
+        template<typename T>
+        inline Str dumps(const List<T>& list, Bool pretty = false) {
+            std::stringstream ss;
+            ss << "[";
+            for (Int i = 0; i < list.size(); ++i) {
+                T val = list.get(i);
+                Str s = toStr(val);
+                if (s == "true" || s == "false" || (!s.empty() && (isdigit((unsigned char)s[0]) || s[0] == '-'))) {
+                    ss << s;
+                } else {
+                    ss << "\"" << s << "\"";
+                }
+                if (i + 1 < list.size()) ss << ", ";
+            }
+            ss << "]";
+            return ss.str();
+        }
+
+        inline Str toStr(const JsonValue& v) {
+            return v.as_str();
+        }
+    }
+
+    inline Str toStr(const json::JsonValue& v) {
+        return v.as_str();
     }
 }

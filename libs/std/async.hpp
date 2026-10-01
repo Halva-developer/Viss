@@ -84,8 +84,32 @@ namespace viss {
             return task.get();
         }
 
+        template<typename T>
+        inline T await(Task<T>&& task) {
+            return task.get();
+        }
+
+        template<typename T>
+        inline T await(const Task<T>& task) {
+            return const_cast<Task<T>&>(task).get();
+        }
+
         inline void await(Task<void>& task) {
             task.get();
+        }
+
+        inline void await(Task<void>&& task) {
+            task.get();
+        }
+
+        template<typename T>
+        inline T await(std::future<T>& fut) {
+            return fut.get();
+        }
+
+        template<typename T>
+        inline T await(std::future<T>&& fut) {
+            return fut.get();
         }
 
         inline void sleep(Int ms) {

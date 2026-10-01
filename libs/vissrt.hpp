@@ -201,11 +201,86 @@ namespace viss {
     inline Str toStr(const Error& e) {
         return e.what();
     }
-    inline Str toStr(const std::exception& e) {
-        return e.what();
+    struct Var {
+        enum class Type { Null, Int, Dec, Str, Bool } type = Type::Null;
+        Int i_val = 0;
+        Dec d_val = 0.0;
+        Str s_val = "";
+        Bool b_val = false;
+
+        Var() : type(Type::Null) {}
+        Var(const Var& o) = default;
+        Var& operator=(const Var& o) = default;
+
+        Var(Int v) : type(Type::Int), i_val(v), d_val((Dec)v), s_val(std::to_string(v)), b_val(v != 0) {}
+        Var(int v) : Var((Int)v) {}
+        Var(long v) : Var((Int)v) {}
+        Var(unsigned int v) : Var((Int)v) {}
+        Var(unsigned long long v) : Var((Int)v) {}
+        Var(Dec v) : type(Type::Dec), d_val(v), i_val((Int)v), s_val(std::to_string(v)), b_val(v != 0.0) {}
+        Var(float v) : Var((Dec)v) {}
+        Var(const Str& v) : type(Type::Str), s_val(v), b_val(!v.empty()) {
+            try { i_val = std::stoll(v); } catch(...) { i_val = 0; }
+            try { d_val = std::stod(v); } catch(...) { d_val = 0.0; }
+        }
+        Var(const char* v) : Var(Str(v ? v : "")) {}
+        Var(Bool v) : type(Type::Bool), b_val(v), i_val(v ? 1 : 0), d_val(v ? 1.0 : 0.0), s_val(v ? "true" : "false") {}
+
+        // Implicit conversions
+        operator Str() const { return s_val; }
+        operator Int() const { return i_val; }
+        operator int() const { return (int)i_val; }
+        operator Dec() const { return d_val; }
+        operator float() const { return (float)d_val; }
+        operator Bool() const { return b_val; }
+        operator const char*() const { return s_val.c_str(); }
+
+        inline Str to_str() const { return s_val; }
+        inline Int to_int() const { return i_val; }
+        inline Dec to_dec() const { return d_val; }
+        inline Bool to_bool() const { return b_val; }
+
+        inline bool operator==(const Var& o) const {
+            if (type == Type::Str || o.type == Type::Str) return s_val == o.s_val;
+            if (type == Type::Dec || o.type == Type::Dec) return d_val == o.d_val;
+            return i_val == o.i_val;
+        }
+        inline bool operator!=(const Var& o) const { return !(*this == o); }
+        inline bool operator<(const Var& o) const {
+            if (type == Type::Str && o.type == Type::Str) return s_val < o.s_val;
+            if (type == Type::Dec || o.type == Type::Dec) return d_val < o.d_val;
+            return i_val < o.i_val;
+        }
+
+        inline Var operator+(const Var& o) const {
+            if (type == Type::Str || o.type == Type::Str) return Var(s_val + o.s_val);
+            if (type == Type::Dec || o.type == Type::Dec) return Var(d_val + o.d_val);
+            return Var(i_val + o.i_val);
+        }
+        inline Var operator-(const Var& o) const {
+            if (type == Type::Dec || o.type == Type::Dec) return Var(d_val - o.d_val);
+            return Var(i_val - o.i_val);
+        }
+        inline Var operator*(const Var& o) const {
+            if (type == Type::Dec || o.type == Type::Dec) return Var(d_val * o.d_val);
+            return Var(i_val * o.i_val);
+        }
+        inline Var operator/(const Var& o) const {
+            if (type == Type::Dec || o.type == Type::Dec) return Var(o.d_val != 0.0 ? d_val / o.d_val : 0.0);
+            return Var(o.i_val != 0 ? i_val / o.i_val : 0);
+        }
+
+        friend std::ostream& operator<<(std::ostream& os, const Var& v) {
+            os << v.s_val;
+            return os;
+        }
+    };
+
+    inline Str toStr(const Var& v) {
+        return v.s_val;
     }
 
-    template<typename T = std::string>
+    template<typename T = Var>
     class List {
     private:
         std::shared_ptr<std::vector<T>> data;
@@ -412,7 +487,7 @@ namespace viss {
         inline auto end() const { return data->end(); }
     };
 
-    template<typename K = Str, typename V = Str>
+    template<typename K = Str, typename V = Var>
     class Map {
     private:
         std::shared_ptr<std::unordered_map<K, V>> data;
@@ -427,13 +502,16 @@ namespace viss {
             std::lock_guard<std::mutex> lock(*mtx);
             (*data)[key] = val;
         }
-        inline V get(const K& key) const {
+        inline V get(const K& key, const V& default_val = V()) const {
             std::lock_guard<std::mutex> lock(*mtx);
             auto it = data->find(key);
             if (it != data->end()) {
                 return it->second;
             }
-            return V();
+            return default_val;
+        }
+        inline Bool contains(const K& key) const {
+            return has(key);
         }
         inline Bool has(const K& key) const {
             std::lock_guard<std::mutex> lock(*mtx);
@@ -476,7 +554,59 @@ namespace viss {
             std::lock_guard<std::mutex> lock(*mtx);
             return (*data)[key];
         }
+        inline auto begin() { return data->begin(); }
+        inline auto end() { return data->end(); }
+        inline auto begin() const { return data->begin(); }
+        inline auto end() const { return data->end(); }
     };
+
+    template<typename K = Str, typename V = Var>
+    using Dict = Map<K, V>;
+
+    // Slicing utilities for range operator [start..end]
+    template<typename T>
+    inline List<T> slice(const List<T>& list, Int start, Int end) {
+        Int n = list.size();
+        if (start < 0) start = n + start;
+        if (end < 0) end = n + end;
+        if (start < 0) start = 0;
+        if (end > n) end = n;
+        if (start >= end) return List<T>{};
+        return list.slice(start, end - start);
+    }
+
+    inline Str slice(const Str& str, Int start, Int end) {
+        Int n = (Int)str.size();
+        if (start < 0) start = n + start;
+        if (end < 0) end = n + end;
+        if (start < 0) start = 0;
+        if (end > n) end = n;
+        if (start >= end) return "";
+        return str.substr((size_t)start, (size_t)(end - start));
+    }
+
+
+    // Membership testing: in / !in
+    template<typename T, typename U>
+    inline bool contains(const List<T>& list, const U& item) {
+        return list.contains(item);
+    }
+    template<typename K, typename V, typename U>
+    inline bool contains(const Map<K, V>& map, const U& key) {
+        return map.has(key);
+    }
+    inline bool contains(const Str& str, const Str& sub) {
+        return str.find(sub) != std::string::npos;
+    }
+    inline bool contains(const Str& str, const char* sub) {
+        return str.find(sub ? sub : "") != std::string::npos;
+    }
+    inline bool contains(const Str& str, char c) {
+        return str.find(c) != std::string::npos;
+    }
+    inline bool contains(const Var& var, const Var& item) {
+        return var.to_str().find(item.to_str()) != std::string::npos;
+    }
 
     // Inf: Dynamic Table / Expando Bag for infinite variables
     class Inf {
@@ -767,8 +897,16 @@ namespace viss {
         size_t cursor = 0;
         static const size_t DEFAULT_MAX_SIZE = 1024; // 1 KB maximum default
 
-        Bytes(size_t size = DEFAULT_MAX_SIZE, uint8_t fill = 0)
+        Bytes()
+            : data(std::make_shared<std::vector<uint8_t>>(DEFAULT_MAX_SIZE, 0)) {}
+        Bytes(int size)
+            : data(std::make_shared<std::vector<uint8_t>>(size > 0 ? size : 0, 0)) {}
+        Bytes(size_t size, uint8_t fill = 0)
             : data(std::make_shared<std::vector<uint8_t>>(size, fill)) {}
+        Bytes(const Str& str)
+            : data(std::make_shared<std::vector<uint8_t>>(str.begin(), str.end())) {}
+        Bytes(const char* str)
+            : Bytes(Str(str ? str : "")) {}
         Bytes(std::initializer_list<uint8_t> init)
             : data(std::make_shared<std::vector<uint8_t>>(init)) {}
         template<typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
@@ -1885,6 +2023,16 @@ namespace viss {
     using Colormask = Bytes;
     using ByteMask = Bytes;
     using ColorMask = Bytes;
+
+    inline Bytes slice(const Bytes& b, Int start, Int end) {
+        Int n = (Int)b.size();
+        if (start < 0) start = n + start;
+        if (end < 0) end = n + end;
+        if (start < 0) start = 0;
+        if (end > n) end = n;
+        if (start >= end) return Bytes(0);
+        return b.slice((size_t)start, (size_t)(end - start));
+    }
 
     // Bits: Compact Bitfield Buffer (Real Physical Hardware Bit Storage)
     class Bits : public Bytes {
