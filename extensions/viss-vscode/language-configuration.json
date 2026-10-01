@@ -1,0 +1,36 @@
+{
+  "comments": {
+    "lineComment": "//",
+    "blockComment": ["/*", "*/"]
+  },
+  "brackets": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"]
+  ],
+  "autoClosingPairs": [
+    {"open": "{", "close": "}"},
+    {"open": "[", "close": "]"},
+    {"open": "(", "close": ")"},
+    {"open": "\"", "close": "\""},
+    {"open": "'", "close": "'"}
+  ],
+  "surroundingPairs": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"],
+    ["\"", "\""],
+    ["'", "'"]
+  ],
+  "indentationRules": {
+    "increaseIndentPattern": "^.*(\\{|\\[|\\b(!func|!async\\s+func|!async|!class|!struct|!enum|!for|!while|\\?if|\\?elif|\\?else|\\?match|case|default|\\?try|\\?expect)\\b)[^}]*$",
+    "decreaseIndentPattern": "^\\s*(\\}[;]?|\\][;]?|\\?elif|\\?else|\\?expect|case\\b|default\\b).*$"
+  },
+  "folding": {
+    "markers": {
+      "start": "^\\s*//\\s*#?region\\b",
+      "end": "^\\s*//\\s*#?endregion\\b"
+    }
+  },
+  "wordPattern": "(-?\\d*\\.\\d\\w*)|([@&!?$]?[a-zA-Z0-9_]+)"
+}

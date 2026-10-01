@@ -1,0 +1,231 @@
+{
+  "Function": {
+    "prefix": "func",
+    "body": [
+      "!func ${1:name}(${2:params}) {",
+      "    $0",
+      "}"
+    ],
+    "description": "Define a Viss function"
+  },
+  "Async Function": {
+    "prefix": "asyncfunc",
+    "body": [
+      "!async func ${1:name}(${2:params}) {",
+      "    $0",
+      "}"
+    ],
+    "description": "Define an asynchronous Viss function"
+  },
+  "Main Function": {
+    "prefix": "main",
+    "body": [
+      "!func main() {",
+      "    $0",
+      "}"
+    ],
+    "description": "Main entry point function"
+  },
+  "Class Definition": {
+    "prefix": "class",
+    "body": [
+      "!class ${1:ClassName} {",
+      "    !func main(${2:params}) {",
+      "        $0",
+      "    }",
+      "}"
+    ],
+    "description": "Define a Viss class"
+  },
+  "Raw Bytes Buffer": {
+    "prefix": "bytes",
+    "body": [
+      "&${1:buffer} create | bytes${2:, 1024};",
+      "$0"
+    ],
+    "description": "Create a low-level byte buffer (default 1024 bytes)"
+  },
+  "Raw Bits Buffer": {
+    "prefix": "bits",
+    "body": [
+      "&${1:flags} create | bits${2:, 8192};",
+      "$0"
+    ],
+    "description": "Create a low-level bitfield buffer (default 8192 bits)"
+  },
+  "For Range Loop": {
+    "prefix": "for",
+    "body": [
+      "!for @${1:i} in ${2:0}..${3:10} {",
+      "    $0",
+      "}"
+    ],
+    "description": "Loop through numeric range"
+  },
+  "For In Collection": {
+    "prefix": "forin",
+    "body": [
+      "!for ${1:item} in @${2:collection} {",
+      "    $0",
+      "}"
+    ],
+    "description": "Iterate over list or collection"
+  },
+  "While Loop": {
+    "prefix": "while",
+    "body": [
+      "!while (${1:condition}) {",
+      "    $0",
+      "}"
+    ],
+    "description": "While loop block"
+  },
+  "If Condition": {
+    "prefix": "if",
+    "body": [
+      "?if (${1:condition}) {",
+      "    $0",
+      "}"
+    ],
+    "description": "Conditional if statement"
+  },
+  "Elif Condition": {
+    "prefix": "elif",
+    "body": [
+      "?elif (${1:condition}) {",
+      "    $0",
+      "}"
+    ],
+    "description": "Conditional else-if branch"
+  },
+  "Pattern Match": {
+    "prefix": "match",
+    "body": [
+      "?match @${1:value} {",
+      "    case ${2:pattern} {",
+      "        $3",
+      "    }",
+      "    else {",
+      "        $0",
+      "    }",
+      "}"
+    ],
+    "description": "Pattern matching switch statement"
+  },
+  "Try Expect": {
+    "prefix": "try",
+    "body": [
+      "?try {",
+      "    $1",
+      "}",
+      "?expect Exception as @e {",
+      "    io.println(i\"Error: @e\");",
+      "}"
+    ],
+    "description": "Error handling try-expect block"
+  },
+  "Import Module": {
+    "prefix": "import",
+    "body": [
+      "$import \"${1:std.io}\";"
+    ],
+    "description": "Import standard or external module"
+  },
+  "List Literal": {
+    "prefix": "list",
+    "body": [
+      "@${1:items} = [${2:1, 2, 3}];"
+    ],
+    "description": "Initialize a typed/dynamic list literal"
+  },
+  "Map Literal": {
+    "prefix": "map",
+    "body": [
+      "@${1:dict} = {\"${2:key}\": ${3:value}};"
+    ],
+    "description": "Initialize a map/dictionary literal"
+  },
+  "Async Spawn": {
+    "prefix": "spawn",
+    "body": [
+      "@${1:task} = async.spawn(${2:func_name});",
+      "async.await(@${1:task});"
+    ],
+    "description": "Spawn background task on thread pool and await result"
+  },
+  "Async Parallel For": {
+    "prefix": "parallel_for",
+    "body": [
+      "async.parallel_for(${1:0}, ${2:count}, !func(@i) {",
+      "    $0",
+      "});"
+    ],
+    "description": "Parallel loop across all CPU cores"
+  },
+  "Stopwatch Benchmark": {
+    "prefix": "stopwatch",
+    "body": [
+      "@sw = time.Stopwatch(true);",
+      "$0",
+      "@ms = @sw.restart();",
+      "io.println(i\"Completed in {@ms} ms\");"
+    ],
+    "description": "High-precision code execution stopwatch"
+  },
+  "JSON Parse": {
+    "prefix": "jsonparse",
+    "body": [
+      "@doc = json.parse(${1:json_string});",
+      "@val = @doc.get(\"${2:key}\").as_str();"
+    ],
+    "description": "Parse JSON string and read property"
+  },
+  "Retro Game Loop (60 FPS)": {
+    "prefix": "gameloop",
+    "body": [
+      "rt.InitScreen(${1:64}, ${2:36});",
+      "rt.SetCompact(true);",
+      "",
+      "@running = true;",
+      "!while (@running) {",
+      "    @k = io.get_key();",
+      "    ?if (@k == \"q\") { @running = false; }",
+      "",
+      "    rt.ClearScreen(0);",
+      "    // Render game objects here",
+      "    $0",
+      "    rt.UpdateScreen();",
+      "    time.sleep(16); // ~60 FPS",
+      "}"
+    ],
+    "description": "Standard 60 FPS retro game loop with keyboard input"
+  },
+  "Retro Chiptune Sound": {
+    "prefix": "sfx",
+    "body": [
+      "rt.PlaySfx(\"${1|jump,coin,stomp,powerup,hurt,bump,flag,gameover|}\");"
+    ],
+    "description": "Play preset 8-bit NES sound effect"
+  },
+  "Interpolated String": {
+    "prefix": "istr",
+    "body": [
+      "i\"${1:Hello, }{@${2:name}}${3:!}\""
+    ],
+    "description": "Interpolated string with embedded expressions"
+  },
+  "Raw String": {
+    "prefix": "rstr",
+    "body": [
+      "r\"${1:regex or path}\""
+    ],
+    "description": "Raw unescaped string"
+  },
+  "Byte String": {
+    "prefix": "bstr",
+    "body": [
+      "b\"${1:binary data}\""
+    ],
+    "description": "ASCII byte literal string"
+  }
+}

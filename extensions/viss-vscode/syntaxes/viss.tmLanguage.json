@@ -1,0 +1,375 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Viss",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#multiline_strings" },
+    { "include": "#interpolated_strings" },
+    { "include": "#raw_strings" },
+    { "include": "#byte_strings" },
+    { "include": "#strings" },
+    { "include": "#function_declaration" },
+    { "include": "#class_declaration" },
+    { "include": "#action_keywords" },
+    { "include": "#logic_keywords" },
+    { "include": "#control_keywords" },
+    { "include": "#directive_keywords" },
+    { "include": "#membership_keywords" },
+    { "include": "#namespaces" },
+    { "include": "#predicate_functions" },
+    { "include": "#bang_functions" },
+    { "include": "#method_calls" },
+    { "include": "#function_calls" },
+    { "include": "#types" },
+    { "include": "#raw_buffers" },
+    { "include": "#variables" },
+    { "include": "#constants" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.viss",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.line.hash.viss",
+          "match": "#.*$"
+        },
+        {
+          "name": "comment.block.viss",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "multiline_strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.triple.viss",
+          "begin": "\"\"\"",
+          "end": "\"\"\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.viss",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "raw_strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.raw.viss",
+          "begin": "r\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.viss",
+              "match": "\\\\\""
+            }
+          ]
+        }
+      ]
+    },
+    "byte_strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.bytes.viss",
+          "begin": "b\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.viss",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "interpolated_strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.interpolated.viss",
+          "begin": "i\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.viss",
+              "match": "\\\\."
+            },
+            {
+              "name": "variable.other.interpolated.viss",
+              "match": "@[a-zA-Z0-9_]+(?:\\.[a-zA-Z0-9_]+)*"
+            },
+            {
+              "name": "meta.embedded.expression.viss",
+              "begin": "\\{",
+              "end": "\\}",
+              "patterns": [
+                { "include": "$self" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.viss",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.viss",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.viss",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.viss",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "function_declaration": {
+      "patterns": [
+        {
+          "match": "(!(?:async[\\.\\s]+)?func|func)\\s+([a-zA-Z0-9_?!]+)\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "keyword.control.action.viss" },
+            "2": { "name": "entity.name.function.viss" }
+          }
+        },
+        {
+          "match": "(!main)\\b",
+          "name": "entity.name.function.main.viss"
+        }
+      ]
+    },
+    "class_declaration": {
+      "patterns": [
+        {
+          "match": "(!(?:class|struct|enum)|(?:class|struct|enum))\\s+([a-zA-Z0-9_]+)",
+          "captures": {
+            "1": { "name": "keyword.control.action.viss" },
+            "2": { "name": "entity.name.type.class.viss" }
+          }
+        }
+      ]
+    },
+    "action_keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.action.viss",
+          "match": "!(async\\s+func|async\\.func|async|func|main|class|struct|enum|for|while|return|break|continue|defer|loop|space|await)\\b"
+        }
+      ]
+    },
+    "logic_keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.logic.viss",
+          "match": "\\?(if|elif|else\\s+if|else|try|expect|error|match)\\b"
+        }
+      ]
+    },
+    "control_keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.case.viss",
+          "match": "\\b(case|default)\\b"
+        },
+        {
+          "name": "keyword.control.flow.viss",
+          "match": "\\b(return|break|continue|yield|throw)\\b"
+        }
+      ]
+    },
+    "directive_keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.directive.viss",
+          "match": "\\$(import|include|kernel)\\b"
+        },
+        {
+          "name": "keyword.control.pipe.viss",
+          "match": "\\b(create|as|to|const|await|lib|from|cpp)\\b"
+        }
+      ]
+    },
+    "membership_keywords": {
+      "patterns": [
+        {
+          "name": "keyword.operator.membership.viss",
+          "match": "\\b(not\\s+in|in|!in)\\b"
+        },
+        {
+          "name": "keyword.operator.logical.viss",
+          "match": "\\b(not|and|or)\\b"
+        }
+      ]
+    },
+    "namespaces": {
+      "patterns": [
+        {
+          "name": "support.class.standard.viss",
+          "match": "\\b(io|sys|fs|math|time|str|retrotech|rt|async|json|crypto|collections|env|net|media|audio|gui|gl|vk)\\b"
+        }
+      ]
+    },
+    "predicate_functions": {
+      "patterns": [
+        {
+          "match": "([a-zA-Z0-9_]+)\\?\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "entity.name.function.predicate.viss" }
+          }
+        }
+      ]
+    },
+    "bang_functions": {
+      "patterns": [
+        {
+          "match": "([a-zA-Z0-9_]+)!\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "entity.name.function.mutating.viss" }
+          }
+        }
+      ]
+    },
+    "method_calls": {
+      "patterns": [
+        {
+          "match": "\\.([a-zA-Z0-9_]+)\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "entity.name.function.member.viss" }
+          }
+        },
+        {
+          "match": "\\.([a-zA-Z0-9_]+)\\b",
+          "captures": {
+            "1": { "name": "variable.other.property.viss" }
+          }
+        }
+      ]
+    },
+    "function_calls": {
+      "patterns": [
+        {
+          "match": "\\b([a-zA-Z0-9_]+)\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "entity.name.function.call.viss" }
+          }
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "entity.name.type.viss",
+          "match": "\\b(str|int|dec|double|float|bool|bytes|bits|hybrid|grid|list|map|dict|inf|class|struct|enum|ptr|void|any|var|Str|Int|Dec|Bool|List|Map|Dict|Inf|Bytes|Bits|Task|Channel|Mutex|Stopwatch|Stack|Queue|Set|RingBuffer|Vec2|JsonValue|Socket|TcpClient)\\b"
+        }
+      ]
+    },
+    "raw_buffers": {
+      "patterns": [
+        {
+          "name": "variable.other.rawbuffer.viss",
+          "match": "&[a-zA-Z_][a-zA-Z0-9_]*"
+        }
+      ]
+    },
+    "variables": {
+      "patterns": [
+        {
+          "name": "variable.language.self.viss",
+          "match": "@me\\b"
+        },
+        {
+          "name": "variable.name.viss",
+          "match": "@[a-zA-Z_][a-zA-Z0-9_]*"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.viss",
+          "match": "\\b0x[0-9a-fA-F]+\\b"
+        },
+        {
+          "name": "constant.numeric.binary.viss",
+          "match": "\\b0b[01]+\\b"
+        },
+        {
+          "name": "constant.numeric.float.viss",
+          "match": "\\b[0-9]+\\.[0-9]+([eE][+-]?[0-9]+)?\\b"
+        },
+        {
+          "name": "constant.numeric.integer.viss",
+          "match": "\\b[0-9]+\\b"
+        },
+        {
+          "name": "constant.language.boolean.viss",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.null.viss",
+          "match": "\\b(Null|nullptr)\\b"
+        },
+        {
+          "name": "support.constant.math.viss",
+          "match": "\\b(PI|E)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.elvis.viss",
+          "match": "\\?\\:"
+        },
+        {
+          "name": "keyword.operator.pipe.viss",
+          "match": "\\|"
+        },
+        {
+          "name": "keyword.operator.range.viss",
+          "match": "\\.\\."
+        },
+        {
+          "name": "keyword.operator.arrow.viss",
+          "match": "->"
+        },
+        {
+          "name": "keyword.operator.comparison.viss",
+          "match": "(==|!=|<=|>=|<|>)"
+        },
+        {
+          "name": "keyword.operator.assignment.compound.viss",
+          "match": "(\\+=|-=|\\*=|/=|%=)"
+        },
+        {
+          "name": "keyword.operator.assignment.viss",
+          "match": "(=)"
+        },
+        {
+          "name": "keyword.operator.arithmetic.viss",
+          "match": "(\\+|\\-|\\*|/|%)"
+        }
+      ]
+    }
+  },
+  "scopeName": "source.viss"
+}

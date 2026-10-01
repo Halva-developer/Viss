@@ -1,0 +1,138 @@
+{
+  "name": "viss-vscode",
+  "displayName": "Viss Language Support & Toolchain",
+  "description": "Official Viss Language Extension: Syntax Highlighting, Smart Contextual Autocompletions, Real-Time Compiler Diagnostics, Inlay Hints, and One-Click Runner.",
+  "version": "0.3.1",
+  "publisher": "viss",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Snippets"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:viss"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "viss",
+      "aliases": ["Viss", "viss"],
+      "extensions": [".viss"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "viss",
+      "scopeName": "source.viss",
+      "path": "./syntaxes/viss.tmLanguage.json"
+    }],
+    "snippets": [{
+      "language": "viss",
+      "path": "./snippets/viss.json"
+    }],
+    "keybindings": [
+      {
+        "command": "viss.run",
+        "key": "f5",
+        "when": "editorLangId == viss"
+      },
+      {
+        "command": "viss.check",
+        "key": "ctrl+f5",
+        "when": "editorLangId == viss"
+      },
+      {
+        "command": "viss.compile",
+        "key": "shift+f5",
+        "when": "editorLangId == viss"
+      }
+    ],
+    "commands": [
+      {
+        "command": "viss.run",
+        "title": "Run Viss Program",
+        "icon": "$(play)",
+        "category": "Viss"
+      },
+      {
+        "command": "viss.check",
+        "title": "Check Syntax & Diagnostics",
+        "icon": "$(check)",
+        "category": "Viss"
+      },
+      {
+        "command": "viss.compile",
+        "title": "Build Executable",
+        "icon": "$(gear)",
+        "category": "Viss"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "viss.run",
+          "group": "navigation@1",
+          "when": "resourceExtname == .viss"
+        },
+        {
+          "command": "viss.check",
+          "group": "navigation@2",
+          "when": "resourceExtname == .viss"
+        },
+        {
+          "command": "viss.compile",
+          "group": "navigation@3",
+          "when": "resourceExtname == .viss"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "viss.run",
+          "group": "viss@1",
+          "when": "resourceExtname == .viss"
+        },
+        {
+          "command": "viss.check",
+          "group": "viss@2",
+          "when": "resourceExtname == .viss"
+        },
+        {
+          "command": "viss.compile",
+          "group": "viss@3",
+          "when": "resourceExtname == .viss"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "viss.run",
+          "when": "editorLangId == viss"
+        },
+        {
+          "command": "viss.check",
+          "when": "editorLangId == viss"
+        },
+        {
+          "command": "viss.compile",
+          "when": "editorLangId == viss"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Viss",
+      "properties": {
+        "viss.executablePath": {
+          "type": "string",
+          "default": "viss",
+          "description": "Path to the viss executable (defaults to 'viss' in system PATH or workspace root)."
+        },
+        "viss.checkOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically run syntax & diagnostics checks on save."
+        }
+      }
+    }
+  }
+}
