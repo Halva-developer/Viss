@@ -62,6 +62,22 @@
     ],
     "description": "Loop through numeric range"
   },
+  "For Stepped Range Loop": {
+    "prefix": "forstep",
+    "body": [
+      "!for @${1:i} in ${2:0}..${3:10}..${4:2} {",
+      "    $0",
+      "}"
+    ],
+    "description": "Loop through numeric range with custom step"
+  },
+  "Inline Lambda": {
+    "prefix": "lambda",
+    "body": [
+      "!func(@${1:x}) { !return ${2:@x > 0}; }"
+    ],
+    "description": "Inline anonymous lambda function"
+  },
   "For In Collection": {
     "prefix": "forin",
     "body": [

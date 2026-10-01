@@ -29,6 +29,7 @@
 #include <functional>
 #include <cstring>
 #include <cstdio>
+#include <random>
 
 namespace viss {
     using Str = std::string;
@@ -348,10 +349,13 @@ namespace viss {
                 data->pop_back();
             }
         }
-        inline T get(Int index) const {
+        template<typename IndexT, typename = std::enable_if_t<std::is_integral_v<IndexT>>>
+        inline T get(IndexT index) const {
             std::lock_guard<std::mutex> lock(*mtx);
-            if (index >= 0 && index < (Int)data->size()) {
-                return (*data)[index];
+            Int idx = (Int)index;
+            if (idx < 0) idx += (Int)data->size();
+            if (idx >= 0 && (size_t)idx < data->size()) {
+                return (*data)[(size_t)idx];
             }
             return T();
         }
@@ -368,6 +372,7 @@ namespace viss {
         inline List<T> slice(Int start, Int count) const {
             std::lock_guard<std::mutex> lock(*mtx);
             List<T> res;
+            if (start < 0) start += (Int)data->size();
             if (start < 0) start = 0;
             for (Int i = start; i < start + count && i < (Int)data->size(); ++i) {
                 res.add((*data)[i]);
@@ -482,14 +487,54 @@ namespace viss {
             }), data->end());
         }
 
-        inline T& operator[](Int index) {
+        template<typename Fn>
+        inline Bool all(Fn fn) const {
             std::lock_guard<std::mutex> lock(*mtx);
-            return (*data)[index];
+            for (const auto& item : *data) {
+                if (!fn(item)) return false;
+            }
+            return true;
         }
 
-        inline const T& operator[](Int index) const {
+        template<typename Fn>
+        inline Bool any(Fn fn) const {
             std::lock_guard<std::mutex> lock(*mtx);
-            return (*data)[index];
+            for (const auto& item : *data) {
+                if (fn(item)) return true;
+            }
+            return false;
+        }
+
+        inline void shuffle() {
+            std::lock_guard<std::mutex> lock(*mtx);
+            std::random_device rd;
+            std::mt19937 g(rd());
+            std::shuffle(data->begin(), data->end(), g);
+        }
+
+        inline T choice() const {
+            std::lock_guard<std::mutex> lock(*mtx);
+            if (data->empty()) return T();
+            static std::random_device rd;
+            static std::mt19937_64 g(rd());
+            std::uniform_int_distribution<size_t> dis(0, data->size() - 1);
+            return (*data)[dis(g)];
+        }
+
+        template<typename IndexT, typename = std::enable_if_t<std::is_integral_v<IndexT>>>
+        inline T& operator[](IndexT index) {
+            std::lock_guard<std::mutex> lock(*mtx);
+            Int idx = (Int)index;
+            if (idx < 0) idx += (Int)data->size();
+            return (*data)[(size_t)idx];
+        }
+
+        template<typename IndexT, typename = std::enable_if_t<std::is_integral_v<IndexT>>>
+        inline const T& operator[](IndexT index) const {
+            std::lock_guard<std::mutex> lock(*mtx);
+            Int idx = (Int)index;
+            if (idx < 0) idx += (Int)data->size();
+            return (*data)[(size_t)idx];
         }
 
         inline auto begin() { return data->begin(); }
@@ -942,20 +987,38 @@ namespace viss {
         inline size_t size() const { return data ? data->size() : 0; }
         inline Int get_len() const { return (Int)size(); }
 
-        inline uint8_t& operator[](size_t index) {
-            if (index >= data->size()) data->resize(index + 1, 0);
-            return (*data)[index];
+        template<typename IndexT, typename = std::enable_if_t<std::is_integral_v<IndexT>>>
+        inline uint8_t& operator[](IndexT index) {
+            Int idx = (Int)index;
+            if (idx < 0) idx += (Int)data->size();
+            if (idx < 0) idx = 0;
+            if ((size_t)idx >= data->size()) data->resize((size_t)idx + 1, 0);
+            return (*data)[(size_t)idx];
         }
-        inline const uint8_t& operator[](size_t index) const {
-            return (*data)[index];
+        template<typename IndexT, typename = std::enable_if_t<std::is_integral_v<IndexT>>>
+        inline const uint8_t& operator[](IndexT index) const {
+            Int idx = (Int)index;
+            if (idx < 0) idx += (Int)data->size();
+            if (idx < 0 || (size_t)idx >= data->size()) {
+                static uint8_t dummy = 0;
+                return dummy;
+            }
+            return (*data)[(size_t)idx];
         }
-        inline uint8_t get(size_t index) const {
-            if (index < data->size()) return (*data)[index];
+        template<typename IndexT, typename = std::enable_if_t<std::is_integral_v<IndexT>>>
+        inline uint8_t get(IndexT index) const {
+            Int idx = (Int)index;
+            if (idx < 0) idx += (Int)data->size();
+            if (idx >= 0 && (size_t)idx < data->size()) return (*data)[(size_t)idx];
             return 0;
         }
-        inline void set(size_t index, uint8_t val) {
-            if (index >= data->size()) data->resize(index + 1, 0);
-            (*data)[index] = val;
+        template<typename IndexT, typename = std::enable_if_t<std::is_integral_v<IndexT>>>
+        inline void set(IndexT index, uint8_t val) {
+            Int idx = (Int)index;
+            if (idx < 0) idx += (Int)data->size();
+            if (idx < 0) idx = 0;
+            if ((size_t)idx >= data->size()) data->resize((size_t)idx + 1, 0);
+            (*data)[(size_t)idx] = val;
         }
         inline void set_bit(size_t byte_idx, uint8_t bit_idx, bool val) {
             if (byte_idx >= data->size()) data->resize(byte_idx + 1, 0);

@@ -1442,6 +1442,150 @@ inline std::string processPipeline(const std::string& expr) {
     return res;
 }
 
+std::string transformLambdas(const std::string& expr, ScopeTracker& ctx) {
+    std::string out;
+    size_t i = 0;
+    size_t n = expr.size();
+    while (i < n) {
+        // Skip string literals if any
+        if (expr[i] == '"') {
+            out += expr[i++];
+            while (i < n) {
+                if (expr[i] == '\\' && i + 1 < n) {
+                    out += expr[i++];
+                    out += expr[i++];
+                    continue;
+                }
+                if (expr[i] == '"') {
+                    out += expr[i++];
+                    break;
+                }
+                out += expr[i++];
+            }
+            continue;
+        }
+
+        // Check for !func or func
+        bool is_func = false;
+        size_t head_len = 0;
+        if (expr[i] == '!' && i + 5 <= n && expr.compare(i, 5, "!func") == 0 && (i + 5 == n || !std::isalnum((unsigned char)expr[i + 5]))) {
+            is_func = true;
+            head_len = 5;
+        } else if (expr[i] == 'f' && i + 4 <= n && expr.compare(i, 4, "func") == 0 && (i == 0 || (!std::isalnum((unsigned char)expr[i - 1]) && expr[i - 1] != '_')) && (i + 4 == n || !std::isalnum((unsigned char)expr[i + 4]))) {
+            is_func = true;
+            head_len = 4;
+        }
+
+        if (is_func) {
+            size_t cur = i + head_len;
+            while (cur < n && std::isspace((unsigned char)expr[cur])) cur++;
+            // Optional function name (if any, e.g. !func foo(@x))
+            if (cur < n && (std::isalpha((unsigned char)expr[cur]) || expr[cur] == '_')) {
+                while (cur < n && (std::isalnum((unsigned char)expr[cur]) || expr[cur] == '_')) cur++;
+                while (cur < n && std::isspace((unsigned char)expr[cur])) cur++;
+            }
+            if (cur < n && expr[cur] == '(') {
+                // Find matching ')'
+                size_t p_start = cur + 1;
+                int p_depth = 1;
+                size_t p_end = p_start;
+                while (p_end < n && p_depth > 0) {
+                    if (expr[p_end] == '(') p_depth++;
+                    else if (expr[p_end] == ')') p_depth--;
+                    if (p_depth > 0) p_end++;
+                }
+
+                if (p_depth == 0) {
+                    size_t b_find = p_end + 1;
+                    while (b_find < n && std::isspace((unsigned char)expr[b_find])) b_find++;
+                    if (b_find < n && expr[b_find] == '{') {
+                        // Find matching '}'
+                        size_t b_start = b_find + 1;
+                        int b_depth = 1;
+                        size_t b_end = b_start;
+                        while (b_end < n && b_depth > 0) {
+                            if (expr[b_end] == '{') b_depth++;
+                            else if (expr[b_end] == '}') b_depth--;
+                            if (b_depth > 0) b_end++;
+                        }
+
+                        if (b_depth == 0) {
+                            // Extract params
+                            std::string raw_params = expr.substr(p_start, p_end - p_start);
+                            std::vector<std::string> param_names;
+                            std::vector<std::string> p_tokens = splitByChar(raw_params, ',');
+                            for (auto& pt : p_tokens) {
+                                std::string p = trim(pt);
+                                if (startsWith(p, "@")) p = p.substr(1);
+                                size_t colon_pos = p.find(':');
+                                if (colon_pos != std::string::npos) p = trim(p.substr(0, colon_pos));
+                                size_t as_pos = p.find(" as ");
+                                if (as_pos != std::string::npos) p = trim(p.substr(0, as_pos));
+                                if (!p.empty()) param_names.push_back(p);
+                            }
+
+                            // Extract body
+                            std::string raw_body = trim(expr.substr(b_start, b_end - b_start));
+                            // Recursive transform inside body for nested lambdas
+                            raw_body = transformLambdas(raw_body, ctx);
+                            // Replace !return with return
+                            raw_body = std::regex_replace(raw_body, std::regex(R"(!return\b)"), "return");
+
+                            // Strip '@' from parameter references inside body
+                            for (const auto& pn : param_names) {
+                                raw_body = std::regex_replace(raw_body, std::regex("@" + pn + R"(\b)"), pn);
+                            }
+
+                            // Check local variable assignments in body: @var = ...
+                            std::regex assign_re(R"(@([a-zA-Z0-9_]+)\s*(=|\+=|-=|\*=|/=|%=))");
+                            std::smatch m_a;
+                            std::string search_body = raw_body;
+                            std::vector<std::string> local_assigned;
+                            while (std::regex_search(search_body, m_a, assign_re)) {
+                                std::string v = m_a[1].str();
+                                if (!ctx.count(v) && std::find(param_names.begin(), param_names.end(), v) == param_names.end()) {
+                                    if (std::find(local_assigned.begin(), local_assigned.end(), v) == local_assigned.end()) {
+                                        local_assigned.push_back(v);
+                                    }
+                                }
+                                search_body = m_a.suffix().str();
+                            }
+                            for (const auto& lv : local_assigned) {
+                                raw_body = std::regex_replace(raw_body, std::regex("@" + lv + R"(\s*=\s*)"), "auto " + lv + " = ");
+                                raw_body = std::regex_replace(raw_body, std::regex("@" + lv + R"(\b)"), lv);
+                            }
+
+                            // Build C++ lambda
+                            std::string lambda_cpp = "[&](";
+                            for (size_t pi = 0; pi < param_names.size(); ++pi) {
+                                lambda_cpp += "auto " + param_names[pi] + (pi + 1 < param_names.size() ? ", " : "");
+                            }
+                            lambda_cpp += ") { ";
+                            if (raw_body.find("return ") == std::string::npos && raw_body.find("return\t") == std::string::npos && !startsWith(raw_body, "return")) {
+                                if (endsWith(raw_body, ";")) raw_body.pop_back();
+                                lambda_cpp += "return " + raw_body + "; }";
+                            } else {
+                                lambda_cpp += raw_body;
+                                if (!endsWith(raw_body, ";") && !endsWith(raw_body, "}")) {
+                                    lambda_cpp += ";";
+                                }
+                                lambda_cpp += " }";
+                            }
+
+                            out += lambda_cpp;
+                            i = b_end + 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+
+        out += expr[i++];
+    }
+    return out;
+}
+
 std::string transformExpression(
     const std::string& input_raw_expr,
     const std::vector<std::string>& imported_aliases,
@@ -1472,6 +1616,7 @@ std::string transformExpression(
         if (replaced == raw_expr) break;
         raw_expr = replaced;
     }
+    raw_expr = transformLambdas(raw_expr, ctx);
     std::string out;
     size_t i = 0;
     size_t n = raw_expr.size();
@@ -2358,6 +2503,17 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
 
         // 6. Loops: !for @i in 0..10 {, ?for, for, !while, ?while, while
         std::smatch m_loop;
+        if (std::regex_match(stripped, m_loop, std::regex(R"(^[!?]?for\s+@?([a-zA-Z0-9_]+)\s+in\s+([^.]+)\.\.([^.]+)\.\.([^\{]+)\{$)"))) {
+            std::string v = m_loop[1].str();
+            declared_vars.enter_block();
+            declared_vars.insert(v);
+            std::string s = trim(replaceAll(replaceAll(m_loop[2].str(), "@", ""), "&", ""));
+            std::string e = trim(replaceAll(replaceAll(m_loop[3].str(), "@", ""), "&", ""));
+            std::string step = trim(replaceAll(replaceAll(m_loop[4].str(), "@", ""), "&", ""));
+            block_stack.push_back({"for", v});
+            current_target->push_back("for (viss::Int " + v + " = (" + s + "), _v_end_" + v + " = (" + e + "), _v_step_" + v + " = (" + step + "); (_v_step_" + v + " >= 0 ? " + v + " < _v_end_" + v + " : " + v + " > _v_end_" + v + "); " + v + " += _v_step_" + v + ") {");
+            continue;
+        }
         if (std::regex_match(stripped, m_loop, std::regex(R"(^[!?]?for\s+@?([a-zA-Z0-9_]+)\s+in\s+([^.]+)\.\.([^\{]+)\{$)"))) {
             std::string v = m_loop[1].str();
             declared_vars.enter_block();
@@ -2365,7 +2521,7 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             std::string s = trim(replaceAll(replaceAll(m_loop[2].str(), "@", ""), "&", ""));
             std::string e = trim(replaceAll(replaceAll(m_loop[3].str(), "@", ""), "&", ""));
             block_stack.push_back({"for", v});
-            current_target->push_back("for (viss::Int " + v + " = (" + s + "); " + v + " < (" + e + "); ++" + v + ") {");
+            current_target->push_back("for (viss::Int " + v + " = (" + s + "), _v_end_" + v + " = (" + e + "), _v_step_" + v + " = (" + v + " <= _v_end_" + v + " ? 1 : -1); (_v_step_" + v + " >= 0 ? " + v + " < _v_end_" + v + " : " + v + " > _v_end_" + v + "); " + v + " += _v_step_" + v + ") {");
             continue;
         }
         if (std::regex_match(stripped, m_loop, std::regex(R"(^[!?]?for\s+@?([a-zA-Z0-9_]+)\s+in\s+([^\{]+)\{$)"))) {

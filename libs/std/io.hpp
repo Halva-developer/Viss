@@ -187,5 +187,20 @@ namespace viss {
             std::cout << "\033[" << (y + 1) << ";" << (x + 1) << "H";
             #endif
         }
+
+        inline void cursor_visible(Bool visible) {
+            #ifdef _WIN32
+            HANDLE console = GetStdHandle(STD_OUTPUT_HANDLE);
+            CONSOLE_CURSOR_INFO info;
+            GetConsoleCursorInfo(console, &info);
+            info.bVisible = visible ? TRUE : FALSE;
+            SetConsoleCursorInfo(console, &info);
+            #else
+            if (visible) std::cout << "\033[?25h" << std::flush;
+            else std::cout << "\033[?25l" << std::flush;
+            #endif
+        }
+        inline void cursor_hide() { cursor_visible(false); }
+        inline void cursor_show() { cursor_visible(true); }
     }
 }

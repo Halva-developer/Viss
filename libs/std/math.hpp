@@ -4,6 +4,7 @@
 #include <random>
 #include <algorithm>
 #include <vector>
+#include <type_traits>
 
 namespace viss {
     namespace math {
@@ -39,6 +40,21 @@ namespace viss {
             if (val < (T)min_v) return (T)min_v;
             if (val > (T)max_v) return (T)max_v;
             return val;
+        }
+
+        template<typename T, typename MinT, typename MaxT>
+        inline auto wrap(T val, MinT min_v, MaxT max_v) {
+            auto range = max_v - min_v;
+            if (range <= 0) return (decltype(min_v + val))min_v;
+            if constexpr (std::is_floating_point_v<T> || std::is_floating_point_v<MinT> || std::is_floating_point_v<MaxT>) {
+                auto result = std::fmod((double)(val - min_v), (double)range);
+                if (result < 0) result += (double)range;
+                return (decltype(min_v + val))(result + min_v);
+            } else {
+                auto result = (val - min_v) % range;
+                if (result < 0) result += range;
+                return (decltype(min_v + val))(result + min_v);
+            }
         }
 
         inline Dec lerp(Dec a, Dec b, Dec t) {

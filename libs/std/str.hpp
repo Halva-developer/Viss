@@ -19,6 +19,15 @@ namespace viss {
         inline Str substr(const Str& s, Int start, Int length) {
             return sub(s, start, length);
         }
+        inline Str at(const Str& s, Int index) {
+            Int n = (Int)s.length();
+            if (index < 0) index += n;
+            if (index >= 0 && index < n) return Str(1, s[(size_t)index]);
+            return "";
+        }
+        inline Str get(const Str& s, Int index) {
+            return at(s, index);
+        }
         inline Str from_int(Int v) {
             return std::to_string(v);
         }

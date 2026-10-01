@@ -26,6 +26,25 @@ namespace viss {
             return min_v + (rand() % (max_v - min_v));
         }
 
+        template<typename T>
+        inline T choice(const List<T>& list) {
+            if (list.size() == 0) return T();
+            Int idx = random(0, list.size());
+            return list.get(idx);
+        }
+
+        inline Str choice(const Str& str) {
+            if (str.empty()) return "";
+            Int idx = random(0, (Int)str.size());
+            return Str(1, str[(size_t)idx]);
+        }
+
+        template<typename T>
+        inline List<T> shuffle(List<T> list) {
+            list.shuffle();
+            return list;
+        }
+
         static int g_last_exit_code = 0;
 
         inline Int last_exit_code() {
