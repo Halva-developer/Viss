@@ -918,38 +918,51 @@ inline bool render_video(const std::string& audio_path, const std::string& cover
         fs::create_directories(out_p.parent_path(), ec);
     }
 
-    std::string fps_str = use_waveform ? "25" : "10";
+    std::string fps_str = use_waveform ? "60" : "2";
+    fs::path temp_blur_bg;
     std::string filter_str = "";
+    std::string cmd = "";
+
+    if (use_blur_bg && fs::exists(actual_cover)) {
+        temp_blur_bg = fs::temp_directory_path() / ("viss_bg_blur_" + std::to_string(GetCurrentProcessId()) + "_" + std::to_string(rand()) + ".jpg");
+        std::string pre_blur_cmd = "\"" + ffmpeg + "\" -y -i \"" + actual_cover + "\" -vf \"scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=25:20\" -frames:v 1 \"" + temp_blur_bg.string() + "\"";
+        run_process_silent(pre_blur_cmd);
+    }
 
     if (!fs::exists(actual_cover)) {
         if (use_waveform) {
-            filter_str = "-filter_complex \"color=c=0x0b1120:s=1920x1080:r=" + fps_str + "[bg];[0:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.75:rate=25[wave];[bg][wave]overlay=0:H-h-20[v]\" -map \"[v]\" -map 0:a";
+            filter_str = "-filter_complex \"color=c=0x0b1120:s=1920x1080:r=60[bg];[0:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.85:rate=60[wave];[bg][wave]overlay=0:H-h-20[v]\" -map \"[v]\" -map 0:a";
         } else {
-            filter_str = "-filter_complex \"color=c=0x0b1120:s=1920x1080:r=" + fps_str + "[v]\" -map \"[v]\" -map 0:a";
+            filter_str = "-filter_complex \"color=c=0x0b1120:s=1920x1080:r=2[v]\" -map \"[v]\" -map 0:a";
         }
-        std::string cmd = "\"" + ffmpeg + "\" -y -i \"" + audio_path + "\" " + filter_str + " -c:v libx264 -preset fast -c:a aac -b:a 320k -pix_fmt yuv420p -shortest \"" + out_mp4_path + "\"";
-        int res = run_process_silent(cmd);
-        return (res == 0 && fs::exists(out_mp4_path) && fs::file_size(out_mp4_path) > 1000);
-    }
-
-    if (use_blur_bg && use_waveform) {
-        filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=25:20[bg];[0:v]scale=920:920:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[v0];[1:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.75:rate=25[wave];[v0][wave]overlay=0:H-h-20[v]\" -map \"[v]\"";
-    } else if (use_blur_bg) {
-        filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=25:20[bg];[0:v]scale=920:920:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[v]\" -map \"[v]\"";
-    } else if (use_waveform) {
-        filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x050508[v0];[1:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.75:rate=25[wave];[v0][wave]overlay=0:H-h-20[v]\" -map \"[v]\"";
+        cmd = "\"" + ffmpeg + "\" -y -i \"" + audio_path + "\" " + filter_str + " -c:v libx264 -preset veryfast -threads 0 -c:a aac -b:a 320k -pix_fmt yuv420p -shortest \"" + out_mp4_path + "\"";
+    } else if (!temp_blur_bg.empty() && fs::exists(temp_blur_bg)) {
+        if (use_waveform) {
+            filter_str = "-filter_complex \"[1:v]scale=920:920:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];[0:v][fg]overlay=(W-w)/2:(H-h)/2[v0];[2:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.85:rate=60[wave];[v0][wave]overlay=0:H-h-20[v]\" -map \"[v]\" -map 2:a";
+        } else {
+            filter_str = "-filter_complex \"[1:v]scale=920:920:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];[0:v][fg]overlay=(W-w)/2:(H-h)/2[v]\" -map \"[v]\" -map 2:a";
+        }
+        cmd = "\"" + ffmpeg + "\" -y -loop 1 -framerate " + fps_str + " -i \"" + temp_blur_bg.string() + "\" -loop 1 -framerate " + fps_str + " -i \"" + actual_cover + "\" -i \"" + audio_path + "\" " +
+              filter_str + " -c:v libx264 -preset veryfast -threads 0 -c:a aac -b:a 320k -pix_fmt yuv420p -shortest \"" + out_mp4_path + "\"";
     } else {
-        filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x050508[v]\" -map \"[v]\"";
+        if (use_waveform) {
+            filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x050508[v0];[1:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.85:rate=60[wave];[v0][wave]overlay=0:H-h-20[v]\" -map \"[v]\" -map 1:a";
+        } else {
+            filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x050508[v]\" -map \"[v]\" -map 1:a";
+        }
+        cmd = "\"" + ffmpeg + "\" -y -loop 1 -framerate " + fps_str + " -i \"" + actual_cover + "\" -i \"" + audio_path + "\" " +
+              filter_str + " -c:v libx264 -preset veryfast -threads 0 -c:a aac -b:a 320k -pix_fmt yuv420p -shortest \"" + out_mp4_path + "\"";
     }
-
-    std::string cmd = "\"" + ffmpeg + "\" -y -loop 1 -framerate " + fps_str + " -i \"" + actual_cover + "\" -i \"" + audio_path + "\" " +
-                      filter_str + " -map 1:a -c:v libx264 -preset fast -c:a aac -b:a 320k -pix_fmt yuv420p -shortest \"" + out_mp4_path + "\"";
 
     int res = run_process_silent(cmd);
 
     if (!temp_cover.empty() && fs::exists(temp_cover)) {
         std::error_code ec;
         fs::remove(temp_cover, ec);
+    }
+    if (!temp_blur_bg.empty() && fs::exists(temp_blur_bg)) {
+        std::error_code ec;
+        fs::remove(temp_blur_bg, ec);
     }
 
     return (res == 0 && fs::exists(out_mp4_path) && fs::file_size(out_mp4_path) > 1000);
@@ -1121,34 +1134,42 @@ inline bool start_render_video(const std::string& audio_path, const std::string&
             fs::create_directories(out_p.parent_path(), ec);
         }
 
-        std::string fps_str = use_waveform ? "25" : "10";
+        std::string fps_str = use_waveform ? "60" : "2";
+        fs::path temp_blur_bg;
         std::string filter_str = "";
+        std::string cmd = "";
 
-        if (!fs::exists(actual_cover)) {
-            if (use_waveform) {
-                filter_str = "-filter_complex \"color=c=0x0b1120:s=1920x1080:r=" + fps_str + "[bg];[0:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.75:rate=25[wave];[bg][wave]overlay=0:H-h-20[v]\" -map \"[v]\" -map 0:a";
-            } else {
-                filter_str = "-filter_complex \"color=c=0x0b1120:s=1920x1080:r=" + fps_str + "[v]\" -map \"[v]\" -map 0:a";
-            }
-        } else {
-            if (use_blur_bg && use_waveform) {
-                filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=25:20[bg];[0:v]scale=920:920:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[v0];[1:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.75:rate=25[wave];[v0][wave]overlay=0:H-h-20[v]\" -map \"[v]\"";
-            } else if (use_blur_bg) {
-                filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=25:20[bg];[0:v]scale=920:920:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[v]\" -map \"[v]\"";
-            } else if (use_waveform) {
-                filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x050508[v0];[1:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.75:rate=25[wave];[v0][wave]overlay=0:H-h-20[v]\" -map \"[v]\"";
-            } else {
-                filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x050508[v]\" -map \"[v]\"";
-            }
+        if (use_blur_bg && fs::exists(actual_cover)) {
+            temp_blur_bg = fs::temp_directory_path() / ("viss_bg_blur_" + std::to_string(GetCurrentProcessId()) + "_" + std::to_string(rand()) + ".jpg");
+            std::string pre_blur_cmd = "\"" + ffmpeg + "\" -y -i \"" + actual_cover + "\" -vf \"scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=25:20\" -frames:v 1 \"" + temp_blur_bg.string() + "\"";
+            run_process_silent(pre_blur_cmd);
         }
 
         std::string prog_arg = st.progress_file.empty() ? "" : (" -progress \"" + st.progress_file + "\"");
-        std::string cmd;
+
         if (!fs::exists(actual_cover)) {
-            cmd = "\"" + ffmpeg + "\" -y -i \"" + audio_path + "\" " + filter_str + prog_arg + " -c:v libx264 -preset fast -c:a aac -b:a 320k -pix_fmt yuv420p -shortest \"" + out_mp4_path + "\"";
+            if (use_waveform) {
+                filter_str = "-filter_complex \"color=c=0x0b1120:s=1920x1080:r=60[bg];[0:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.85:rate=60[wave];[bg][wave]overlay=0:H-h-20[v]\" -map \"[v]\" -map 0:a";
+            } else {
+                filter_str = "-filter_complex \"color=c=0x0b1120:s=1920x1080:r=2[v]\" -map \"[v]\" -map 0:a";
+            }
+            cmd = "\"" + ffmpeg + "\" -y -i \"" + audio_path + "\" " + filter_str + prog_arg + " -c:v libx264 -preset veryfast -threads 0 -c:a aac -b:a 320k -pix_fmt yuv420p -shortest \"" + out_mp4_path + "\"";
+        } else if (!temp_blur_bg.empty() && fs::exists(temp_blur_bg)) {
+            if (use_waveform) {
+                filter_str = "-filter_complex \"[1:v]scale=920:920:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];[0:v][fg]overlay=(W-w)/2:(H-h)/2[v0];[2:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.85:rate=60[wave];[v0][wave]overlay=0:H-h-20[v]\" -map \"[v]\" -map 2:a";
+            } else {
+                filter_str = "-filter_complex \"[1:v]scale=920:920:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];[0:v][fg]overlay=(W-w)/2:(H-h)/2[v]\" -map \"[v]\" -map 2:a";
+            }
+            cmd = "\"" + ffmpeg + "\" -y -loop 1 -framerate " + fps_str + " -i \"" + temp_blur_bg.string() + "\" -loop 1 -framerate " + fps_str + " -i \"" + actual_cover + "\" -i \"" + audio_path + "\" " +
+                  filter_str + prog_arg + " -c:v libx264 -preset veryfast -threads 0 -c:a aac -b:a 320k -pix_fmt yuv420p -shortest \"" + out_mp4_path + "\"";
         } else {
+            if (use_waveform) {
+                filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x050508[v0];[1:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.85:rate=60[wave];[v0][wave]overlay=0:H-h-20[v]\" -map \"[v]\" -map 1:a";
+            } else {
+                filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x050508[v]\" -map \"[v]\" -map 1:a";
+            }
             cmd = "\"" + ffmpeg + "\" -y -loop 1 -framerate " + fps_str + " -i \"" + actual_cover + "\" -i \"" + audio_path + "\" " +
-                  filter_str + prog_arg + " -map 1:a -c:v libx264 -preset fast -c:a aac -b:a 320k -pix_fmt yuv420p -shortest \"" + out_mp4_path + "\"";
+                  filter_str + prog_arg + " -c:v libx264 -preset veryfast -threads 0 -c:a aac -b:a 320k -pix_fmt yuv420p -shortest \"" + out_mp4_path + "\"";
         }
 
         int exit_code = -1;
@@ -1188,6 +1209,10 @@ inline bool start_render_video(const std::string& audio_path, const std::string&
         if (!temp_cover.empty() && fs::exists(temp_cover)) {
             std::error_code ec;
             fs::remove(temp_cover, ec);
+        }
+        if (!temp_blur_bg.empty() && fs::exists(temp_blur_bg)) {
+            std::error_code ec;
+            fs::remove(temp_blur_bg, ec);
         }
 
         bool success = (exit_code == 0 && fs::exists(out_mp4_path) && fs::file_size(out_mp4_path) > 1000);

@@ -32,6 +32,15 @@ namespace viss {
             return (Int)g_last_exit_code;
         }
 
+        inline void hide_console() {
+#ifdef _WIN32
+            HWND hWnd = GetConsoleWindow();
+            if (hWnd) {
+                ShowWindow(hWnd, SW_HIDE);
+            }
+#endif
+        }
+
 #ifdef _WIN32
         inline Int system(const Str& cmd) {
             std::string c = "cmd.exe /s /c \"" + cmd + "\"";

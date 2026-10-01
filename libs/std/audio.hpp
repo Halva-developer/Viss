@@ -488,23 +488,60 @@ namespace audio {
     inline void dash() { getEngine().sfx("dash"); }
 
 #ifdef _WIN32
+    inline std::string find_audio_ffmpeg() {
+        std::vector<std::string> candidates = {
+            "C:\\Users\\halva\\AppData\\Local\\Programs\\AudioCoverWatcher\\tools\\ffmpeg.exe",
+            "C:\\Users\\halva\\OggCoverWatcherViss\\tools\\ffmpeg.exe",
+            "tools\\ffmpeg.exe",
+            "ffmpeg.exe"
+        };
+        for (const auto& c : candidates) {
+            DWORD attr = GetFileAttributesA(c.c_str());
+            if (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY)) {
+                return c;
+            }
+        }
+        return "ffmpeg";
+    }
+
     inline bool play_file(const std::string& path) {
         mciSendStringA("close acw_audio", NULL, 0, NULL);
-        std::string cmd = "open \"" + path + "\" type mpegvideo alias acw_audio";
+        std::string target_path = path;
+
+        std::string ext = "";
+        size_t dot = path.rfind('.');
+        if (dot != std::string::npos) {
+            ext = path.substr(dot);
+            for (auto& ch : ext) ch = (char)tolower(ch);
+        }
+
+        // For formats not natively supported by MCI (OGG, FLAC, OPUS), fast-decode to temporary WAV
+        if (ext == ".ogg" || ext == ".flac" || ext == ".opus" || ext == ".m4a") {
+            char temp_dir[MAX_PATH];
+            GetTempPathA(MAX_PATH, temp_dir);
+            std::string temp_wav = std::string(temp_dir) + "viss_preview_" + std::to_string(GetCurrentProcessId()) + ".wav";
+            std::string ff = find_audio_ffmpeg();
+            std::string cmd = "cmd.exe /c \"\"" + ff + "\" -y -i \"" + path + "\" -vn \"" + temp_wav + "\"\"";
+
+            STARTUPINFOA si = { sizeof(si) };
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_HIDE;
+            PROCESS_INFORMATION pi = { 0 };
+            if (CreateProcessA(NULL, &cmd[0], NULL, NULL, FALSE, 0x08000000, NULL, NULL, &si, &pi)) {
+                WaitForSingleObject(pi.hProcess, 4000);
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+                target_path = temp_wav;
+            }
+        }
+
+        std::string cmd = "open \"" + target_path + "\" type mpegvideo alias acw_audio";
         if (mciSendStringA(cmd.c_str(), NULL, 0, NULL) != 0) {
-            cmd = "open \"" + path + "\" alias acw_audio";
+            cmd = "open \"" + target_path + "\" alias acw_audio";
             mciSendStringA(cmd.c_str(), NULL, 0, NULL);
         }
         int res = mciSendStringA("play acw_audio", NULL, 0, NULL);
-        if (res != 0) {
-            // Silently play via PlaySound if WAV, or synthesize audio
-            if (path.size() >= 4 && path.substr(path.size() - 4) == ".wav") {
-                PlaySoundA(path.c_str(), NULL, SND_ASYNC | SND_FILENAME);
-            } else {
-                getEngine().sfx("powerup");
-            }
-        }
-        return true;
+        return (res == 0);
     }
 
     inline void stop_file() {
