@@ -36,6 +36,55 @@ namespace viss {
             if (pos == std::string::npos) return -1;
             return (Int)pos;
         }
+        inline Int rfind(const Str& s, const Str& subStr) {
+            auto pos = s.rfind(subStr);
+            if (pos == std::string::npos) return -1;
+            return (Int)pos;
+        }
+        inline Int count(const Str& s, const Str& subStr) {
+            if (subStr.empty()) return 0;
+            Int cnt = 0;
+            size_t pos = 0;
+            while ((pos = s.find(subStr, pos)) != std::string::npos) {
+                cnt++;
+                pos += subStr.length();
+            }
+            return cnt;
+        }
+        inline Bool is_digit(const Str& s) {
+            if (s.empty()) return false;
+            return std::all_of(s.begin(), s.end(), [](unsigned char c){ return std::isdigit(c); });
+        }
+        inline Bool is_alpha(const Str& s) {
+            if (s.empty()) return false;
+            return std::all_of(s.begin(), s.end(), [](unsigned char c){ return std::isalpha(c); });
+        }
+        inline Bool is_alnum(const Str& s) {
+            if (s.empty()) return false;
+            return std::all_of(s.begin(), s.end(), [](unsigned char c){ return std::isalnum(c); });
+        }
+        inline Bool is_space(const Str& s) {
+            if (s.empty()) return false;
+            return std::all_of(s.begin(), s.end(), [](unsigned char c){ return std::isspace(c); });
+        }
+        inline Str capitalize(Str s) {
+            if (s.empty()) return s;
+            s[0] = (char)std::toupper((unsigned char)s[0]);
+            for (size_t i = 1; i < s.length(); ++i) {
+                s[i] = (char)std::tolower((unsigned char)s[i]);
+            }
+            return s;
+        }
+        inline List<Str> lines(const Str& s) {
+            List<Str> res;
+            std::stringstream ss(s);
+            std::string line;
+            while (std::getline(ss, line)) {
+                if (!line.empty() && line.back() == '\r') line.pop_back();
+                res.add(line);
+            }
+            return res;
+        }
         inline Bool contains(const Str& s, const Str& subStr) {
             return s.find(subStr) != std::string::npos;
         }

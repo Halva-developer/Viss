@@ -202,5 +202,41 @@ namespace viss {
         }
         inline void cursor_hide() { cursor_visible(false); }
         inline void cursor_show() { cursor_visible(true); }
+
+        inline void title(const Str& t) {
+            #ifdef _WIN32
+            SetConsoleTitleA(t.c_str());
+            #else
+            std::cout << "\033]0;" << t << "\007" << std::flush;
+            #endif
+        }
+
+        inline Int term_width() {
+            #ifdef _WIN32
+            CONSOLE_SCREEN_BUFFER_INFO csbi;
+            if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) {
+                return (Int)(csbi.srWindow.Right - csbi.srWindow.Left + 1);
+            }
+            return 80;
+            #else
+            return 80;
+            #endif
+        }
+
+        inline Int term_height() {
+            #ifdef _WIN32
+            CONSOLE_SCREEN_BUFFER_INFO csbi;
+            if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) {
+                return (Int)(csbi.srWindow.Bottom - csbi.srWindow.Top + 1);
+            }
+            return 25;
+            #else
+            return 25;
+            #endif
+        }
+
+        inline List<Int> term_size() {
+            return List<Int>{ term_width(), term_height() };
+        }
     }
 }

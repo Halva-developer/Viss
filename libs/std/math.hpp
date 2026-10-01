@@ -18,6 +18,7 @@ namespace viss {
         inline Dec acos(Dec x) { return std::acos(x); }
         inline Dec atan(Dec x) { return std::atan(x); }
         inline Dec atan2(Dec y, Dec x) { return std::atan2(y, x); }
+        inline Dec hypot(Dec x, Dec y) { return std::hypot(x, y); }
 
         inline Dec sqrt(Dec x) { return std::sqrt(x); }
         inline Dec pow(Dec base, Dec exp) { return std::pow(base, exp); }

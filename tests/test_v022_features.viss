@@ -1,0 +1,65 @@
+!func main() {
+    io.println("=== Testing Viss Extended Features ===");
+
+    // 1. io terminal functions
+    io.title("Viss Test Suite");
+    @w = io.term_width();
+    @h = io.term_height();
+    @size = io.term_size();
+    io.println(i"Terminal dimensions: {@w}x{@h}, size list: [{@size.join(\", \")}]");
+
+    // 2. str utilities
+    @s = "hello world, hello viss";
+    @c = str.count(@s, "hello");
+    io.println(i"str.count('hello') = {@c} (expected 2)");
+
+    @rf = str.rfind(@s, "hello");
+    io.println(i"str.rfind('hello') = {@rf} (expected 13)");
+
+    @num_str = "12345";
+    @alpha_str = "HelloWorld";
+    @alnum_str = "Player1";
+    io.println(i"is_digit('12345'): {str.is_digit(@num_str)} (expected true)");
+    io.println(i"is_alpha('HelloWorld'): {str.is_alpha(@alpha_str)} (expected true)");
+    io.println(i"is_alnum('Player1'): {str.is_alnum(@alnum_str)} (expected true)");
+
+    @cap = str.capitalize("vISS lAnGuAgE");
+    io.println(i"str.capitalize('vISS lAnGuAgE') = '{@cap}' (expected 'Viss language')");
+
+    @multi = "line 1\nline 2\r\nline 3";
+    @split_lines = str.lines(@multi);
+    io.println(i"str.lines() count: {@split_lines.size()} (expected 3)");
+
+    // 3. fs lines
+    @test_file = "temp_test_lines.txt";
+    @file_lines = ["Alpha", "Beta", "Gamma"];
+    fs.write_lines(@test_file, @file_lines);
+    @read_back = fs.read_lines(@test_file);
+    io.println(i"fs.read_lines() size: {@read_back.size()}, first: '{@read_back[0]}', last: '{@read_back[-1]}'");
+    fs.remove(@test_file);
+
+    // 4. math sign & hypot
+    @s1 = math.sign(42);
+    @s2 = math.sign(-17);
+    @s3 = math.sign(0);
+    @hyp = math.hypot(3.0, 4.0);
+    io.println(i"math.sign: {@s1}, {@s2}, {@s3} (expected 1, -1, 0)");
+    io.println(i"math.hypot(3, 4) = {@hyp} (expected 5)");
+
+    // 5. zip and enumerate
+    @names = ["Alice", "Bob", "Charlie"];
+    @scores = [100, 95, 88];
+    @zipped = collections.zip(@names, @scores);
+    io.println(i"zip size: {@zipped.size()}");
+    !for @pair in @zipped {
+        io.println(i"  pair: {@pair[0]} -> {@pair[1]}");
+    }
+
+    @enum_res = collections.enumerate(@names);
+    io.println(i"enumerate size: {@enum_res.size()}");
+    !for @entry in @enum_res {
+        io.println(i"  idx {@entry[0]}: {@entry[1]}");
+    }
+
+    io.println("=== All extended feature tests passed! ===");
+}

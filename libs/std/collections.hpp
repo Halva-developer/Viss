@@ -119,5 +119,27 @@ namespace viss {
             inline Bool is_empty() const { return count == 0; }
             inline void clear() { head = tail = count = 0; }
         };
+
+        template<typename T1, typename T2>
+        inline List<List<Var>> zip(const List<T1>& a, const List<T2>& b) {
+            List<List<Var>> res;
+            size_t n = std::min(a.size(), b.size());
+            for (size_t i = 0; i < n; ++i) {
+                res.add(List<Var>{ Var(a.get(i)), Var(b.get(i)) });
+            }
+            return res;
+        }
+
+        template<typename T>
+        inline List<List<Var>> enumerate(const List<T>& a) {
+            List<List<Var>> res;
+            for (size_t i = 0; i < a.size(); ++i) {
+                res.add(List<Var>{ Var((Int)i), Var(a.get(i)) });
+            }
+            return res;
+        }
     }
+
+    using collections::zip;
+    using collections::enumerate;
 }

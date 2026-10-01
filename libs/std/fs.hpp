@@ -23,6 +23,31 @@ namespace viss {
             return content;
         }
 
+        inline List<Str> read_lines(const Str& path) {
+            List<Str> res;
+            std::ifstream f(path);
+            if (!f.is_open()) return res;
+            std::string line;
+            while (std::getline(f, line)) {
+                if (!line.empty() && line.back() == '\r') line.pop_back();
+                res.add(line);
+            }
+            return res;
+        }
+
+        inline List<Str> lines(const Str& path) {
+            return read_lines(path);
+        }
+
+        inline void write_lines(const Str& path, const List<Str>& lines) {
+            std::ofstream f(path);
+            if (f.is_open()) {
+                for (size_t i = 0; i < lines.size(); ++i) {
+                    f << lines.get(i) << "\n";
+                }
+            }
+        }
+
         inline Bool exists(const Str& path) {
             return std::filesystem::exists(path);
         }

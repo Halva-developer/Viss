@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <cctype>
 #include <algorithm>
+#include <chrono>
 #include "viss_vm.hpp"
 
 #ifdef _WIN32
@@ -3814,6 +3815,65 @@ int main(int argc, char* argv[]) {
         transpile(buffer.str(), fs::path(viss_file).filename().string(), fs::absolute(fs::path(viss_file)).parent_path().string());
         std::cout << "[Viss Checker] File '" << viss_file << "' syntax verified cleanly! ^_^\n";
         return 0;
+    } else if (cmd == "test") {
+        std::string test_dir = (argc > 2) ? argv[2] : "tests";
+        if (!fs::exists(test_dir)) {
+            test_dir = ".";
+        }
+        std::vector<fs::path> test_files;
+        try {
+            for (const auto& entry : fs::directory_iterator(test_dir)) {
+                if (entry.is_regular_file()) {
+                    std::string fname = entry.path().filename().string();
+                    if (entry.path().extension() == ".viss" && (startsWith(fname, "test_") || endsWith(fname, "_test.viss"))) {
+                        test_files.push_back(entry.path());
+                    }
+                }
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Error reading test directory: " << e.what() << "\n";
+            return 1;
+        }
+        std::sort(test_files.begin(), test_files.end());
+        if (test_files.empty()) {
+            std::cout << "[Viss Test Runner] No test files found in '" << test_dir << "' (matching test_*.viss or *_test.viss)\n";
+            return 0;
+        }
+
+        std::cout << "\n======================================================\n";
+        std::cout << "  Viss Test Runner: " << test_files.size() << " test suite(s) in '" << test_dir << "'\n";
+        std::cout << "======================================================\n";
+
+        int passed = 0;
+        int failed = 0;
+        for (const auto& tf : test_files) {
+            std::string tpath = tf.string();
+            std::cout << "Running " << tf.filename().string() << "... " << std::flush;
+            auto t0 = std::chrono::steady_clock::now();
+
+            std::string self_exe = fs::absolute(argv[0]).string();
+#ifdef _WIN32
+            std::string run_cmd = "\"\"" + self_exe + "\" run \"" + tpath + "\"\"";
+#else
+            std::string run_cmd = "\"" + self_exe + "\" run \"" + tpath + "\"";
+#endif
+            int ret = std::system(run_cmd.c_str());
+            auto t1 = std::chrono::steady_clock::now();
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+
+            if (ret == 0) {
+                passed++;
+                std::cout << "\033[32m[PASS]\033[0m (" << ms << " ms)\n";
+            } else {
+                failed++;
+                std::cout << "\033[31m[FAIL]\033[0m (exit code " << ret << ")\n";
+            }
+        }
+
+        std::cout << "------------------------------------------------------\n";
+        std::cout << "Results: " << passed << " passed, " << failed << " failed (total " << test_files.size() << ")\n";
+        std::cout << "======================================================\n\n";
+        return failed > 0 ? 1 : 0;
     } else {
         viss_file = cmd;
         run_after = true;
