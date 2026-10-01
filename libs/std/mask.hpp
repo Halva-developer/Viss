@@ -603,6 +603,54 @@ namespace bytemask {
         return res;
     }
 
+    // =========================================================================
+    // 8. RAW BINARY (BIT STRINGS) & RAW BUFFER TOOLS
+    // =========================================================================
+
+    inline std::string to_bin(const viss::Bytes& m) {
+        return m.to_bin();
+    }
+
+    inline std::string to_bin_raw(const viss::Bytes& m) {
+        return m.to_bin_raw();
+    }
+
+    inline viss::Bytes from_bin(const std::string& bin_str) {
+        return viss::Bytes::from_bin(bin_str);
+    }
+
+    inline viss::Bytes from_raw(const std::string& raw_str) {
+        return viss::Bytes::from_raw(raw_str);
+    }
+
+    inline std::string get_bin(const viss::Bytes& m, int idx) {
+        return m.get_bin((size_t)idx);
+    }
+
+    inline void set_bin(viss::Bytes& m, int idx, const std::string& bin_str) {
+        m.set_bin((size_t)idx, bin_str);
+    }
+
+    inline std::string get_hex(const viss::Bytes& m, int idx) {
+        return m.get_hex((size_t)idx);
+    }
+
+    inline void set_hex(viss::Bytes& m, int idx, const std::string& hex_str) {
+        m.set_hex((size_t)idx, hex_str);
+    }
+
+    inline void dump_raw(const viss::Bytes& m) {
+        m.dump_raw();
+    }
+
+    inline bool save_raw(const std::string& path, const viss::Bytes& m) {
+        return save_bin(path, m);
+    }
+
+    inline viss::Bytes load_raw(const std::string& path) {
+        return load_bin(path);
+    }
+
 } // namespace bytemask
 namespace colormask = bytemask;
 namespace mask = bytemask;

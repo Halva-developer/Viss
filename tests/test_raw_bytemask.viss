@@ -1,0 +1,24 @@
+$import lib "mask" as mask
+
+!main {
+    &m1 create | bytemask, "1010101111001101"
+    io.println(i"m1 size: {@m1.size()}")
+    io.println(i"m1 bin: {@m1.to_bin()}")
+    io.println(i"m1 hex: {@m1.to_hex()}")
+
+    &m2 = "0xDEADBEEF"
+    io.println(i"m2 size: {@m2.size()}")
+    io.println(i"m2 hex: {@m2.to_hex()}")
+    io.println(i"m2 bin: {@m2.to_bin()}")
+
+    @raw_bin = mask.to_bin(&m1)
+    io.println(i"mask.to_bin: {@raw_bin}")
+
+    @parsed = mask.from_raw("01110001")
+    io.println(i"parsed byte 0: {@parsed[0]}")
+
+    &m1.set_bin(0, "11111111")
+    io.println(i"m1 after set_bin: {@m1.get_bin(0)}")
+
+    &m1 dump raw
+}

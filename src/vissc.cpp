@@ -2665,8 +2665,12 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             std::string sz = m_buf[3].str();
             declared_vars.insert(vname);
             if (btype == "bytes" || btype == "bytemask" || btype == "mask") {
-                std::string size_val = sz.empty() ? "1024" : sz;
-                current_target->push_back("viss::Bytes " + vname + "(" + size_val + ");");
+                std::string size_val = trim(sz.empty() ? "1024" : sz);
+                if (startsWith(size_val, "\"") || startsWith(size_val, "viss::Str") || startsWith(size_val, "__VISS_STR_LIT_")) {
+                    current_target->push_back("viss::Bytes " + vname + " = viss::Bytes::from_raw(" + size_val + ");");
+                } else {
+                    current_target->push_back("viss::Bytes " + vname + "(" + size_val + ");");
+                }
             } else if (btype == "colormask") {
                 std::string size_val = sz.empty() ? "48" : "(" + sz + ") * 3";
                 current_target->push_back("viss::Bytes " + vname + "(" + size_val + ");");
@@ -2807,8 +2811,16 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             current_target->push_back(m_cmd[1].str() + ".rewind();");
             continue;
         }
-        if (std::regex_match(stripped, m_cmd, std::regex(R"(^&([a-zA-Z0-9_]+)\s+(dump|hexdump);?$)"))) {
-            current_target->push_back(m_cmd[1].str() + ".dump();");
+        if (std::regex_match(stripped, m_cmd, std::regex(R"(^&([a-zA-Z0-9_]+)\s+(dump|hexdump)(?:\s+(raw|bin|hex))?;?$)"))) {
+            std::string vname = m_cmd[1].str();
+            std::string mode = m_cmd[3].matched ? m_cmd[3].str() : "";
+            if (mode == "raw") {
+                current_target->push_back(vname + ".dump_raw();");
+            } else if (mode == "bin") {
+                current_target->push_back("std::cout << " + vname + ".to_bin() << std::endl;");
+            } else {
+                current_target->push_back(vname + ".dump();");
+            }
             continue;
         }
         if (std::regex_match(stripped, m_cmd, std::regex(R"(^&([a-zA-Z0-9_]+)\s+clear;?$)"))) {
@@ -2937,13 +2949,15 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             }
             if (startsWith(val_expr, "[") && endsWith(val_expr, "]")) {
                 val_expr = "{" + val_expr.substr(1, val_expr.size() - 2) + "}";
+            } else if (startsWith(val_expr, "\"") || startsWith(val_expr, "viss::Str(") || startsWith(val_expr, "__VISS_STR_LIT_")) {
+                val_expr = "viss::Bytes::from_raw(" + val_expr + ")";
             }
             current_target->push_back("#line " + std::to_string(line_num) + " \"" + filename + "\"");
             if (declared_vars.count(vname)) {
                 current_target->push_back(vname + " = " + val_expr + ";");
             } else {
                 declared_vars.insert(vname, VissType::Bytes, line_num, true);
-                current_target->push_back("auto " + vname + " = " + val_expr + ";");
+                current_target->push_back("viss::Bytes " + vname + " = " + val_expr + ";");
             }
             continue;
         }

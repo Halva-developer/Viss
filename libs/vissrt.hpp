@@ -1089,6 +1089,154 @@ namespace viss {
         }
 
         // =====================================================================
+        // RAW REPRESENTATIONS (BINARY BITS & HEX)
+        // =====================================================================
+        inline Str to_bin() const {
+            std::stringstream ss;
+            for (size_t i = 0; i < data->size(); ++i) {
+                uint8_t b = (*data)[i];
+                for (int bit = 7; bit >= 0; --bit) {
+                    ss << ((b >> bit) & 1);
+                }
+                if (i + 1 < data->size()) ss << " ";
+            }
+            return ss.str();
+        }
+
+        inline Str to_bin_raw() const {
+            std::stringstream ss;
+            for (size_t i = 0; i < data->size(); ++i) {
+                uint8_t b = (*data)[i];
+                for (int bit = 7; bit >= 0; --bit) {
+                    ss << ((b >> bit) & 1);
+                }
+            }
+            return ss.str();
+        }
+
+        inline Str get_bin(size_t idx) const {
+            if (idx >= data->size()) return "00000000";
+            uint8_t b = (*data)[idx];
+            std::string s = "";
+            for (int bit = 7; bit >= 0; --bit) {
+                s += ((b >> bit) & 1) ? '1' : '0';
+            }
+            return s;
+        }
+
+        inline void set_bin(size_t idx, const Str& bin_str) {
+            if (idx >= data->size()) data->resize(idx + 1, 0);
+            uint8_t val = 0;
+            int bit_count = 0;
+            for (char ch : bin_str) {
+                if (ch == '0' || ch == '1') {
+                    val = (val << 1) | (ch - '0');
+                    bit_count++;
+                    if (bit_count == 8) break;
+                }
+            }
+            (*data)[idx] = val;
+        }
+
+        inline Str get_hex(size_t idx) const {
+            if (idx >= data->size()) return "00";
+            std::stringstream ss;
+            ss << std::hex << std::setfill('0') << std::setw(2) << (int)(*data)[idx];
+            return ss.str();
+        }
+
+        inline void set_hex(size_t idx, const Str& hex_str) {
+            if (idx >= data->size()) data->resize(idx + 1, 0);
+            std::string clean = "";
+            for (char ch : hex_str) {
+                if (std::isxdigit(ch)) clean += ch;
+            }
+            if (clean.empty()) clean = "00";
+            try {
+                (*data)[idx] = (uint8_t)std::strtol(clean.c_str(), nullptr, 16);
+            } catch (...) {}
+        }
+
+        static inline Bytes from_bin(const Str& bin_str) {
+            std::vector<uint8_t> bytes;
+            uint8_t cur_byte = 0;
+            int bit_count = 0;
+            for (char ch : bin_str) {
+                if (ch == '0' || ch == '1') {
+                    cur_byte = (cur_byte << 1) | (ch - '0');
+                    bit_count++;
+                    if (bit_count == 8) {
+                        bytes.push_back(cur_byte);
+                        cur_byte = 0;
+                        bit_count = 0;
+                    }
+                }
+            }
+            if (bit_count > 0) {
+                cur_byte <<= (8 - bit_count);
+                bytes.push_back(cur_byte);
+            }
+            Bytes res(bytes.size(), 0);
+            for (size_t i = 0; i < bytes.size(); ++i) res.set(i, bytes[i]);
+            return res;
+        }
+
+        static inline Bytes from_hex(const Str& hex_str) {
+            std::vector<uint8_t> bytes;
+            std::string cur = "";
+            for (char ch : hex_str) {
+                if (std::isxdigit(ch)) {
+                    cur += ch;
+                    if (cur.size() == 2) {
+                        bytes.push_back((uint8_t)std::strtol(cur.c_str(), nullptr, 16));
+                        cur.clear();
+                    }
+                }
+            }
+            if (!cur.empty()) {
+                bytes.push_back((uint8_t)(std::strtol(cur.c_str(), nullptr, 16) << 4));
+            }
+            Bytes res(bytes.size(), 0);
+            for (size_t i = 0; i < bytes.size(); ++i) res.set(i, bytes[i]);
+            return res;
+        }
+
+        static inline Bytes from_raw(const Str& raw_str) {
+            std::string s = raw_str;
+            if (s.rfind("0b", 0) == 0 || s.rfind("0B", 0) == 0) {
+                return from_bin(s.substr(2));
+            }
+            if (s.rfind("0x", 0) == 0 || s.rfind("0X", 0) == 0) {
+                return from_hex(s.substr(2));
+            }
+            bool only_binary = true;
+            int bit_count = 0;
+            for (char ch : s) {
+                if (ch == '0' || ch == '1') bit_count++;
+                else if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') {
+                    only_binary = false;
+                    break;
+                }
+            }
+            if (only_binary && bit_count > 0) {
+                return from_bin(s);
+            }
+            return from_hex(s);
+        }
+
+        inline void dump_raw() const {
+            std::cout << "--- Raw Buffer Dump (" << data->size() << " Bytes, cursor=" << cursor << ") ---" << std::endl;
+            for (size_t i = 0; i < data->size(); ++i) {
+                uint8_t b = (*data)[i];
+                std::printf("[%04zx] HEX: 0x%02X | BIN: ", i, b);
+                for (int bit = 7; bit >= 0; --bit) {
+                    std::putchar(((b >> bit) & 1) ? '1' : '0');
+                }
+                std::printf(" | DEC: %3d | CHAR: %c\n", (int)b, (b >= 32 && b <= 126) ? (char)b : '.');
+            }
+        }
+
+        // =====================================================================
         // BINARY STREAM CURSOR, WRITE & READ (TEXT, INTEGERS, DECIMALS, BYTES)
         // =====================================================================
         inline void seek(size_t pos) {
@@ -2036,7 +2184,7 @@ namespace viss {
         // SERIALIZATION & FILE I/O
         // =====================================================================
 
-        inline void from_hex(const std::string& hex_str) {
+        inline void load_hex_str(const std::string& hex_str) {
             std::vector<uint8_t> bytes;
             std::string cur = "";
             for (char ch : hex_str) {
