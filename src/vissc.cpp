@@ -2993,21 +2993,25 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
         // 15. Pipe variable declaration: @var = val | type, const; or @var = val | type;
         std::smatch m_pipe;
         if (std::regex_match(stripped, m_pipe, std::regex(R"(^@([a-zA-Z0-9_]+)\s*=\s*([\s\S]+?)\s*\|\s*([a-zA-Z0-9_]+)\s*,\s*const;?$)"))) {
-            std::string vname = m_pipe[1].str();
-            std::string val = trim(m_pipe[2].str());
-            std::string ptype = m_pipe[3].str();
-            std::string err;
-            val = transformExpression(val, imported_aliases, declared_vars, line_num, filename, err);
-            if (!err.empty()) {
-                std::cerr << "\n[Viss " << (err.find("Cannot apply") != std::string::npos ? "TypeError" : "NameError") << "] " << filename << ":" << line_num << "\n";
-                std::cerr << "    " << stripped << "\n";
-                std::cerr << "    " << err << "\n";
-                return "";
+            std::string val_cand = trim(m_pipe[2].str());
+            std::string ptype_cand = trim(m_pipe[3].str());
+            if (!val_cand.empty() && val_cand.back() != '|' && !startsWith(ptype_cand, ">") && !startsWith(ptype_cand, "|") && declared_vars.count(ptype_cand) == 0) {
+                std::string vname = m_pipe[1].str();
+                std::string val = val_cand;
+                std::string ptype = ptype_cand;
+                std::string err;
+                val = transformExpression(val, imported_aliases, declared_vars, line_num, filename, err);
+                if (!err.empty()) {
+                    std::cerr << "\n[Viss " << (err.find("Cannot apply") != std::string::npos ? "TypeError" : "NameError") << "] " << filename << ":" << line_num << "\n";
+                    std::cerr << "    " << stripped << "\n";
+                    std::cerr << "    " << err << "\n";
+                    return "";
+                }
+                declared_vars.insert(vname, parseVissType(ptype), line_num);
+                current_target->push_back("#line " + std::to_string(line_num) + " \"" + filename + "\"");
+                current_target->push_back("const auto " + vname + " = " + val + ";");
+                continue;
             }
-            declared_vars.insert(vname, parseVissType(ptype), line_num);
-            current_target->push_back("#line " + std::to_string(line_num) + " \"" + filename + "\"");
-            current_target->push_back("const auto " + vname + " = " + val + ";");
-            continue;
         }
 
         // 14.4 Multi-assignment / Tuple unpacking: (@a, @b) = (1, 2) or (@a, @b) = @coll or (@a, @b) = (@b, @a)
@@ -3113,31 +3117,35 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
 
         // 15. Pipe variable declaration: @var = val | type, const; or @var = val | type;
         if (std::regex_match(stripped, m_pipe, std::regex(R"(^@([a-zA-Z0-9_]+)\s*=\s*([\s\S]+?)\s*\|\s*([a-zA-Z0-9_<>, \t[\]]+?)(?:,\s*(const))?\s*;?$)"))) {
-            std::string vname = m_pipe[1].str();
-            std::string val = trim(m_pipe[2].str());
-            std::string ptype = trim(m_pipe[3].str());
-            bool is_const = m_pipe[4].matched;
-            std::string cpp_t = resolveVissCppType(ptype);
-            if (is_const) cpp_t = "const " + cpp_t;
-            if (startsWith(val, "[") && endsWith(val, "]")) {
-                std::string inner = trim(val.substr(1, val.size() - 2));
-                val = inner.empty() ? (cpp_t + "{}") : (cpp_t + "{" + inner + "}");
-            } else if (isDictLiteral(val)) {
-                val = transformDictLiteral(val, cpp_t);
+            std::string val_cand = trim(m_pipe[2].str());
+            std::string ptype_cand = trim(m_pipe[3].str());
+            if (!val_cand.empty() && val_cand.back() != '|' && !startsWith(ptype_cand, ">") && !startsWith(ptype_cand, "|") && declared_vars.count(ptype_cand) == 0) {
+                std::string vname = m_pipe[1].str();
+                std::string val = val_cand;
+                std::string ptype = ptype_cand;
+                bool is_const = m_pipe[4].matched;
+                std::string cpp_t = resolveVissCppType(ptype);
+                if (is_const) cpp_t = "const " + cpp_t;
+                if (startsWith(val, "[") && endsWith(val, "]")) {
+                    std::string inner = trim(val.substr(1, val.size() - 2));
+                    val = inner.empty() ? (cpp_t + "{}") : (cpp_t + "{" + inner + "}");
+                } else if (isDictLiteral(val)) {
+                    val = transformDictLiteral(val, cpp_t);
+                }
+                std::string err;
+                val = transformExpression(val, imported_aliases, declared_vars, line_num, filename, err);
+                if (!err.empty()) {
+                    std::cerr << "\n[Viss " << (err.find("Cannot apply") != std::string::npos ? "TypeError" : "NameError") << "] " << filename << ":" << line_num << "\n";
+                    std::cerr << "    " << stripped << "\n";
+                    std::cerr << "    " << err << "\n";
+                    return "";
+                }
+                bool already = declared_vars.count(vname) > 0;
+                declared_vars.insert(vname, parseVissType(ptype), line_num);
+                current_target->push_back("#line " + std::to_string(line_num) + " \"" + filename + "\"");
+                current_target->push_back(already ? (vname + " = " + val + ";") : (cpp_t + " " + vname + " = " + val + ";"));
+                continue;
             }
-            std::string err;
-            val = transformExpression(val, imported_aliases, declared_vars, line_num, filename, err);
-            if (!err.empty()) {
-                std::cerr << "\n[Viss " << (err.find("Cannot apply") != std::string::npos ? "TypeError" : "NameError") << "] " << filename << ":" << line_num << "\n";
-                std::cerr << "    " << stripped << "\n";
-                std::cerr << "    " << err << "\n";
-                return "";
-            }
-            bool already = declared_vars.count(vname) > 0;
-            declared_vars.insert(vname, parseVissType(ptype), line_num);
-            current_target->push_back("#line " + std::to_string(line_num) + " \"" + filename + "\"");
-            current_target->push_back(already ? (vname + " = " + val + ";") : (cpp_t + " " + vname + " = " + val + ";"));
-            continue;
         }
 
         // 16. Operator assignment: @var += val;

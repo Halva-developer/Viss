@@ -276,10 +276,10 @@ inline bool is_file_ready(const std::string& path) {
         } else {
             wpath = std::wstring(path.begin(), path.end());
         }
-        HANDLE hFile = CreateFileW(wpath.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        HANDLE hFile = CreateFileW(wpath.c_str(), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
         if (hFile == INVALID_HANDLE_VALUE) {
             DWORD err = GetLastError();
-            if (err == ERROR_SHARING_VIOLATION || err == ERROR_LOCK_VIOLATION) {
+            if (err == ERROR_SHARING_VIOLATION || err == ERROR_LOCK_VIOLATION || err == ERROR_ACCESS_DENIED) {
                 // File is locked by another process (DAW exporting)
                 return false;
             }
@@ -287,11 +287,6 @@ inline bool is_file_ready(const std::string& path) {
             CloseHandle(hFile);
         }
         #endif
-
-        // Size stability check over 150ms
-        std::this_thread::sleep_for(std::chrono::milliseconds(150));
-        uintmax_t sz2 = fs::file_size(path);
-        if (sz1 != sz2) return false;
 
         // Validate audio header magic bytes
         std::ifstream f(path, std::ios::binary);
@@ -443,7 +438,6 @@ inline bool parse_ogg(const std::string& path, AudioTag& tag) {
                             }
                         }
                         else if (key == "COVERART") {
-                            tag.has_cover = true;
                             if (tag.cover_data.empty()) {
                                 tag.cover_data = base64_decode(val);
                             }
@@ -740,7 +734,9 @@ inline bool embed_cover(const std::string& audio_path, const std::string& image_
         write_u32_be(3); // Type 3: Cover (front)
         write_u32_be((uint32_t)mime.size());
         for (char c : mime) block.push_back((uint8_t)c);
-        write_u32_be(0); // Description len
+        std::string desc = "Cover";
+        write_u32_be((uint32_t)desc.size());
+        for (char c : desc) block.push_back((uint8_t)c);
         write_u32_be((uint32_t)img_w); // Real image width
         write_u32_be((uint32_t)img_h); // Real image height
         write_u32_be(24); // Depth
@@ -810,14 +806,79 @@ inline bool embed_cover(const std::string& audio_path, const std::string& image_
     return false;
 }
 
-// Write/update metadata tags
+// Write/update metadata tags while preserving existing cover art
 inline bool write_tags(const std::string& audio_path, const std::map<std::string, std::string>& tags) {
     if (!fs::exists(audio_path)) return false;
     std::string ffmpeg = find_ffmpeg();
     std::string ext = fs::path(audio_path).extension().string();
+    std::string ext_lower = ext;
+    std::transform(ext_lower.begin(), ext_lower.end(), ext_lower.begin(), ::tolower);
 
     fs::path temp_file = audio_path + ".tmp" + ext;
-    std::string map_arg = (ext == ".ogg" || ext == ".opus") ? "-map 0:a -c:a copy " : "-c copy ";
+    fs::path meta_txt = audio_path + ".meta.txt";
+    AudioTag existing = read(audio_path);
+
+    if ((ext_lower == ".ogg" || ext_lower == ".opus") && !existing.cover_data.empty()) {
+        int img_w = existing.cover_width > 0 ? existing.cover_width : 600;
+        int img_h = existing.cover_height > 0 ? existing.cover_height : 600;
+        std::string mime = !existing.cover_mime.empty() ? existing.cover_mime : "image/jpeg";
+
+        std::vector<uint8_t> block;
+        auto write_u32_be = [&](uint32_t val) {
+            block.push_back((val >> 24) & 0xFF);
+            block.push_back((val >> 16) & 0xFF);
+            block.push_back((val >> 8) & 0xFF);
+            block.push_back(val & 0xFF);
+        };
+        write_u32_be(3); // Type 3: Cover
+        write_u32_be((uint32_t)mime.size());
+        for (char c : mime) block.push_back((uint8_t)c);
+        std::string desc = "Cover";
+        write_u32_be((uint32_t)desc.size());
+        for (char c : desc) block.push_back((uint8_t)c);
+        write_u32_be((uint32_t)img_w);
+        write_u32_be((uint32_t)img_h);
+        write_u32_be(24);
+        write_u32_be(0);
+        write_u32_be((uint32_t)existing.cover_data.size());
+        block.insert(block.end(), existing.cover_data.begin(), existing.cover_data.end());
+
+        std::string b64 = base64_encode(block);
+        std::string raw_b64 = base64_encode(existing.cover_data);
+
+        std::ofstream meta_out(std::filesystem::u8path(meta_txt.string()));
+        meta_out << ";FFMETADATA1\n";
+        if (!existing.title.empty()) meta_out << "title=" << existing.title << "\n";
+        if (!existing.artist.empty()) meta_out << "artist=" << existing.artist << "\n";
+        if (!existing.album.empty()) meta_out << "album=" << existing.album << "\n";
+        if (!existing.genre.empty()) meta_out << "genre=" << existing.genre << "\n";
+        if (!existing.year.empty()) meta_out << "date=" << existing.year << "\n";
+
+        for (const auto& kv : tags) {
+            meta_out << kv.first << "=" << kv.second << "\n";
+        }
+        meta_out << "METADATA_BLOCK_PICTURE=" << b64 << "\n";
+        meta_out << "COVERART=" << raw_b64 << "\n";
+        meta_out << "COVERARTMIME=" << mime << "\n";
+        meta_out.close();
+
+        std::string cmd = "\"" + ffmpeg + "\" -y -i \"" + audio_path + "\" -i \"" + meta_txt.string() + "\" -map 0:a -map_metadata 1 -c:a copy \"" + temp_file.string() + "\"";
+        int ret = run_process_silent(cmd);
+        if (fs::exists(meta_txt)) {
+            std::error_code ec;
+            fs::remove(meta_txt, ec);
+        }
+        if (ret == 0 && fs::exists(temp_file)) {
+            if (atomic_replace_file(temp_file, fs::u8path(audio_path))) return true;
+        }
+        if (fs::exists(temp_file)) {
+            std::error_code ec;
+            fs::remove(temp_file, ec);
+        }
+        return false;
+    }
+
+    std::string map_arg = (ext_lower == ".ogg" || ext_lower == ".opus") ? "-map 0:a -c:a copy " : "-c copy ";
     std::string cmd = "\"" + ffmpeg + "\" -y -i \"" + audio_path + "\" " + map_arg;
     for (const auto& kv : tags) {
         cmd += "-metadata " + kv.first + "=\"" + kv.second + "\" ";
@@ -854,6 +915,27 @@ inline bool embed_passport(const std::string& audio_path, const std::string& art
     tags["ACW_PASSPORT"] = passport_payload;
 
     return write_tags(audio_path, tags);
+}
+
+// Embed cover art and cryptographic metadata passport in a single atomic pass
+inline bool embed_cover_with_passport(const std::string& audio_path, const std::string& image_path, const std::string& artist = "Halva", const std::string& title = "", const std::string& out_path = "") {
+    if (!fs::exists(audio_path) || !fs::exists(image_path)) return false;
+    std::string stem = title.empty() ? fs::path(audio_path).stem().string() : title;
+    std::string clean_stem = stem;
+    if (clean_stem.size() > 8) clean_stem = clean_stem.substr(0, 8);
+    std::string isrc = "RU-ACW-26-" + clean_stem;
+    std::string cr = "(C) 2026 " + artist + " // All rights reserved.";
+    std::string passport_payload = "ACW-PASSPORT-ISRC:" + isrc + "-ARTIST:" + artist + "-TITLE:" + stem;
+
+    std::map<std::string, std::string> tags;
+    tags["TITLE"] = stem;
+    tags["ARTIST"] = artist;
+    tags["ISRC"] = isrc;
+    tags["COPYRIGHT"] = cr;
+    tags["COMMENT"] = passport_payload;
+    tags["ACW_PASSPORT"] = passport_payload;
+
+    return embed_cover(audio_path, image_path, out_path, tags);
 }
 
 inline bool write_tag(const std::string& audio_path, const std::string& key, const std::string& val) {

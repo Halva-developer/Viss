@@ -104,6 +104,14 @@ namespace viss {
             return (Int)sz;
         }
 
+        inline Int mtime(const Str& path) {
+            std::error_code ec;
+            auto t = std::filesystem::last_write_time(path, ec);
+            if (ec) return 0;
+            auto s = std::chrono::duration_cast<std::chrono::seconds>(t.time_since_epoch()).count();
+            return (Int)s;
+        }
+
         inline Str extension(const Str& path) {
             return std::filesystem::path(path).extension().string();
         }
