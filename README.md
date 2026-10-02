@@ -14,7 +14,7 @@
 
 ---
 
-## 🌟 What is Viss?
+## What is Viss?
 
 **Viss** is a modern general-purpose programming language designed to unite the **extreme speed and standalone deployment of C++** with the **ergonomics, joy, and rapid development of Python**.
 
@@ -22,13 +22,13 @@ Unlike traditional C-family languages, Viss introduces an iconic **Prefix Design
 
 ### Core Philosophy
 * **Pure Native Speed:** Compiles directly into zero-overhead native machine code (C++20 backend). No heavy interpreter, no virtual machine warmup, no GIL.
-* **Single Binary Deployment:** Produces lightweight standalone executables (1–2 MB). No runtime installations or environment configurations required for end users.
+* **Single Binary Deployment:** Produces lightweight standalone executables (1-2 MB). No runtime installations or environment configurations required for end users.
 * **Zero Boilerplate, Strict Structure:** Eliminates unstructured script chaos by enforcing clear entry points (`!func main()`) and structured entity definitions.
 * **Batteries Included via C/C++ Ecosystem:** Out-of-the-box support for modern graphics, 2D/3D audio, networking, system shell scripting, and instant interop with millions of existing C/C++ libraries.
 
 ---
 
-## 🏷️ Release Codenames (The Adventure Time Scheme)
+## Release Codenames (The Adventure Time Scheme)
 
 Following the beloved Debian tradition with *Toy Story*, Viss codenames each official milestone after characters from the Land of Ooo (*Adventure Time*):
 
@@ -40,11 +40,11 @@ Following the beloved Debian tradition with *Toy Story*, Viss codenames each off
 | `v0.2.0` | **"Marceline"** | Marceline the Vampire Queen | Struct member methods, enums, `Vec2`/`Vec3` vector math, pipelines (`\|>`), Elvis (`?:`), `!defer`, and complete handbook specs. |
 | `v0.2.1` | **"Hambo"** | Hambo | **Current Release:** Dynamic auto-lists, Map/Dict literals (`{}`), range slicing (`..`), `in`/`!in` membership operators, tuple unpacking, native `!async`/`!await`, string kinds (`r""`, `b""`, `""""""`), `fs.glob`, `json.loads`/`dumps`, pure native C++ runtime. |
 
-> 🍋 **Unstable Development Branch:** Named **"Lemongrab"** (*"UNACCEPTABLE!"*) for cutting-edge nightly builds.
+> [NOTE] **Unstable Development Branch:** Named **"Lemongrab"** (*"UNACCEPTABLE!"*) for cutting-edge nightly builds.
 
 ---
 
-## 💎 The Golden Prefix Architecture
+## The Golden Prefix Architecture
 
 Every token in Viss clearly defines its semantic intent via prefixes:
 
@@ -58,7 +58,7 @@ Every token in Viss clearly defines its semantic intent via prefixes:
 
 ---
 
-## 🚀 Syntax at a Glance
+## Syntax at a Glance
 
 ### 1. Variables & Pipeline Typing
 Variables are declared and assigned dynamically with explicit type hinting via the pipe (`|`) operator:
@@ -234,7 +234,7 @@ $import lib "retrotech" as rt
 
 ---
 
-## 📄 Canonical Code Reference (`preview.viss`)
+## Canonical Code Reference (`preview.viss`)
 
 The full feature set of Viss v0.0.1.2 is demonstrated in `preview.viss`:
 
@@ -300,7 +300,7 @@ $import lib "iostream" as io  // Import console I/O
 
 ---
 
-## 🛠️ CLI Usage & Toolchain
+## CLI Usage & Toolchain
 
 The Viss toolchain provides subcommands for compilation, instant execution, and syntax diagnostics:
 
@@ -323,7 +323,7 @@ viss version
 
 ---
 
-## 📦 Standard Library Modules (`libs/std`)
+## Standard Library Modules (`libs/std`)
 
 * **`iostream` (`io`)**: Formatted variadic console I/O, truecolor ANSI, cursor control, interactive single-key input (`io.read_char()`), file I/O.
 * **`retrotech` (`rt`)**: Virtual retro graphics display engine (`DrawRawPixels`, `ColorScreen`, `UpdateScreen`), palette modulation, system sound (`Beep`).
@@ -336,7 +336,7 @@ viss version
 
 ---
 
-## 💻 VS Code Extension (`viss-vscode`)
+## VS Code Extension (`viss-vscode`)
 
 Viss features a complete Visual Studio Code extension located in `.vscode/extensions/viss-vscode`:
 * **Syntax Highlighting**: Full TextMate grammar for all Viss 2.0 constructs, raw memory sigils `&`, interpolation `i"..."`, and pipeline typings.
@@ -348,7 +348,7 @@ Viss features a complete Visual Studio Code extension located in `.vscode/extens
 
 ---
 
-## 🗺️ Roadmap & Milestones
+## Roadmap & Milestones
 
 - [x] Viss 1.0 Initial Prototype & Prefix Specification
 - [x] Modular Standard Library Split (`libs/std/`)
@@ -363,8 +363,8 @@ Viss features a complete Visual Studio Code extension located in `.vscode/extens
 
 ---
 
-## 📜 License
+## License
 
 Viss is released under the terms of the **UniLicense**. You are free to use, modify, distribute, and build commercial software with Viss without restrictions. See [LICENSE](LICENSE) for details.
 
-Developed with 💙 by **Halva-developer**.
+Developed by **Halva-developer**.

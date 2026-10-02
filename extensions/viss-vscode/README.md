@@ -6,9 +6,9 @@ Provides first-class editing experience, full syntax highlighting, intelligent c
 
 ---
 
-## ✨ Features
+## Features
 
-### 1. 🎨 Comprehensive Syntax Highlighting
+### 1. Comprehensive Syntax Highlighting
 - **Sigils & Primitives**: Full recognition of variable sigils (`@name`, `@me`), hardware buffer sigils (`&buf`, `&mask`), type pipes (`| type`), statement action prefixes (`!func`, `!main`, `!class`, `!for`, `!while`, `!return`), logic conditions (`?if`, `?elif`, `?else`, `?match`, `?try`, `?expect`), and preprocessor directives (`$import`, `$include`).
 - **All String Literals**:
   - Interpolated strings: `i"Value is: {@var} and {1 + 2}"` with embedded expressions and variable highlights.
@@ -18,7 +18,7 @@ Provides first-class editing experience, full syntax highlighting, intelligent c
 - **Modern Operators**: Membership operators (`in`, `!in`, `not in`), arrow return types (`->`), ranges (`0..10`), bitwise, arithmetic, and logical operators.
 - **Builtin Modules & Namespaces**: `rt`, `io`, `str`, `sys`, `fs`, `json`, `time`, `math`, `async`, `crypto`, `net`, `env`, `mask`, `bytemask`, `colormask`.
 
-### 2. 🧠 Smart Contextual Autocompletion
+### 2. Smart Contextual Autocompletion
 Unlike standard naive extensions that flood the completion popup with hundreds of unrelated methods on every dot, Viss VS Code provides **strict context-aware scoping**:
 - **Module Dispatch**:
   - Typing `rt.` only suggests retrotech graphics/sound functions (`InitScreen`, `SetPixel`, `DrawRect`, `SetColorMask`, `ColorScreen`, `PlaySfx`, etc.).
@@ -39,12 +39,12 @@ Unlike standard naive extensions that flood the completion popup with hundreds o
   - `?` triggers branching constructs (`?if`, `?elif`, `?else`, `?match`, `?try`, `?expect`).
   - `$` triggers compiler directives (`$import`, `$include`).
 
-### 3. 🔍 Real-Time Compiler Diagnostics & Linting
+### 3. Real-Time Compiler Diagnostics & Linting
 - Automatically runs `viss check` on file save (or while typing with debounce).
 - Parses exact compiler error messages (`[Viss Syntax Error]`, `[Viss TypeError]`, `[Viss NameError]`, `[Viss CompilationError]`).
 - Highlights exact lines and columns in the editor and populates the **Problems** tab.
 
-### 4. ⚡ One-Click Runner & Build Actions
+### 4. One-Click Runner & Build Actions
 - **Editor Title Bar Button**: Click the `$(play)` button in the top-right corner to run the active Viss file immediately in the integrated terminal.
 - **Status Bar**: Live status indicator showing `$(play) Run Viss` and active compiler version.
 - **Context Menus**: Right-click anywhere in a `.viss` file to:
@@ -54,7 +54,7 @@ Unlike standard naive extensions that flood the completion popup with hundreds o
 
 ---
 
-## ⌨️ Keybindings
+## Keybindings
 
 | Keybinding | Action | Description |
 |---|---|---|
@@ -64,7 +64,7 @@ Unlike standard naive extensions that flood the completion popup with hundreds o
 
 ---
 
-## 🧩 Code Snippets
+## Code Snippets
 
 Quickly scaffold Viss constructs by typing prefixes and pressing <kbd>Tab</kbd>:
 
@@ -96,7 +96,7 @@ Quickly scaffold Viss constructs by typing prefixes and pressing <kbd>Tab</kbd>:
 
 ---
 
-## ⚙️ Extension Settings
+## Extension Settings
 
 | Setting | Default | Description |
 |---|---|---|
@@ -105,7 +105,7 @@ Quickly scaffold Viss constructs by typing prefixes and pressing <kbd>Tab</kbd>:
 
 ---
 
-## 📦 Manual Installation
+## Manual Installation
 
 1. Copy the `viss-vscode` directory to your VS Code extensions folder:
    - **Windows**: `%USERPROFILE%\.vscode\extensions\viss-vscode`

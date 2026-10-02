@@ -824,7 +824,7 @@ namespace retrotech {
                             last_bg_r = bg_r; last_bg_g = bg_g; last_bg_b = bg_b;
                         }
 
-                        // UTF-8 Upper Half Block: ▀
+                        // UTF-8 Upper Half Block (U+2580)
                         frame += "\xE2\x96\x80";
                     }
                     frame += "\033[0m\n";
@@ -913,7 +913,7 @@ namespace retrotech {
     // --- Screen Setup & Configuration (10-byte Hardware Config) ---
     // [0] Width (e.g. 32, 64)
     // [1] Height (e.g. 24, 36)
-    // [2] Render Mode (0: Standard block, 1: Compact Half-Block ▀)
+    // [2] Render Mode (0: Standard block, 1: Compact Half-Block)
     // [3] Palette Preset (0: NES Mario, 1: GameBoy, 2: CGA, 3: Monochrome)
     // [4] Target FPS (30, 60, 120)
     // [5] Flags (Bit 0: cursor, Bit 1: vsync, Bit 2: auto-clear)

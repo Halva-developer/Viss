@@ -1,6 +1,6 @@
 // =============================================================================
 // Viss Native Compiler & Toolchain (vissc)
-// Version 2.0 Native Edition — High Performance C++17 Core
+// Version 2.0 Native Edition - High Performance C++17 Core
 // =============================================================================
 
 #include <iostream>
@@ -1731,6 +1731,18 @@ std::string transformExpression(
                 num += raw_expr[i++];
             }
             left_type = has_dot ? VissType::Dec : VissType::Int;
+            if (!has_dot && num.size() == 8) {
+                bool is_binary_byte = true;
+                for (char ch : num) {
+                    if (ch != '0' && ch != '1') {
+                        is_binary_byte = false;
+                        break;
+                    }
+                }
+                if (is_binary_byte) {
+                    num = "0b" + num;
+                }
+            }
             out += num;
             continue;
         }
@@ -2666,11 +2678,21 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             declared_vars.insert(vname);
             if (btype == "bytes" || btype == "bytemask" || btype == "mask") {
                 std::string size_val = trim(sz.empty() ? "1024" : sz);
+                std::string view_mode = "";
+                size_t vpos = size_val.find("view ");
+                if (vpos != std::string::npos) {
+                    view_mode = trim(size_val.substr(vpos + 5));
+                    size_val = trim(size_val.substr(0, vpos));
+                    if (endsWith(size_val, ",")) size_val = trim(size_val.substr(0, size_val.size() - 1));
+                    if (size_val.empty()) size_val = "1024";
+                }
                 if (startsWith(size_val, "\"") || startsWith(size_val, "viss::Str") || startsWith(size_val, "__VISS_STR_LIT_")) {
                     current_target->push_back("viss::Bytes " + vname + " = viss::Bytes::from_raw(" + size_val + ");");
                 } else {
                     current_target->push_back("viss::Bytes " + vname + "(" + size_val + ");");
                 }
+                if (view_mode == "raw") current_target->push_back(vname + ".set_view(viss::MaskView::RAW);");
+                else if (view_mode == "hlv") current_target->push_back(vname + ".set_view(viss::MaskView::HLV);");
             } else if (btype == "colormask") {
                 std::string size_val = sz.empty() ? "48" : "(" + sz + ") * 3";
                 current_target->push_back("viss::Bytes " + vname + "(" + size_val + ");");
@@ -2811,6 +2833,13 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             current_target->push_back(m_cmd[1].str() + ".rewind();");
             continue;
         }
+        if (std::regex_match(stripped, m_cmd, std::regex(R"(^&([a-zA-Z0-9_]+)\s+view\s+(raw|hlv);?$)"))) {
+            std::string vname = m_cmd[1].str();
+            std::string mode = m_cmd[2].str();
+            if (mode == "raw") current_target->push_back(vname + ".set_view(viss::MaskView::RAW);");
+            else current_target->push_back(vname + ".set_view(viss::MaskView::HLV);");
+            continue;
+        }
         if (std::regex_match(stripped, m_cmd, std::regex(R"(^&([a-zA-Z0-9_]+)\s+(dump|hexdump)(?:\s+(raw|bin|hex))?;?$)"))) {
             std::string vname = m_cmd[1].str();
             std::string mode = m_cmd[3].matched ? m_cmd[3].str() : "";
@@ -2927,9 +2956,8 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             std::string vname = m_raw_idx[1].str();
             std::string idx_expr = replaceAll(replaceAll(m_raw_idx[2].str(), "@", ""), "&", "");
             std::string val_expr = trim(m_raw_idx[3].str());
-            val_expr = replaceModuleCalls(val_expr, imported_aliases);
-            val_expr = replaceAll(replaceAll(val_expr, "@", ""), "&", "");
-            val_expr = applyStaticTransforms(val_expr);
+            std::string err;
+            val_expr = transformExpression(val_expr, imported_aliases, declared_vars, line_num, filename, err);
             current_target->push_back(vname + idx_expr + " = " + val_expr + ";");
             continue;
         }

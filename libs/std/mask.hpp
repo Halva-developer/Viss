@@ -651,6 +651,18 @@ namespace bytemask {
         return load_bin(path);
     }
 
+    inline void set_view(viss::Bytes& m, const std::string& v) {
+        m.set_view(v);
+    }
+
+    inline void view(viss::Bytes& m, const std::string& v) {
+        m.set_view(v);
+    }
+
+    inline std::string get_view(const viss::Bytes& m) {
+        return m.get_view();
+    }
+
 } // namespace bytemask
 namespace colormask = bytemask;
 namespace mask = bytemask;

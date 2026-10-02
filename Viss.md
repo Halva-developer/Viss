@@ -13,11 +13,11 @@
 ### Core Highlights:
 - **Zero Dependencies:** Compiling via `viss bundle` produces a standalone, compact `.exe` binary (often under 1 MB) requiring no runtimes, .NET framework, Python interpreters, or external dynamic libraries (DLLs).
 - **Symbolic Expressiveness:** Explicit semantic sigils and prefixes make code intent immediately recognizable at a glance:
-  - `@` — Variable declaration, assignment, or struct field access.
-  - `&` — Low-level binary memory buffer or bitmask.
-  - `!` — Imperative / deterministic operation (entry point `!main`, functions `!func`, `!while`, `!defer`).
-  - `?` — Conditional / safety-checked expression (`?if`, pattern matching `?match`).
-  - `|` — Data pipeline operator (`|>`), collection type tagging, or closure parameters (`|item|`).
+  - `@`  -  Variable declaration, assignment, or struct field access.
+  - `&`  -  Low-level binary memory buffer or bitmask.
+  - `!`  -  Imperative / deterministic operation (entry point `!main`, functions `!func`, `!while`, `!defer`).
+  - `?`  -  Conditional / safety-checked expression (`?if`, pattern matching `?match`).
+  - `|`  -  Data pipeline operator (`|>`), collection type tagging, or closure parameters (`|item|`).
 - **Batteries-Included Multimedia & Game Engine:** High-performance 2D/3D hardware-accelerated GUI (GDI+ with flicker-free double buffering), built-in analog sound synthesizer with low-pass filters, lossless and lossy audio playback (MP3, OGG, FLAC), and ID3/Vorbis tag metadata manipulation.
 
 ---
@@ -39,13 +39,13 @@
 ## 3. Basic Data Types and Literals
 
 ### Primitive Types
-- `int` — 64-bit signed integer (`int64_t`).  
+- `int`  -  64-bit signed integer (`int64_t`).  
   *Examples:* `42`, `-100`, `0xFF`, `0b1010`.
-- `dec` (aliases: `double`, `float`) — 64-bit double-precision IEEE-754 floating-point number.  
+- `dec` (aliases: `double`, `float`)  -  64-bit double-precision IEEE-754 floating-point number.  
   *Examples:* `3.14159`, `-0.5`, `100.0`.
-- `str` (alias: `string`) — Dynamic UTF-8 string with SSO and built-in manipulation methods.  
+- `str` (alias: `string`)  -  Dynamic UTF-8 string with SSO and built-in manipulation methods.  
   *Examples:* `"Hello, World!"`, `"Line 1\nLine 2"`.
-- `bool` — Boolean truth value (`true`, `false`).
+- `bool`  -  Boolean truth value (`true`, `false`).
 
 ### String Interpolation: `i"..."`
 Strings prefixed with `i` support arbitrary embedded expressions inside curly braces `{...}`:
@@ -117,17 +117,17 @@ Lists in Viss are dynamically resizable and memory-safe:
 ```
 
 #### Functional List Methods:
-- `.retain(|item| condition)` — In-place filtering: keeps **only** elements satisfying the predicate (ideal for removing inactive entities, bullets, or expired particles):
+- `.retain(|item| condition)`  -  In-place filtering: keeps **only** elements satisfying the predicate (ideal for removing inactive entities, bullets, or expired particles):
   ```viss
   @bullets.retain(|b| b.active && b.life > 0)
   ```
-- `.remove_if(|item| condition)` — In-place removal: removes elements matching the condition:
+- `.remove_if(|item| condition)`  -  In-place removal: removes elements matching the condition:
   ```viss
   @enemies.remove_if(|e| e.hp <= 0.0)
   ```
-- `.filter(|item| condition)` — Returns a **new** list containing only matching elements.
-- `.map(|item| transform)` — Returns a **new** list with elements transformed by the closure.
-- `.find_first(|item| condition, default_val)` — Finds the first element meeting the condition or returns `default_val`.
+- `.filter(|item| condition)`  -  Returns a **new** list containing only matching elements.
+- `.map(|item| transform)`  -  Returns a **new** list with elements transformed by the closure.
+- `.find_first(|item| condition, default_val)`  -  Finds the first element meeting the condition or returns `default_val`.
 
 ---
 
@@ -278,70 +278,70 @@ enum GameState {
 
 ## 10. Complete Standard Library Reference
 
-### `io` — Console Input & Output
-- `io.println(val)` — Prints value followed by a newline.
-- `io.print(val)` — Prints value without a newline.
-- `io.read_line()` — Reads a string from standard input.
-- `io.error(val)` — Writes message to standard error stream (`stderr`).
+### `io`  -  Console Input & Output
+- `io.println(val)`  -  Prints value followed by a newline.
+- `io.print(val)`  -  Prints value without a newline.
+- `io.read_line()`  -  Reads a string from standard input.
+- `io.error(val)`  -  Writes message to standard error stream (`stderr`).
 
-### `math` — Mathematics & Geometry
-- `math.sin(x)`, `math.cos(x)`, `math.tan(x)` — Trigonometric functions.
-- `math.sqrt(x)`, `math.pow(x, y)`, `math.abs(x)` — Power and root functions.
-- `math.min(a, b)`, `math.max(a, b)`, `math.clamp(val, min, max)` — Clamping and bounds.
-- `math.random_dec()` — Generates a pseudo-random decimal in range `[0.0, 1.0]`.
-- `math.random_int(min, max)` — Generates a random integer in range `[min, max]`.
-- `math.deg_to_rad(deg)`, `math.rad_to_deg(rad)`, `math.pi` — Angle conversion and constants.
+### `math`  -  Mathematics & Geometry
+- `math.sin(x)`, `math.cos(x)`, `math.tan(x)`  -  Trigonometric functions.
+- `math.sqrt(x)`, `math.pow(x, y)`, `math.abs(x)`  -  Power and root functions.
+- `math.min(a, b)`, `math.max(a, b)`, `math.clamp(val, min, max)`  -  Clamping and bounds.
+- `math.random_dec()`  -  Generates a pseudo-random decimal in range `[0.0, 1.0]`.
+- `math.random_int(min, max)`  -  Generates a random integer in range `[min, max]`.
+- `math.deg_to_rad(deg)`, `math.rad_to_deg(rad)`, `math.pi`  -  Angle conversion and constants.
 
-### `str` — String Manipulation
-- `str.len(s)` — Returns the character length of the string.
-- `str.trim(s)` — Trims leading and trailing whitespace.
-- `str.lower(s)`, `str.upper(s)` — Converts case.
-- `str.contains(s, sub)` — Checks whether `sub` exists within `s`.
-- `str.split(s, sep)` — Splits string into `List<str>`.
-- `str.join(list, sep)` — Joins a list of strings by delimiter.
-- `str.replace(s, from, to)` — Replaces all occurrences of `from` with `to`.
+### `str`  -  String Manipulation
+- `str.len(s)`  -  Returns the character length of the string.
+- `str.trim(s)`  -  Trims leading and trailing whitespace.
+- `str.lower(s)`, `str.upper(s)`  -  Converts case.
+- `str.contains(s, sub)`  -  Checks whether `sub` exists within `s`.
+- `str.split(s, sep)`  -  Splits string into `List<str>`.
+- `str.join(list, sep)`  -  Joins a list of strings by delimiter.
+- `str.replace(s, from, to)`  -  Replaces all occurrences of `from` with `to`.
 
-### `fs` — File System
-- `fs.exists(path)` — Checks whether a file or directory exists.
-- `fs.read(path)` — Reads the entire file content into a string.
-- `fs.write(path, content)` — Writes string content to a file (overwrites).
-- `fs.append(path, content)` — Appends string content to the end of a file.
-- `fs.remove(path)` — Deletes a file.
-- `fs.list_dir(path)` — Returns a list of filenames in the specified directory.
+### `fs`  -  File System
+- `fs.exists(path)`  -  Checks whether a file or directory exists.
+- `fs.read(path)`  -  Reads the entire file content into a string.
+- `fs.write(path, content)`  -  Writes string content to a file (overwrites).
+- `fs.append(path, content)`  -  Appends string content to the end of a file.
+- `fs.remove(path)`  -  Deletes a file.
+- `fs.list_dir(path)`  -  Returns a list of filenames in the specified directory.
 
-### `time` — High-Resolution Clock & Timers
-- `time.now_ms()` — Current timestamp in milliseconds (`int64_t`).
-- `time.sleep_ms(ms)` — Suspends execution for the specified milliseconds.
-- `time.sleep(sec)` — Suspends execution for the specified seconds.
-- `time.format("%Y-%m-%d %H:%M:%S")` — Formats current time using strftime patterns.
+### `time`  -  High-Resolution Clock & Timers
+- `time.now_ms()`  -  Current timestamp in milliseconds (`int64_t`).
+- `time.sleep_ms(ms)`  -  Suspends execution for the specified milliseconds.
+- `time.sleep(sec)`  -  Suspends execution for the specified seconds.
+- `time.format("%Y-%m-%d %H:%M:%S")`  -  Formats current time using strftime patterns.
 
-### `audio` — Sound Effects & Music Player
-- `audio.play_bgm(path, volume)` — Loops background music (MP3, OGG, FLAC) with volume from `0.0` to `1.0`.
-- `audio.stop_bgm()` — Immediately stops background music playback.
-- `audio.set_bgm_volume(volume)` — Dynamically adjusts volume in real time.
-- `audio.laser(freq, dur)` — Generates an analog synthesized laser sound.
-- `audio.hit()` — Synthesizes an impact sound effect.
-- `audio.gem()` — Plays a crystal / loot pickup tone.
-- `audio.powerup()` — Synthesizes a rising level-up / powerup arpeggio.
-- `audio.explosion()` — Synthesizes a deep, resonant rumble explosion.
+### `audio`  -  Sound Effects & Music Player
+- `audio.play_bgm(path, volume)`  -  Loops background music (MP3, OGG, FLAC) with volume from `0.0` to `1.0`.
+- `audio.stop_bgm()`  -  Immediately stops background music playback.
+- `audio.set_bgm_volume(volume)`  -  Dynamically adjusts volume in real time.
+- `audio.laser(freq, dur)`  -  Generates an analog synthesized laser sound.
+- `audio.hit()`  -  Synthesizes an impact sound effect.
+- `audio.gem()`  -  Plays a crystal / loot pickup tone.
+- `audio.powerup()`  -  Synthesizes a rising level-up / powerup arpeggio.
+- `audio.explosion()`  -  Synthesizes a deep, resonant rumble explosion.
 
-### `ui` (or `gui`) — 2D and 3D Graphical Engine
-- `ui.create(title, width, height)` — Spawns a native double-buffered desktop window.
-- `ui.is_open()` / `ui.poll()` — Checks window state and dispatches OS window events.
-- `ui.clear(color)` — Clears the backbuffer with specified color.
-- `ui.update()` — Flips the backbuffer onto the screen (zero tearing, 60+ FPS).
-- `ui.close()` — Closes the window and frees GDI+ resources.
+### `ui` (or `gui`)  -  2D and 3D Graphical Engine
+- `ui.create(title, width, height)`  -  Spawns a native double-buffered desktop window.
+- `ui.is_open()` / `ui.poll()`  -  Checks window state and dispatches OS window events.
+- `ui.clear(color)`  -  Clears the backbuffer with specified color.
+- `ui.update()`  -  Flips the backbuffer onto the screen (zero tearing, 60+ FPS).
+- `ui.close()`  -  Closes the window and frees GDI+ resources.
 - **Input Handling:**
-  - `ui.key_down(vk_code)` — Returns true if key is held down (WASD: 65, 87, 83, 68; Arrows: 37, 38, 39, 40; Space: 32).
-  - `ui.key_pressed(vk_code)` — Returns true if key was pressed in the current frame.
-  - `ui.mouse_x()`, `ui.mouse_y()` — Current cursor coordinates.
-  - `ui.mouse_down()`, `ui.mouse_clicked()` — Mouse button status.
+  - `ui.key_down(vk_code)`  -  Returns true if key is held down (WASD: 65, 87, 83, 68; Arrows: 37, 38, 39, 40; Space: 32).
+  - `ui.key_pressed(vk_code)`  -  Returns true if key was pressed in the current frame.
+  - `ui.mouse_x()`, `ui.mouse_y()`  -  Current cursor coordinates.
+  - `ui.mouse_down()`, `ui.mouse_clicked()`  -  Mouse button status.
 - **Drawing Primitives:**
   - `ui.draw_rect(x, y, w, h, color, fill)`
   - `ui.draw_round_rect(x, y, w, h, radius, color, fill, border_color, border_w)`
   - `ui.draw_circle(x, y, radius, color, fill)`
-  - `ui.draw_triangle(x1, y1, x2, y2, x3, y3, color, fill, border_color, border_w)` — **3D Polygon**
-  - `ui.draw_quad(x1, y1, x2, y2, x3, y3, x4, y4, color, fill, border_color, border_w)` — **3D Quad**
+  - `ui.draw_triangle(x1, y1, x2, y2, x3, y3, color, fill, border_color, border_w)`  -  **3D Polygon**
+  - `ui.draw_quad(x1, y1, x2, y2, x3, y3, x4, y4, color, fill, border_color, border_w)`  -  **3D Quad**
   - `ui.draw_line(x1, y1, x2, y2, color, width)`
   - `ui.draw_text(x, y, text, color, size, font_name, bold)`
 - **Color Construction (`ui.Color`):**

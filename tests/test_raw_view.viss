@@ -1,0 +1,38 @@
+$import lib "mask" as mask
+$import lib "io" as io
+
+!func main() {
+    &m = [11111111, 00000000, 10101010]
+    
+    // Test raw view
+    &m view raw
+    io.print("raw: ")
+    io.println(&m)
+
+    // Test human-like vision (HLV) view
+    &m view hlv
+    io.print("hlv: ")
+    io.println(&m)
+
+    // Test mask module helpers
+    mask.set_view(&m, "raw")
+    @mode = mask.get_view(&m)
+    io.print("mode is: ")
+    io.println(@mode)
+    io.print("raw via mask helper: ")
+    io.println(&m)
+
+    // Test creation with view mode
+    &m2 create | bytes, 3 view raw
+    &m2[0] = 11110000
+    &m2[1] = 00001111
+    &m2[2] = 255
+    io.print("m2 raw: ")
+    io.println(&m2)
+
+    &m2 view hlv
+    io.print("m2 hlv: ")
+    io.println(&m2)
+
+    io.println("TEST_ALL_PASSED")
+}

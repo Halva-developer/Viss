@@ -69,7 +69,7 @@ std::string find_python() {
 }
 
 void print_header() {
-    std::cout << COLOR_CYAN << "⚡ Viss Language Toolchain " << COLOR_RESET 
+    std::cout << COLOR_CYAN << "> Viss Language Toolchain " << COLOR_RESET 
               << COLOR_BOLD << "v" << VISS_VERSION << COLOR_RESET 
               << COLOR_GRAY << " (Native High-Performance C++ Pipeline)\n" << COLOR_RESET;
 }
@@ -136,7 +136,7 @@ int main(int argc, char* argv[]) {
     if (arg1 == "clean") {
         if (fs::exists(".viss_cache")) {
             fs::remove_all(".viss_cache");
-            std::cout << COLOR_GREEN << "✔ Cleaned build cache (.viss_cache)" << COLOR_RESET << "\n";
+            std::cout << COLOR_GREEN << "[OK] Cleaned build cache (.viss_cache)" << COLOR_RESET << "\n";
         } else {
             std::cout << COLOR_GRAY << "Build cache is already clean." << COLOR_RESET << "\n";
         }
@@ -155,7 +155,7 @@ int main(int argc, char* argv[]) {
         out << "    io.println(\"Current system time:\", @time_str);\n";
         out << "}\n";
         out.close();
-        std::cout << COLOR_GREEN << "✔ Created new Viss project in ./" << pname << "/" << COLOR_RESET << "\n";
+        std::cout << COLOR_GREEN << "[OK] Created new Viss project in ./" << pname << "/" << COLOR_RESET << "\n";
         std::cout << "Run it with: " << COLOR_CYAN << "viss run " << pname << "/main.viss" << COLOR_RESET << "\n";
         return 0;
     }
@@ -259,17 +259,17 @@ int main(int argc, char* argv[]) {
 
     if (needs_rebuild) {
         auto t_start = std::chrono::high_resolution_clock::now();
-        std::cout << COLOR_CYAN << "⚡ [Viss] Compiling " << COLOR_RESET << src_path.filename().string() << "...\n";
+        std::cout << COLOR_CYAN << "> [Viss] Compiling " << COLOR_RESET << src_path.filename().string() << "...\n";
 
         // Transpile to internal cached target
         std::string trans_cmd = "\"" + python_bin + "\" \"" + vissc_script + "\" transpile \"" + src_path.string() + "\" \"" + cpp_path.string() + "\"";
         int trans_code = execute_cmd(trans_cmd);
         if (trans_code != 0) {
-            std::cerr << COLOR_RED << "✖ [Viss] Build error in " << src_path.filename().string() << "\n" << COLOR_RESET;
+            std::cerr << COLOR_RED << "[ERROR] [Viss] Build error in " << src_path.filename().string() << "\n" << COLOR_RESET;
             return trans_code;
         }
 
-        std::cout << COLOR_CYAN << "⚙ [Viss] Optimizing native binary (-O2)..." << COLOR_RESET << "\n";
+        std::cout << COLOR_CYAN << "> [Viss] Optimizing native binary (-O2)..." << COLOR_RESET << "\n";
 
 
         // Build g++ command with include path to Viss root and necessary libraries
@@ -295,16 +295,16 @@ int main(int argc, char* argv[]) {
 
         int comp_code = execute_cmd(comp_cmd.str());
         if (comp_code != 0) {
-            std::cerr << COLOR_RED << "✖ Native C++ compilation failed!\n" << COLOR_RESET;
+            std::cerr << COLOR_RED << "[ERROR] Native C++ compilation failed!\n" << COLOR_RESET;
             return comp_code;
         }
 
         auto t_end = std::chrono::high_resolution_clock::now();
         double elapsed_sec = std::chrono::duration<double>(t_end - t_start).count();
-        std::cout << COLOR_GREEN << "✔ [Viss] Built " << exe_path.filename().string() 
+        std::cout << COLOR_GREEN << "[OK] [Viss] Built " << exe_path.filename().string() 
                   << " in " << std::fixed << std::setprecision(2) << elapsed_sec << "s\n" << COLOR_RESET;
     } else {
-        std::cout << COLOR_GRAY << "⚡ [Viss] Using up-to-date binary: " << exe_path.filename().string() << COLOR_RESET << "\n";
+        std::cout << COLOR_GRAY << "> [Viss] Using up-to-date binary: " << exe_path.filename().string() << COLOR_RESET << "\n";
     }
 
     if (should_run) {

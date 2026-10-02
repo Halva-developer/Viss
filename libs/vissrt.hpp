@@ -944,6 +944,11 @@ namespace viss {
         }
     };
 
+    enum class MaskView {
+        HLV, // Human Like Vision (decimal: 255, 0, 128)
+        RAW  // Raw binary (8 zeros and ones: 11111111, 00000000)
+    };
+
     // Bytes: High-Performance Hardware-Level Memory Buffer
     class Bytes {
     protected:
@@ -951,7 +956,38 @@ namespace viss {
     public:
         Grid grid;
         size_t cursor = 0;
+        MaskView view_mode = MaskView::HLV;
         static const size_t DEFAULT_MAX_SIZE = 1024; // 1 KB maximum default
+
+        inline void set_view(MaskView v) { view_mode = v; }
+        inline void set_view(const Str& v) {
+            std::string s = v;
+            for (auto& c : s) c = (char)std::tolower((unsigned char)c);
+            if (s == "raw") view_mode = MaskView::RAW;
+            else view_mode = MaskView::HLV;
+        }
+        inline void view(const Str& v) { set_view(v); }
+        inline Str get_view() const {
+            return view_mode == MaskView::RAW ? "raw" : "hlv";
+        }
+
+        inline Str to_string() const {
+            std::stringstream ss;
+            ss << "[";
+            for (size_t i = 0; i < data->size(); ++i) {
+                if (view_mode == MaskView::RAW) {
+                    uint8_t b = (*data)[i];
+                    for (int bit = 7; bit >= 0; --bit) {
+                        ss << ((b >> bit) & 1);
+                    }
+                } else {
+                    ss << (int)(*data)[i];
+                }
+                if (i + 1 < data->size()) ss << ", ";
+            }
+            ss << "]";
+            return ss.str();
+        }
 
         Bytes()
             : data(std::make_shared<std::vector<uint8_t>>(DEFAULT_MAX_SIZE, 0)) {}
@@ -981,6 +1017,39 @@ namespace viss {
             data = std::make_shared<std::vector<uint8_t>>();
             data->reserve(init.size());
             for (auto v : init) data->push_back((uint8_t)v);
+            return *this;
+        }
+
+        template<typename T>
+        Bytes(const List<T>& list)
+            : data(std::make_shared<std::vector<uint8_t>>()) {
+            Int sz = list.size();
+            data->reserve(sz > 0 ? (size_t)sz : 0);
+            for (Int i = 0; i < sz; ++i) {
+                data->push_back((uint8_t)(int64_t)list.get(i));
+            }
+        }
+        template<typename T>
+        inline Bytes& operator=(const List<T>& list) {
+            data = std::make_shared<std::vector<uint8_t>>();
+            Int sz = list.size();
+            data->reserve(sz > 0 ? (size_t)sz : 0);
+            for (Int i = 0; i < sz; ++i) {
+                data->push_back((uint8_t)(int64_t)list.get(i));
+            }
+            return *this;
+        }
+        template<typename T>
+        Bytes(const std::vector<T>& vec)
+            : data(std::make_shared<std::vector<uint8_t>>()) {
+            data->reserve(vec.size());
+            for (const auto& v : vec) data->push_back((uint8_t)(int64_t)v);
+        }
+        template<typename T>
+        inline Bytes& operator=(const std::vector<T>& vec) {
+            data = std::make_shared<std::vector<uint8_t>>();
+            data->reserve(vec.size());
+            for (const auto& v : vec) data->push_back((uint8_t)(int64_t)v);
             return *this;
         }
 
@@ -1559,7 +1628,11 @@ namespace viss {
         // INSPECTION & HEX DUMP
         // =====================================================================
         inline void dump() const {
-            std::cout << "--- Buffer Dump (" << data->size() << " Bytes, cursor=" << cursor << ") ---" << std::endl;
+            if (view_mode == MaskView::RAW) {
+                dump_raw();
+                return;
+            }
+            std::cout << "--- Buffer Dump (" << data->size() << " Bytes, cursor=" << cursor << ", view=hlv) ---" << std::endl;
             for (size_t i = 0; i < data->size(); i += 16) {
                 std::printf("%08zx: ", i);
                 for (size_t j = 0; j < 16; ++j) {
@@ -2867,11 +2940,11 @@ namespace viss {
     }
 
     inline std::ostream& operator<<(std::ostream& os, const Bytes& b) {
-        os << "[Bytes: " << b.size() << " B]";
+        os << b.to_string();
         return os;
     }
     inline Str toStr(const Bytes& b) {
-        return "[Bytes: " + std::to_string(b.size()) + " B]";
+        return b.to_string();
     }
 
     inline std::ostream& operator<<(std::ostream& os, const Bits& b) {
