@@ -522,7 +522,7 @@ namespace viss {
         }
 
         template<typename IndexT, typename = std::enable_if_t<std::is_integral_v<IndexT>>>
-        inline T& operator[](IndexT index) {
+        inline typename std::vector<T>::reference operator[](IndexT index) {
             std::lock_guard<std::mutex> lock(*mtx);
             Int idx = (Int)index;
             if (idx < 0) idx += (Int)data->size();
@@ -530,11 +530,21 @@ namespace viss {
         }
 
         template<typename IndexT, typename = std::enable_if_t<std::is_integral_v<IndexT>>>
-        inline const T& operator[](IndexT index) const {
+        inline typename std::vector<T>::const_reference operator[](IndexT index) const {
             std::lock_guard<std::mutex> lock(*mtx);
             Int idx = (Int)index;
             if (idx < 0) idx += (Int)data->size();
             return (*data)[(size_t)idx];
+        }
+
+        template<typename IndexT, typename = std::enable_if_t<std::is_integral_v<IndexT>>>
+        inline void set(IndexT index, const T& val) {
+            std::lock_guard<std::mutex> lock(*mtx);
+            Int idx = (Int)index;
+            if (idx < 0) idx += (Int)data->size();
+            if (idx >= 0 && (size_t)idx < data->size()) {
+                (*data)[(size_t)idx] = val;
+            }
         }
 
         inline auto begin() { return data->begin(); }
