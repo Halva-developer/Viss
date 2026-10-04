@@ -3,7 +3,7 @@
 > **Document Purpose:** Definitive, formal, zero-hallucination specification of the Viss programming language for AI Models, Coding Agents, LLMs, and Compiler Engineers.  
 > **Compiler Target:** Native C++20 via `src/vissc.cpp` -> MinGW GCC / Clang standalone binary.  
 > **Transpilation Mode:** Single-pass AST-free deterministic transpiler with regex pattern matching and scope-tracking code emission.  
-> **Current Release:** Viss v0.2.0 "Marceline" (Native)  
+> **Current Release:** Viss v0.2.1 "Hambo" (Native)  
 > **Creator & Author:** Halva (Halva-developer)
 
 ---

@@ -1,6 +1,6 @@
 # The Viss Programming Language: Complete Handbook from A to Z
 
-> **Language Version:** Viss v0.2.0 "Marceline" (Native)  
+> **Language Version:** Viss v0.2.1 "Hambo" (Native)  
 > **Target Architecture:** Native Machine Code via C++20 (Zero External Dependencies)  
 > **Creator & Language Author:** Halva (Halva-developer)  
 

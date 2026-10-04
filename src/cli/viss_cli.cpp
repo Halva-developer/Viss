@@ -18,7 +18,7 @@
 
 namespace fs = std::filesystem;
 
-const std::string VISS_VERSION = "0.0.2.0";
+const std::string VISS_VERSION = "0.2.1";
 
 // Terminal colors
 #define COLOR_RESET   "\033[0m"

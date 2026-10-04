@@ -5,7 +5,7 @@
 # Viss Programming Language
 ### The High-Performance, Visually Structured Language for Everyday Development & Systems
 
-[![Version](https://img.shields.io/badge/version-v0.2.0%20%22Marceline%22-blue.svg)](https://github.com/Halva-developer/Viss)
+[![Version](https://img.shields.io/badge/version-v0.2.1%20%22Hambo%22-blue.svg)](https://github.com/Halva-developer/Viss)
 [![License](https://img.shields.io/badge/license-UniLicense-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-orange.svg)](https://github.com/Halva-developer/Viss)
 [![Standard](https://img.shields.io/badge/standard-Viss%202.0-purple.svg)](https://github.com/Halva-developer/Viss)
