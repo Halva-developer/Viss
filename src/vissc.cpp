@@ -26,8 +26,8 @@
 
 namespace fs = std::filesystem;
 
-const std::string VERSION = "0.2.1";
-const std::string CODENAME = "Hambo";
+const std::string VERSION = "0.2.2-exp";
+const std::string CODENAME = "Lemongrab & Lemonhope";
 
 // =============================================================================
 // 1. UTILITY FUNCTIONS
@@ -112,19 +112,35 @@ std::string extractStringLiterals(const std::string& code, std::vector<std::stri
     size_t i = 0;
     size_t n = code.size();
     while (i < n) {
-        if (code[i] == '"') {
+        if (code[i] == '"' || code[i] == '\'') {
+            char quote_char = code[i];
             std::string lit = "\"";
             i++;
             while (i < n) {
                 if (code[i] == '\\' && i + 1 < n) {
+                    char next_c = code[i + 1];
+                    if (next_c == quote_char) {
+                        lit += quote_char;
+                        i += 2;
+                        continue;
+                    } else if (next_c == '"' && quote_char == '\'') {
+                        lit += "\\\"";
+                        i += 2;
+                        continue;
+                    }
                     lit += code[i++];
                     lit += code[i++];
                     continue;
                 }
-                if (code[i] == '"') {
+                if (code[i] == quote_char) {
                     lit += '"';
                     i++;
                     break;
+                }
+                if (code[i] == '"' && quote_char == '\'') {
+                    lit += "\\\"";
+                    i++;
+                    continue;
                 }
                 lit += code[i++];
             }
@@ -1990,7 +2006,7 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
                 size_t eq_pos = p.find('=');
                 if (eq_pos != std::string::npos) p = trim(p.substr(0, eq_pos));
                 std::smatch m_as;
-                if (std::regex_match(p, m_as, std::regex(R"(^([a-zA-Z0-9_]+)\s*(?:as|:)\s*([a-zA-Z0-9_<>]+)$)"))) {
+                if (std::regex_match(p, m_as, std::regex(R"(^@?([a-zA-Z0-9_]+)\s*(?:as|:)\s*([a-zA-Z0-9_<>\*&]+)$)"))) {
                     std::string pname = m_as[1].str();
                     std::string ptype = resolveVissCppType(m_as[2].str());
                     cpp_params.push_back(ptype + " " + pname);
@@ -2352,7 +2368,7 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
                     p = trim(p.substr(0, eq_pos));
                 }
                 std::smatch m_as;
-                if (std::regex_match(p, m_as, std::regex(R"(^@?([a-zA-Z0-9_]+)\s*(?:as|:)\s*([a-zA-Z0-9_<>]+)$)"))) {
+                if (std::regex_match(p, m_as, std::regex(R"(^@?([a-zA-Z0-9_]+)\s*(?:as|:)\s*([a-zA-Z0-9_<>\*&]+)$)"))) {
                     std::string pname = m_as[1].str();
                     std::string ptype = resolveVissCppType(m_as[2].str());
                     declared_vars.insert(pname);
@@ -3463,6 +3479,25 @@ void sanitizeAndPrintCompilerErrors(const std::string& err_log_path, const std::
             } else if (clean_msg.find("expected ';'") != std::string::npos) {
                 err_type = "SyntaxError";
                 clean_msg = "Expected ';' before end of statement.";
+            } else if (clean_msg.find("has no member named") != std::string::npos) {
+                err_type = "AttributeError";
+                std::regex mem_re(R"(has no member named '([^']+)')");
+                std::smatch mem_m;
+                if (std::regex_search(clean_msg, mem_m, mem_re)) {
+                    clean_msg = "Object or struct has no member named '@" + mem_m[1].str() + "'.";
+                }
+            } else if (clean_msg.find("invalid initialization of reference") != std::string::npos) {
+                err_type = "TypeError";
+                clean_msg = "Argument type mismatch in function call or reference binding.";
+            } else if (clean_msg.find("no matching function for call to") != std::string::npos) {
+                err_type = "TypeError";
+                clean_msg = "No matching function overload found for arguments.";
+            } else if (clean_msg.find("redeclared as different kind of entity") != std::string::npos) {
+                err_type = "NameError";
+                clean_msg = "Symbol is already declared with a different type or signature.";
+            } else if (clean_msg.find("found ':' in nested-name-specifier") != std::string::npos) {
+                err_type = "SyntaxError";
+                clean_msg = "Unexpected ':' in identifier or type specification.";
             }
 
             std::cerr << "\n[Viss " << err_type << "] " << file << ":" << lnum << ":" << col << "\n";
