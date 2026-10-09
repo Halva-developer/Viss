@@ -13,7 +13,7 @@ Write-Host "    \ \/ / | / __/ __|    " -ForegroundColor Cyan
 Write-Host "     \  /  | \__ \__ \    " -ForegroundColor Cyan
 Write-Host "      \/   |_|___/___/    " -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Viss Language Engine v0.2.2-exp 'Lemongrab & Lemonhope' Installer" -ForegroundColor Yellow
+Write-Host "Viss Language Engine v0.2.2 'Lemongrab & Lemonhope' Installer" -ForegroundColor Yellow
 Write-Host ""
 
 $installDir = "$env:LOCALAPPDATA\Programs\Viss"

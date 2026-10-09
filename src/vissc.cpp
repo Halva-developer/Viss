@@ -26,7 +26,7 @@
 
 namespace fs = std::filesystem;
 
-const std::string VERSION = "0.2.2-exp";
+const std::string VERSION = "0.2.2";
 const std::string CODENAME = "Lemongrab & Lemonhope";
 
 // =============================================================================

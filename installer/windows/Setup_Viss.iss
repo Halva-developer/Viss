@@ -1,6 +1,6 @@
 ; =============================================================================
 ; Viss Language Inno Setup Script
-; Version: 0.2.2-exp "Lemongrab & Lemonhope"
+; Version: 0.2.2 "Lemongrab & Lemonhope"
 ; =============================================================================
 
 #define MyAppName "Viss"

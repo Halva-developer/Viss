@@ -1,6 +1,6 @@
 // =============================================================================
 // Viss Autonomous Windows Installer (Setup_Viss.exe)
-// Version 0.2.2-exp "Lemongrab & Lemonhope"
+// Version 0.2.2 "Lemongrab & Lemonhope"
 // =============================================================================
 
 #include <iostream>
@@ -114,7 +114,7 @@ int main(int argc, char* argv[]) {
     std::cout << "     \\  /  | \\__ \\__ \\    \n";
     std::cout << "      \\/   |_|___/___/    \n";
     std::cout << "\033[0m\n";
-    std::cout << "\033[33m\033[1mViss Language Toolchain v0.2.2-exp \"Lemongrab & Lemonhope\"\033[0m\n";
+    std::cout << "\033[33m\033[1mViss Language Toolchain v0.2.2 \"Lemongrab & Lemonhope\"\033[0m\n";
     std::cout << "\033[37mAutonomous Windows Standalone Setup\033[0m\n\n";
 
     fs::path install_dir = fs::path(getLocalAppData()) / "Programs" / "Viss";
@@ -156,11 +156,19 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
+        auto robustCopy = [](const fs::path& src, const fs::path& dst) {
+            std::error_code ec;
+            if (fs::exists(dst)) {
+                fs::remove(dst, ec);
+            }
+            return CopyFileW(src.wstring().c_str(), dst.wstring().c_str(), FALSE) != 0;
+        };
+
         std::cout << "[*] Copying compiler binary...\n";
-        fs::copy_file(src_viss, install_dir / "viss.exe", fs::copy_options::overwrite_existing);
+        robustCopy(src_viss, install_dir / "viss.exe");
 
         if (fs::exists(src_root / "viss.cmd")) {
-            fs::copy_file(src_root / "viss.cmd", install_dir / "viss.cmd", fs::copy_options::overwrite_existing);
+            robustCopy(src_root / "viss.cmd", install_dir / "viss.cmd");
         }
 
         std::cout << "[*] Copying standard libraries...\n";
@@ -171,7 +179,7 @@ int main(int argc, char* argv[]) {
                 if (item.is_directory()) {
                     fs::create_directories(dest);
                 } else if (item.is_regular_file()) {
-                    fs::copy_file(item.path(), dest, fs::copy_options::overwrite_existing);
+                    robustCopy(item.path(), dest);
                 }
             }
         }

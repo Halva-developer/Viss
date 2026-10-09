@@ -5,7 +5,7 @@
 # Viss Programming Language
 ### The High-Performance, Visually Structured Language for Everyday Development & Systems
 
-[![Version](https://img.shields.io/badge/version-v0.2.1%20%22Hambo%22-blue.svg)](https://github.com/Halva-developer/Viss)
+[![Version](https://img.shields.io/badge/version-v0.2.2%20%22Lemongrab%20%26%20Lemonhope%22-blue.svg)](https://github.com/Halva-developer/Viss)
 [![License](https://img.shields.io/badge/license-UniLicense-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-orange.svg)](https://github.com/Halva-developer/Viss)
 [![Standard](https://img.shields.io/badge/standard-Viss%202.0-purple.svg)](https://github.com/Halva-developer/Viss)
@@ -38,9 +38,8 @@ Following the beloved Debian tradition with *Toy Story*, Viss codenames each off
 | `v0.1.0` | **"Jake"** | Jake the Dog | Modular runtime refactor, standard libraries (`io`, `math`, `fs`, `sys`). |
 | `v0.1.2` | **"BMO"** | BMO | Retro-tech audio synthesizer, pixel screen buffer, and sound chip. |
 | `v0.2.0` | **"Marceline"** | Marceline the Vampire Queen | Struct member methods, enums, `Vec2`/`Vec3` vector math, pipelines (`\|>`), Elvis (`?:`), `!defer`, and complete handbook specs. |
-| `v0.2.1` | **"Hambo"** | Hambo | **Current Release:** Dynamic auto-lists, Map/Dict literals (`{}`), range slicing (`..`), `in`/`!in` membership operators, tuple unpacking, native `!async`/`!await`, string kinds (`r""`, `b""`, `""""""`), `fs.glob`, `json.loads`/`dumps`, pure native C++ runtime. |
-
-> [NOTE] **Unstable Development Branch:** Named **"Lemongrab"** (*"UNACCEPTABLE!"*) for cutting-edge nightly builds.
+| `v0.2.1` | **"Hambo"** | Hambo | Dynamic auto-lists, Map/Dict literals (`{}`), range slicing (`..`), `in`/`!in` membership operators, tuple unpacking, native `!async`/`!await`, string kinds (`r""`, `b""`, `""""""`), `fs.glob`, `json.loads`/`dumps`, pure native C++ runtime. |
+| `v0.2.2` | **"Lemongrab & Lemonhope"** | Earl of Lemongrab & Lemonhope | **Current Release:** Flexible typed function parameters (`@name: str`, `name as str`), single-quoted string literals (`'...'`), clean compiler diagnostics, cross-platform Linux & macOS `Makefile`, universal `install.sh`, Debian (`.deb`), portable `.tar.gz`, AppImage builder, autonomous Windows installer (`Setup_Viss.exe`), and VS Code extension v0.3.2. |
 
 ---
 

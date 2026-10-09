@@ -210,7 +210,7 @@ function activate(context) {
     runStatusBarItem.tooltip = 'Run current Viss file (F5)';
 
     const versionStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
-    versionStatusBarItem.text = 'Viss v0.2.2-exp';
+    versionStatusBarItem.text = 'Viss v0.2.2';
     versionStatusBarItem.tooltip = 'Viss Language Engine (Lemongrab & Lemonhope)';
 
     function updateStatusBar() {
