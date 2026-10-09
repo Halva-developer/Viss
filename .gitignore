@@ -16,5 +16,6 @@ __pycache__/
 
 .viss_cache/
 build/
+dist/
 *.spec
 
