@@ -1,6 +1,6 @@
 // =============================================================================
 // Viss Autonomous Windows Installer (Setup_Viss.exe)
-// Version 0.2.2 "Lemongrab & Lemonhope"
+// Version 0.2.2 "Prismo & Cosmic Owl"
 // =============================================================================
 
 #include <iostream>
@@ -114,7 +114,7 @@ int main(int argc, char* argv[]) {
     std::cout << "     \\  /  | \\__ \\__ \\    \n";
     std::cout << "      \\/   |_|___/___/    \n";
     std::cout << "\033[0m\n";
-    std::cout << "\033[33m\033[1mViss Language Toolchain v0.2.2 \"Lemongrab & Lemonhope\"\033[0m\n";
+    std::cout << "\033[33m\033[1mViss Language Toolchain v0.2.2 \"Prismo & Cosmic Owl\"\033[0m\n";
     std::cout << "\033[37mAutonomous Windows Standalone Setup\033[0m\n\n";
 
     fs::path install_dir = fs::path(getLocalAppData()) / "Programs" / "Viss";

@@ -211,7 +211,7 @@ function activate(context) {
 
     const versionStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
     versionStatusBarItem.text = 'Viss v0.2.2';
-    versionStatusBarItem.tooltip = 'Viss Language Engine (Lemongrab & Lemonhope)';
+    versionStatusBarItem.tooltip = 'Viss Language Engine (Prismo & Cosmic Owl)';
 
     function updateStatusBar() {
         const editor = vscode.window.activeTextEditor;

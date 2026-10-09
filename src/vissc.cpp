@@ -27,7 +27,7 @@
 namespace fs = std::filesystem;
 
 const std::string VERSION = "0.2.2";
-const std::string CODENAME = "Lemongrab & Lemonhope";
+const std::string CODENAME = "Prismo & Cosmic Owl";
 
 // =============================================================================
 // 1. UTILITY FUNCTIONS

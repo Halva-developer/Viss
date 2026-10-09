@@ -1,6 +1,6 @@
 # =============================================================================
 # Viss Language Toolchain Makefile
-# Version: 0.2.2 "Lemongrab & Lemonhope"
+# Version: 0.2.2 "Prismo & Cosmic Owl"
 # Supported Platforms: Linux, macOS, FreeBSD, MinGW/Windows
 # =============================================================================
 

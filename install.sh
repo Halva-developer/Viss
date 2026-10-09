@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Viss Language Universal Installer for Linux & macOS
-# Version: 0.2.2 "Lemongrab & Lemonhope"
+# Version: 0.2.2 "Prismo & Cosmic Owl"
 # =============================================================================
 
 set -e
@@ -21,7 +21,7 @@ echo "    \ \/ / | / __/ __|    "
 echo "     \  /  | \__ \__ \    "
 echo "      \/   |_|___/___/    "
 echo -e "${NC}"
-echo -e "${GREEN}Viss Language Engine v0.2.2 \"Lemongrab & Lemonhope\" Installer${NC}"
+echo -e "${GREEN}Viss Language Engine v0.2.2 \"Prismo & Cosmic Owl\" Installer${NC}"
 echo -e "Target OS: $(uname -s) ($(uname -m))\n"
 
 # 1. Check prerequisites
