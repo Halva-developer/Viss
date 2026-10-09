@@ -3772,6 +3772,7 @@ int main(int argc, char* argv[]) {
         std::ofstream out(cpp_file); out << cpp_code; out.close();
 
         std::string viss_root = getExecutableDir();
+        fs::path viss_parent = fs::path(viss_root).parent_path();
         std::string cxx = findCompiler();
         fs::path cxx_dir = fs::path(cxx).parent_path();
 #ifdef _WIN32
@@ -3782,10 +3783,21 @@ int main(int argc, char* argv[]) {
         SetEnvironmentVariableA("PATH", new_path.c_str());
 #endif
         fs::path err_log = cache_dir / "bundle_err.log";
-        std::string bundle_cmd = std::string("g++ -std=c++17 -O3 -pipe -static -static-libgcc -static-libstdc++ -s ")
-                                + "-I\"" + viss_root + "\" "
-                                + "-I\"" + file_dir.string() + "\" "
-                                + "-I. \"" + cpp_file.string() + "\" "
+        std::string inc_paths = "-I\"" + viss_root + "\" "
+                              + "-I\"" + viss_parent.string() + "\" "
+                              + "-I\"" + file_dir.string() + "\" "
+                              + "-I. ";
+#ifndef _WIN32
+        inc_paths += "-I/usr/local/include/viss -I/usr/include/viss -I/usr/local/lib/viss -I/usr/share/viss ";
+#endif
+        std::string bundle_cmd = std::string("g++ -std=c++20 -O3 -pipe ")
+#ifdef _WIN32
+                                + "-static -static-libgcc -static-libstdc++ -s "
+#else
+                                + "-static-libgcc -static-libstdc++ -s "
+#endif
+                                + inc_paths
+                                + "\"" + cpp_file.string() + "\" "
                                 + "-o \"" + out_exe + "\"";
 #ifdef _WIN32
         bool is_gui_app = (viss_code.find("\"gui\"") != std::string::npos ||
@@ -3830,6 +3842,8 @@ int main(int argc, char* argv[]) {
         }
 
         bundle_cmd += " -lwinmm -lws2_32 -lwininet -lgdi32 -lgdiplus -lcomdlg32 -lole32 -loleaut32 -luuid -lshell32";
+#else
+        bundle_cmd += " -pthread -ldl";
 #endif
         bundle_cmd += " 2> \"" + err_log.string() + "\"";
 
@@ -4034,7 +4048,11 @@ int main(int argc, char* argv[]) {
 
     bool has_compiler = fs::exists(cxx);
     if (!has_compiler) {
+#ifdef _WIN32
         has_compiler = (std::system("g++ --version > nul 2>&1") == 0);
+#else
+        has_compiler = (std::system("g++ --version > /dev/null 2>&1") == 0);
+#endif
     }
 
     if (!has_compiler) {
@@ -4056,10 +4074,17 @@ int main(int argc, char* argv[]) {
 #endif
 
     fs::path err_log = cache_dir / "build_err.log";
-    std::string compile_cmd = std::string("g++ -std=c++17 -O2 -pipe ")
-                            + "-I\"" + viss_root + "\" "
-                            + "-I\"" + file_dir.string() + "\" "
-                            + "-I. \"" + cpp_file.string() + "\" "
+    fs::path viss_parent = fs::path(viss_root).parent_path();
+    std::string inc_paths = "-I\"" + viss_root + "\" "
+                          + "-I\"" + viss_parent.string() + "\" "
+                          + "-I\"" + file_dir.string() + "\" "
+                          + "-I. ";
+#ifndef _WIN32
+    inc_paths += "-I/usr/local/include/viss -I/usr/include/viss -I/usr/local/lib/viss -I/usr/share/viss ";
+#endif
+    std::string compile_cmd = std::string("g++ -std=c++20 -O2 -pipe ")
+                            + inc_paths
+                            + "\"" + cpp_file.string() + "\" "
                             + "-o \"" + exe_file.string() + "\"";
 #ifdef _WIN32
     bool is_gui_app = (viss_code.find("window.create") != std::string::npos ||
@@ -4103,6 +4128,8 @@ int main(int argc, char* argv[]) {
     }
 
     compile_cmd += " -lwinmm -lws2_32 -lwininet -lgdi32 -lgdiplus -lcomdlg32 -lole32 -lshell32";
+#else
+    compile_cmd += " -pthread -ldl";
 #endif
     compile_cmd += " 2> \"" + err_log.string() + "\"";
 
@@ -4236,7 +4263,18 @@ void runRepl() {
         std::string new_path = cxx_dir.string() + ";" + orig_path;
         SetEnvironmentVariableA("PATH", new_path.c_str());
 #endif
-        std::string cmd = "g++ -std=c++17 -O1 -pipe -I\"" + viss_root + "\" -I. \"" + cpp_out.string() + "\" -o \"" + exe_out.string() + "\" -lwinmm -lws2_32 -lwininet -lgdi32 -lgdiplus -lcomdlg32 -lole32 -lshell32 2> \"" + err_log.string() + "\"";
+        fs::path viss_parent = fs::path(viss_root).parent_path();
+        std::string inc_paths = "-I\"" + viss_root + "\" "
+                              + "-I\"" + viss_parent.string() + "\" "
+                              + "-I. ";
+#ifndef _WIN32
+        inc_paths += "-I/usr/local/include/viss -I/usr/include/viss -I/usr/local/lib/viss -I/usr/share/viss ";
+#endif
+#ifdef _WIN32
+        std::string cmd = "g++ -std=c++20 -O1 -pipe " + inc_paths + "\"" + cpp_out.string() + "\" -o \"" + exe_out.string() + "\" -lwinmm -lws2_32 -lwininet -lgdi32 -lgdiplus -lcomdlg32 -lole32 -lshell32 2> \"" + err_log.string() + "\"";
+#else
+        std::string cmd = "g++ -std=c++20 -O1 -pipe " + inc_paths + "\"" + cpp_out.string() + "\" -o \"" + exe_out.string() + "\" -pthread -ldl 2> \"" + err_log.string() + "\"";
+#endif
         int ret = std::system(cmd.c_str());
         if (ret == 0) {
             std::system(exe_out.string().c_str());
