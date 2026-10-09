@@ -25,19 +25,36 @@ function activate(context) {
         // 1. Check workspace folder root
         if (doc && vscode.workspace.getWorkspaceFolder(doc.uri)) {
             const wsDir = vscode.workspace.getWorkspaceFolder(doc.uri).uri.fsPath;
-            const wsCandidate = path.join(wsDir, 'viss.exe');
-            if (fs.existsSync(wsCandidate)) {
-                return wsCandidate;
+            const candidates = [
+                path.join(wsDir, 'viss.exe'),
+                path.join(wsDir, 'bin', 'viss.exe'),
+                path.join(wsDir, 'viss')
+            ];
+            for (const c of candidates) {
+                if (fs.existsSync(c)) return c;
             }
         }
 
-        // 2. Default standard path
-        const standardPath = 'C:\\Users\\halva\\Desktop\\Viss\\viss.exe';
-        if (fs.existsSync(standardPath)) {
-            return standardPath;
+        // 2. Helper toolchain path
+        const helperPath = 'C:\\AGY\\Viss_Helper\\bin\\viss.exe';
+        if (fs.existsSync(helperPath)) return helperPath;
+
+        // 3. User local programs install
+        if (process.env.LOCALAPPDATA) {
+            const localProg = path.join(process.env.LOCALAPPDATA, 'Programs', 'Viss', 'viss.exe');
+            if (fs.existsSync(localProg)) return localProg;
         }
 
-        // 3. Fallback to system PATH
+        // 4. Default repository path
+        const repoPath = 'C:\\Users\\halva\\Desktop\\Viss\\viss.exe';
+        if (fs.existsSync(repoPath)) return repoPath;
+
+        // 5. Standard Linux/Unix paths
+        for (const lp of ['/usr/local/bin/viss', '/usr/bin/viss']) {
+            if (fs.existsSync(lp)) return lp;
+        }
+
+        // 6. Fallback to system PATH
         return 'viss';
     }
 
@@ -68,7 +85,7 @@ function activate(context) {
 
             const vsDiags = [];
             // Parse Viss errors: [Viss Kind] file:line:col or [Viss Kind] file:line
-            const errRegex = /\[Viss\s+(Syntax Error|SyntaxError|NameError|TypeError|CompilationError)\]\s+([^:\r\n]+):(\d+)(?::(\d+))?[\r\n]+(?:[ \t]*(.*)[\r\n]+)?(?:[ \t]*(.*))?/g;
+            const errRegex = /\[Viss\s+([A-Za-z]+(?:Error|Warning)?)\]\s+([^:\r\n]+):(\d+)(?::(\d+))?[\r\n]+(?:[ \t]*(.*)[\r\n]+)?(?:[ \t]*(.*))?/g;
 
             let m;
             while ((m = errRegex.exec(combinedOutput)) !== null) {
@@ -159,15 +176,30 @@ function activate(context) {
         terminal.sendText(`& "${vissExe}" build "${filePath}" -o "${outExe}"`);
     });
 
-    let checkCommand = vscode.commands.registerCommand('viss.check', async () => {
+    let bundleCommand = vscode.commands.registerCommand('viss.bundle', async () => {
         const editor = vscode.window.activeTextEditor;
         if (!editor) return;
         await editor.document.save();
-        runDiagnostics(editor.document);
-        vscode.window.showInformationMessage('Viss: Checking syntax & diagnostics...');
+
+        const filePath = editor.document.fileName;
+        const vissExe = resolveVissExecutable(editor.document);
+        const terminal = getVissTerminal(editor.document);
+        terminal.show();
+
+        const baseName = path.basename(filePath, path.extname(filePath));
+        const outExe = path.join(path.dirname(filePath), `${baseName}.exe`);
+        terminal.sendText(`& "${vissExe}" bundle "${filePath}" -o "${outExe}"`);
     });
 
-    context.subscriptions.push(runCommand, compileCommand, checkCommand);
+    let newFileCommand = vscode.commands.registerCommand('viss.newFile', async () => {
+        const doc = await vscode.workspace.openTextDocument({
+            language: 'viss',
+            content: `$import lib "io" as io\n\n!main {\n    io.println("Hello from Viss!");\n}\n`
+        });
+        await vscode.window.showTextDocument(doc);
+    });
+
+    context.subscriptions.push(runCommand, compileCommand, bundleCommand, checkCommand, newFileCommand);
 
     // ==========================================
     // 3. Status Bar Action Buttons
@@ -178,8 +210,8 @@ function activate(context) {
     runStatusBarItem.tooltip = 'Run current Viss file (F5)';
 
     const versionStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
-    versionStatusBarItem.text = 'Viss v0.2.1';
-    versionStatusBarItem.tooltip = 'Viss Language Engine (Hambo)';
+    versionStatusBarItem.text = 'Viss v0.2.2-exp';
+    versionStatusBarItem.tooltip = 'Viss Language Engine (Lemongrab & Lemonhope)';
 
     function updateStatusBar() {
         const editor = vscode.window.activeTextEditor;
@@ -221,6 +253,13 @@ function activate(context) {
         'time': '**time: High-Precision Timers**\n\n- `time.sleep(ms)`  -  Sleep milliseconds\n- `time.now_ms()`  -  Epoch in milliseconds\n- `time.now_us()`  -  Epoch in microseconds\n- `time.format_now(fmt)`  -  Formatted date-time\n- `time.Stopwatch(autostart)`  -  Performance stopwatch',
         'math': '**math: Mathematical Functions & Game Physics**\n\n- `math.PI`, `math.E`\n- `math.sin`, `math.cos`, `math.tan`, `math.sqrt`, `math.abs`, `math.pow`\n- `math.clamp(val, min, max)`, `math.lerp(a, b, t)`\n- `math.distance(x1, y1, x2, y2)`\n- `math.random_int(min, max)`, `math.random_dec(min, max)`',
         'async': '**async: Concurrency & Multithreading**\n\n- `!async func name(params)`  -  Asynchronous function definition\n- `!await @task`  -  Await task completion\n- `async.spawn(func)` -> `Task<T>`  -  Background execution\n- `async.sleep(ms)`  -  Non-blocking async sleep\n- `async.parallel_for(start, end, func)`  -  Multi-core parallel loop',
+        'gui': '**gui: Native Windows Hardware-Accelerated GUI**\n\n- `gui.create_window(title, w, h)`  -  Spawn GPU/GDI+ window\n- `gui.button(x, y, w, h, label)`  -  Clickable button\n- `gui.label(x, y, text, size)`  -  Text label\n- `gui.checkbox(x, y, text, &checked)`  -  Toggle checkbox\n- `gui.slider(x, y, w, h, &val, min, max)`  -  Interactive slider\n- `gui.text_input(x, y, w, h, id, &text)`  -  Text input field\n- `gui.textarea(x, y, w, h, id, &text)`  -  Multi-line editor\n- `gui.progress_bar(x, y, w, h, pct)`  -  Visual progress bar\n- `gui.card(x, y, w, h)`, `gui.card_group(x, y, w, h, title)`\n- `gui.open_file()`, `gui.browse_folder()`  -  System file dialogs\n- `gui.draw_rect()`, `gui.draw_circle()`, `gui.draw_line()`, `gui.draw_image()`\n- `gui.poll()`, `gui.run()`, `gui.is_open()`',
+        'audio': '**audio: High-Performance Sound & Music Engine**\n\n- `audio.play_tone(freq, ms, wave, vol)`  -  Synthesize tone\n- `audio.play_note(note, ms, wave, vol)`  -  Play musical note (e.g. "C4", "A#5")\n- `audio.synth(freq, ms, wave, a, d, s, r, vol)`  -  Full ADSR synthesizer\n- `audio.sfx(name)`  -  Play SFX ("laser", "hit", "explosion", "jump", "powerup", "gem", "dash")\n- `audio.laser()`, `audio.hit()`, `audio.jump()`, `audio.explosion()`\n- `audio.play_bgm(file, volume)` / `audio.stop_bgm()`  -  Background music streaming\n- `audio.play_file(path)` / `audio.stop_file()`  -  Play sound sample\n- `audio.set_volume(vol)` / `audio.get_volume()` / `audio.stop_all()`',
+        'media': '**media: Audio Metadata, Cover Art & Video Rendering Engine**\n\n- `media.read(audio_path)` -> `AudioTag`  -  Parse Vorbis/ID3/MP4 metadata & cover\n- `media.write_tags(audio_path, tags_map)`  -  Write audio tags atomically\n- `media.embed_cover(audio_path, img_path, tags, out_path)`  -  Embed album cover\n- `media.extract_cover(audio_path, out_img)`  -  Extract attached cover\n- `media.render_video(audio, cover, out_mp4)`  -  FFmpeg video generator with blur & audio\n- `media.start_render_video(...)` / `media.is_rendering_video()`  -  Async render\n- `media.get_render_video_progress()` / `media.cancel_render_video()`',
+        'crypto': '**crypto: Cryptographic Hashes & Encodings**\n\n- `crypto.sha256(text)` -> `str` (64 lowercase hex)\n- `crypto.md5(text)` -> `str` (32 lowercase hex)\n- `crypto.crc32(text)` -> `str`\n- `crypto.uuid()` -> `str` (Random UUID v4)\n- `crypto.base64_encode(text)` -> `str`\n- `crypto.base64_decode(text)` -> `str`',
+        'net': '**net: Networking & HTTP**\n\n- `net.http_get(url)` -> `str`  -  HTTP/HTTPS GET request\n- `net.download_file(url, path)`  -  Stream download\n- `net.url_encode(text)` / `net.url_decode(text)`\n- `net.TcpClient()`  -  Raw TCP socket stream',
+        'env': '**env: Environment & Process Execution**\n\n- `env.args()` -> `list<str>`  -  CLI arguments\n- `env.cwd()` / `env.set_cwd(path)`  -  Current directory\n- `env.os()` / `env.arch()` / `env.cpu_count()`  -  Platform info\n- `env.exec(cmd)` -> `int`  -  Shell command execution\n- `env.get(var)` / `env.set(var, val)` / `env.exit(code)`',
+        'collections': '**collections: Extended Data Structures & Algorithms**\n\n- `collections.zip(a, b)` -> `list<list>`\n- `collections.enumerate(list)` -> `list<list>`\n- `collections.choice(list)` -> element\n- `collections.shuffle(list)` -> `list`\n- `collections.Stack()`, `collections.Queue()`, `collections.Set()`',
 
         // Primitive Types
         'int': '**int: 64-bit Signed Integer** (`viss::Int`)',
@@ -511,6 +550,76 @@ function activate(context) {
             { label: 'Queue', detail: 'collections.Queue(): FIFO queue data structure', snippet: 'Queue()' },
             { label: 'Set', detail: 'collections.Set(): Unique elements hash set', snippet: 'Set()' },
             { label: 'RingBuffer', detail: 'collections.RingBuffer(cap): Fixed-size circular buffer', snippet: 'RingBuffer(${1:16})' }
+        ],
+        'gui': [
+            { label: 'create_window', detail: 'gui.create_window(title, w, h): Spawn Win32 GPU/GDI+ window', snippet: 'create_window("${1:Viss App}", ${2:800}, ${3:600});' },
+            { label: 'poll', detail: 'gui.poll(): Non-blocking pump of window events and redrawing', snippet: 'poll()' },
+            { label: 'run', detail: 'gui.run(): Blocking modal loop until window closes', snippet: 'run();' },
+            { label: 'is_open', detail: 'gui.is_open(): Check if window is still running', snippet: 'is_open()' },
+            { label: 'button', detail: 'gui.button(x, y, w, h, label): Clickable button widget (returns true if clicked)', snippet: 'button(${1:x}, ${2:y}, ${3:w}, ${4:h}, "${5:Click Me}")' },
+            { label: 'label', detail: 'gui.label(x, y, text, size): Text label widget', snippet: 'label(${1:x}, ${2:y}, "${3:Text}", ${4:14});' },
+            { label: 'checkbox', detail: 'gui.checkbox(x, y, text, &checked): Toggle checkbox widget', snippet: 'checkbox(${1:x}, ${2:y}, "${3:Label}", ${4:&checked})' },
+            { label: 'slider', detail: 'gui.slider(x, y, w, h, &val, min, max): Interactive slider control', snippet: 'slider(${1:x}, ${2:y}, ${3:w}, ${4:h}, ${5:&val}, ${6:0.0}, ${7:1.0})' },
+            { label: 'text_input', detail: 'gui.text_input(x, y, w, h, id, &text, placeholder): Single-line text input', snippet: 'text_input(${1:x}, ${2:y}, ${3:w}, ${4:h}, "${5:id}", ${6:&text}, "${7:placeholder}")' },
+            { label: 'textarea', detail: 'gui.textarea(x, y, w, h, id, &text, placeholder): Multi-line text editor', snippet: 'textarea(${1:x}, ${2:y}, ${3:w}, ${4:h}, "${5:id}", ${6:&text})' },
+            { label: 'progress_bar', detail: 'gui.progress_bar(x, y, w, h, pct): Progress bar indicator', snippet: 'progress_bar(${1:x}, ${2:y}, ${3:w}, ${4:h}, ${5:0.5});' },
+            { label: 'card', detail: 'gui.card(x, y, w, h): Modern container panel card', snippet: 'card(${1:x}, ${2:y}, ${3:w}, ${4:h});' },
+            { label: 'card_group', detail: 'gui.card_group(x, y, w, h, title): Container group with header title', snippet: 'card_group(${1:x}, ${2:y}, ${3:w}, ${4:h}, "${5:Title}");' },
+            { label: 'open_file', detail: 'gui.open_file(title): Native OS Open File dialog', snippet: 'open_file("${1:Select File}")' },
+            { label: 'browse_folder', detail: 'gui.browse_folder(title): Native OS Folder browser dialog', snippet: 'browse_folder("${1:Select Folder}")' },
+            { label: 'dropped_file', detail: 'gui.dropped_file(): Get path of file dropped onto window', snippet: 'dropped_file()' },
+            { label: 'draw_rect', detail: 'gui.draw_rect(x, y, w, h, color, fill): Draw rectangle', snippet: 'draw_rect(${1:x}, ${2:y}, ${3:w}, ${4:h}, ${5:color});' },
+            { label: 'draw_round_rect', detail: 'gui.draw_round_rect(x, y, w, h, r, color): Draw rounded rectangle', snippet: 'draw_round_rect(${1:x}, ${2:y}, ${3:w}, ${4:h}, ${5:6}, ${6:color});' },
+            { label: 'draw_circle', detail: 'gui.draw_circle(cx, cy, r, color): Draw circle', snippet: 'draw_circle(${1:cx}, ${2:cy}, ${3:radius}, ${4:color});' },
+            { label: 'draw_line', detail: 'gui.draw_line(x1, y1, x2, y2, color, w): Draw line', snippet: 'draw_line(${1:x1}, ${2:y1}, ${3:x2}, ${4:y2}, ${5:color}, ${6:1});' },
+            { label: 'draw_text', detail: 'gui.draw_text(x, y, text, color, size): Draw custom font text', snippet: 'draw_text(${1:x}, ${2:y}, "${3:text}", ${4:color}, ${5:14});' },
+            { label: 'draw_image', detail: 'gui.draw_image(x, y, w, h, path): Draw image from file', snippet: 'draw_image(${1:x}, ${2:y}, ${3:w}, ${4:h}, "${5:image.png}");' },
+            { label: 'get_clipboard', detail: 'gui.get_clipboard(): Get clipboard text', snippet: 'get_clipboard()' },
+            { label: 'set_clipboard', detail: 'gui.set_clipboard(text): Set clipboard text', snippet: 'set_clipboard("${1:text}");' },
+            { label: 'mouse_x', detail: 'gui.mouse_x(): Cursor X coordinate', snippet: 'mouse_x()' },
+            { label: 'mouse_y', detail: 'gui.mouse_y(): Cursor Y coordinate', snippet: 'mouse_y()' },
+            { label: 'mouse_down', detail: 'gui.mouse_down(): Check if mouse button is held down', snippet: 'mouse_down()' },
+            { label: 'mouse_clicked', detail: 'gui.mouse_clicked(): Check if mouse button was clicked', snippet: 'mouse_clicked()' },
+            { label: 'key_down', detail: 'gui.key_down(vk): Check if virtual key is down', snippet: 'key_down(${1:vk})' },
+            { label: 'key_pressed', detail: 'gui.key_pressed(vk): Check if virtual key was pressed', snippet: 'key_pressed(${1:vk})' }
+        ],
+        'audio': [
+            { label: 'play_tone', detail: 'audio.play_tone(freq, ms, wave, vol): Play tone sound', snippet: 'play_tone(${1:440.0}, ${2:150}, "${3:sine}", ${4:0.5});' },
+            { label: 'play_note', detail: 'audio.play_note(note, ms, wave, vol): Play note ("C4", "A#5")', snippet: 'play_note("${1:C4}", ${2:200}, "${3:sine}", ${4:0.5});' },
+            { label: 'synth', detail: 'audio.synth(freq, ms, wave, a, d, s, r, vol): ADSR synthesizer', snippet: 'synth(${1:440.0}, ${2:200}, "${3:saw}", ${4:10.0}, ${5:40.0}, ${6:0.7}, ${7:50.0}, ${8:0.5});' },
+            { label: 'sfx', detail: 'audio.sfx(name): Play built-in sound effect', snippet: 'sfx("${1|laser,hit,explosion,powerup,gem,jump,dash|}");' },
+            { label: 'laser', detail: 'audio.laser(): Play laser sound effect', snippet: 'laser();' },
+            { label: 'hit', detail: 'audio.hit(): Play hit sound effect', snippet: 'hit();' },
+            { label: 'explosion', detail: 'audio.explosion(): Play explosion sound effect', snippet: 'explosion();' },
+            { label: 'powerup', detail: 'audio.powerup(): Play powerup chime sound effect', snippet: 'powerup();' },
+            { label: 'gem', detail: 'audio.gem(): Play gem collection sound effect', snippet: 'gem();' },
+            { label: 'jump', detail: 'audio.jump(): Play retro jump sound effect', snippet: 'jump();' },
+            { label: 'dash', detail: 'audio.dash(): Play dash sound effect', snippet: 'dash();' },
+            { label: 'play_bgm', detail: 'audio.play_bgm(path, vol): Stream background music (MP3/OGG/WAV)', snippet: 'play_bgm("${1:music.mp3}", ${2:0.25});' },
+            { label: 'stop_bgm', detail: 'audio.stop_bgm(): Stop background music', snippet: 'stop_bgm();' },
+            { label: 'set_bgm_volume', detail: 'audio.set_bgm_volume(vol): Set background music volume (0.0 - 1.0)', snippet: 'set_bgm_volume(${1:0.5});' },
+            { label: 'play_file', detail: 'audio.play_file(path): Play audio file sample', snippet: 'play_file("${1:sample.wav}");' },
+            { label: 'stop_file', detail: 'audio.stop_file(): Stop file playback', snippet: 'stop_file();' },
+            { label: 'is_file_playing', detail: 'audio.is_file_playing(): Check if file is currently playing', snippet: 'is_file_playing()' },
+            { label: 'set_volume', detail: 'audio.set_volume(vol): Master volume', snippet: 'set_volume(${1:0.5});' },
+            { label: 'get_volume', detail: 'audio.get_volume(): Current master volume', snippet: 'get_volume()' },
+            { label: 'stop_all', detail: 'audio.stop_all(): Stop all active audio voices', snippet: 'stop_all();' }
+        ],
+        'media': [
+            { label: 'read', detail: 'media.read(path): Parse metadata tags and embedded cover art', snippet: 'read("${1:audio.ogg}")' },
+            { label: 'write_tags', detail: 'media.write_tags(audio, tags): Update metadata tags atomically', snippet: 'write_tags("${1:audio.ogg}", ${2:tags_map});' },
+            { label: 'embed_cover', detail: 'media.embed_cover(audio, img, tags, out): Embed album cover image', snippet: 'embed_cover("${1:audio.ogg}", "${2:cover.jpg}", ${3:tags_map}, "${4:out.ogg}");' },
+            { label: 'extract_cover', detail: 'media.extract_cover(audio, out_img): Extract embedded cover image', snippet: 'extract_cover("${1:audio.ogg}", "${2:cover.jpg}");' },
+            { label: 'extract_cover_bytes', detail: 'media.extract_cover_bytes(audio): Extract raw bytes of embedded cover', snippet: 'extract_cover_bytes("${1:audio.ogg}")' },
+            { label: 'remove_cover', detail: 'media.remove_cover(audio, out): Strip cover art from audio file', snippet: 'remove_cover("${1:audio.ogg}", "${2:out.ogg}");' },
+            { label: 'render_video', detail: 'media.render_video(audio, cover, out_mp4): Render high-res MP4 with cover art & audio', snippet: 'render_video("${1:audio.ogg}", "${2:cover.jpg}", "${3:video.mp4}");' },
+            { label: 'start_render_video', detail: 'media.start_render_video(audio, cover, out_mp4): Asynchronously render MP4', snippet: 'start_render_video("${1:audio.ogg}", "${2:cover.jpg}", "${3:video.mp4}");' },
+            { label: 'is_rendering_video', detail: 'media.is_rendering_video(): Check if background video render is running', snippet: 'is_rendering_video()' },
+            { label: 'get_render_video_progress', detail: 'media.get_render_video_progress(): Render progress percentage (0 - 100)', snippet: 'get_render_video_progress()' },
+            { label: 'get_render_video_status', detail: 'media.get_render_video_status(): Status ("RENDERING", "DONE", "ERROR", "IDLE")', snippet: 'get_render_video_status()' },
+            { label: 'get_render_video_info', detail: 'media.get_render_video_info(): Progress string info with speed multiplier', snippet: 'get_render_video_info()' },
+            { label: 'cancel_render_video', detail: 'media.cancel_render_video(): Abort active background video render', snippet: 'cancel_render_video();' },
+            { label: 'clear_render_video', detail: 'media.clear_render_video(): Reset render state', snippet: 'clear_render_video();' }
         ]
     };
     moduleMethods['retrotech'] = moduleMethods['rt'];

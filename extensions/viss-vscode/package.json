@@ -1,9 +1,10 @@
 {
   "name": "viss-vscode",
   "displayName": "Viss Language Support & Toolchain",
-  "description": "Official Viss Language Extension: Syntax Highlighting, Smart Contextual Autocompletions, Real-Time Compiler Diagnostics, Inlay Hints, and One-Click Runner.",
-  "version": "0.3.1",
+  "description": "Official Viss Language Extension: Syntax Highlighting, Smart Contextual Autocompletions, Real-Time Compiler Diagnostics, Inlay Hints, and One-Click Runner & Bundler.",
+  "version": "0.3.2",
   "publisher": "viss",
+  "icon": "icon.png",
   "engines": {
     "vscode": "^1.60.0"
   },
@@ -47,6 +48,11 @@
         "command": "viss.compile",
         "key": "shift+f5",
         "when": "editorLangId == viss"
+      },
+      {
+        "command": "viss.bundle",
+        "key": "alt+f5",
+        "when": "editorLangId == viss"
       }
     ],
     "commands": [
@@ -67,6 +73,18 @@
         "title": "Build Executable",
         "icon": "$(gear)",
         "category": "Viss"
+      },
+      {
+        "command": "viss.bundle",
+        "title": "Bundle Standalone Executable",
+        "icon": "$(package)",
+        "category": "Viss"
+      },
+      {
+        "command": "viss.newFile",
+        "title": "New Viss File",
+        "icon": "$(file-add)",
+        "category": "Viss"
       }
     ],
     "menus": {
@@ -85,6 +103,11 @@
           "command": "viss.compile",
           "group": "navigation@3",
           "when": "resourceExtname == .viss"
+        },
+        {
+          "command": "viss.bundle",
+          "group": "navigation@4",
+          "when": "resourceExtname == .viss"
         }
       ],
       "editor/context": [
@@ -102,6 +125,11 @@
           "command": "viss.compile",
           "group": "viss@3",
           "when": "resourceExtname == .viss"
+        },
+        {
+          "command": "viss.bundle",
+          "group": "viss@4",
+          "when": "resourceExtname == .viss"
         }
       ],
       "commandPalette": [
@@ -116,6 +144,13 @@
         {
           "command": "viss.compile",
           "when": "editorLangId == viss"
+        },
+        {
+          "command": "viss.bundle",
+          "when": "editorLangId == viss"
+        },
+        {
+          "command": "viss.newFile"
         }
       ]
     },
@@ -125,7 +160,7 @@
         "viss.executablePath": {
           "type": "string",
           "default": "viss",
-          "description": "Path to the viss executable (defaults to 'viss' in system PATH or workspace root)."
+          "description": "Path to the viss executable (defaults to auto-detection in PATH, workspace, or Viss_Helper)."
         },
         "viss.checkOnSave": {
           "type": "boolean",
