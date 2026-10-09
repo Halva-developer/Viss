@@ -1,6 +1,6 @@
 # =============================================================================
 # Viss Language Toolchain Makefile
-# Version: 0.2.2-exp "Lemongrab & Lemonhope"
+# Version: 0.2.2 "Lemongrab & Lemonhope"
 # Supported Platforms: Linux, macOS, FreeBSD, MinGW/Windows
 # =============================================================================
 
