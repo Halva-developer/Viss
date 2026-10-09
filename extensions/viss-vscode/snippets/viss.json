@@ -297,5 +297,70 @@
       "mask.collides_2d(&${1:a}, ${2:ax}, ${3:ay}, ${4:aw}, ${5:ah}, &${6:b}, ${7:bx}, ${8:by}, ${9:bw}, ${10:bh}, 0)"
     ],
     "description": "Pixel-perfect 2D mask collision check"
+  },
+  "GUI Window Application": {
+    "prefix": "guiapp",
+    "body": [
+      "$import lib \"gui\" as gui",
+      "",
+      "!main {",
+      "    gui.create_window(\"${1:Viss App}\", ${2:800}, ${3:600});",
+      "    @checked = false;",
+      "    @name = \"\";",
+      "    ",
+      "    !while (gui.poll()) {",
+      "        gui.label(20, 20, \"${1:Viss App}\", 20);",
+      "        gui.text_input(20, 60, 260, 36, \"name_in\", @name, \"Enter name...\");",
+      "        gui.checkbox(20, 110, \"Enable feature\", @checked);",
+      "        ?if (gui.button(20, 150, 120, 36, \"Click Me\")) {",
+      "            gui.label(160, 155, \"Clicked!\", 14);",
+      "        }",
+      "    }",
+      "}"
+    ],
+    "description": "Native Windows hardware-accelerated GUI application boilerplate"
+  },
+  "Audio SFX & BGM": {
+    "prefix": "audioapp",
+    "body": [
+      "$import lib \"audio\" as audio",
+      "",
+      "!main {",
+      "    audio.play_bgm(\"${1:theme.mp3}\", 0.5);",
+      "    audio.laser();",
+      "    audio.play_note(\"C4\", 200, \"square\", 0.4);",
+      "}"
+    ],
+    "description": "Audio music and sound effect playback boilerplate"
+  },
+  "Media Audio Tagging": {
+    "prefix": "mediatag",
+    "body": [
+      "$import lib \"media\" as media",
+      "",
+      "!main {",
+      "    @tag = media.read(\"${1:song.ogg}\");",
+      "    media.write_tags(\"${1:song.ogg}\", {",
+      "        \"TITLE\": \"${2:Song Title}\",",
+      "        \"ARTIST\": \"${3:Artist Name}\"",
+      "    });",
+      "}"
+    ],
+    "description": "Read and update audio metadata tags"
+  },
+  "Media Video Generator": {
+    "prefix": "mediarender",
+    "body": [
+      "$import lib \"media\" as media",
+      "",
+      "!main {",
+      "    media.start_render_video(\"${1:song.ogg}\", \"${2:cover.jpg}\", \"${3:video.mp4}\");",
+      "    !while (media.is_rendering_video()) {",
+      "        @pct = media.get_render_video_progress();",
+      "        time.sleep(250);",
+      "    }",
+      "}"
+    ],
+    "description": "Render high-resolution MP4 video from audio and cover art"
   }
 }
