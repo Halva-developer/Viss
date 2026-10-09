@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Viss
+GenericName=Viss Programming Language
+Comment=High-performance expressive systems scripting language
+Exec=viss %f
+Terminal=true
+Icon=viss
+Categories=Development;IDE;ConsoleOnly;
+MimeType=text/x-viss;
+Keywords=viss;compiler;programming;c++;script;

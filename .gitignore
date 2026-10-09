@@ -7,10 +7,12 @@
 *.tmp
 __pycache__/
 
-# Keep source cpp files in src/ but ignore generated root cpp files
+# Keep source cpp files in src/ and installer/ but ignore generated root cpp files
 *.cpp
 !src/*.cpp
 !src/**/*.cpp
+!installer/*.cpp
+!installer/**/*.cpp
 
 .viss_cache/
 build/
