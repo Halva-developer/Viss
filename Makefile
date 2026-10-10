@@ -39,20 +39,19 @@ $(TARGET): $(SRC)
 ifeq ($(OS),Windows_NT)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(SRC) -o $(TARGET) $(WINFLAGS)
 else
-	mkdir -p bin
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(SRC) -o bin/$(TARGET) $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(SRC) -o $(TARGET) $(LDFLAGS)
 endif
 	@echo "Build complete: $(TARGET)"
 
 clean:
-	rm -rf bin/$(TARGET) $(TARGET) .viss_cache test_*.exe *.tmp.*
+	rm -rf bin $(TARGET) .viss_cache test_*.exe *.tmp.*
 
 install: build
 	@echo "Installing Viss to $(PREFIX)..."
 	install -d $(DESTDIR)$(BINDIR)
 	install -d $(DESTDIR)$(DATADIR)/libs
 	install -d $(DESTDIR)$(INCDIR)
-	install -m 755 bin/$(TARGET) $(DESTDIR)$(BINDIR)/$(TARGET)
+	install -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/$(TARGET)
 	cp -r libs/* $(DESTDIR)$(DATADIR)/libs/
 	cp -r libs/* $(DESTDIR)$(INCDIR)/
 	@if [ -d packaging/linux ]; then \
