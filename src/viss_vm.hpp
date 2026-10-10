@@ -98,6 +98,34 @@ struct VMVal {
         }
     }
 
+    std::string type_name() const {
+        switch (type) {
+            case VMType::Null: return "Null";
+            case VMType::Int: return "Int";
+            case VMType::Dec: return "Dec";
+            case VMType::Str: return "Str";
+            case VMType::Bool: return "Bool";
+            case VMType::List: return "List";
+            case VMType::Bytes: return "Bytes";
+            case VMType::Map: return "Map";
+            default: return "Unknown";
+        }
+    }
+
+    std::string to_repr() const {
+        if (type == VMType::Str) return "\"" + s_val + "\"";
+        if (type == VMType::List) {
+            std::string out = "[";
+            for (size_t i = 0; i < list_val.size(); ++i) {
+                out += list_val[i].to_repr();
+                if (i + 1 < list_val.size()) out += ", ";
+            }
+            out += "]";
+            return out;
+        }
+        return to_string();
+    }
+
     int64_t to_int() const {
         if (type == VMType::Int) return i_val;
         if (type == VMType::Dec) return (int64_t)d_val;
@@ -1365,8 +1393,19 @@ private:
         return s.compare(s.size() - suf.size(), suf.size(), suf) == 0;
     }
 
+    static bool isIdentifier(const std::string& s) {
+        if (s.empty()) return false;
+        size_t start = (s[0] == '@' || s[0] == '&') ? 1 : 0;
+        if (start >= s.size()) return false;
+        if (!std::isalpha((unsigned char)s[start]) && s[start] != '_') return false;
+        for (size_t i = start + 1; i < s.size(); ++i) {
+            if (!std::isalnum((unsigned char)s[i]) && s[i] != '_') return false;
+        }
+        return true;
+    }
+
     static std::vector<std::string> tokenizeLines(const std::string& source) {
-        std::vector<std::string> lines;
+        std::vector<std::string> raw_lines;
         std::stringstream ss(source);
         std::string line;
         while (std::getline(ss, line)) {
@@ -1376,8 +1415,43 @@ private:
             size_t h_pos = line.find('#');
             if (h_pos != std::string::npos && (h_pos == 0 || line[h_pos-1] == ' ')) line = line.substr(0, h_pos);
             line = trim(line);
-            if (!line.empty()) lines.push_back(line);
+            if (!line.empty()) raw_lines.push_back(line);
         }
+
+        std::vector<std::string> lines;
+        for (const auto& rline : raw_lines) {
+            std::string cur = "";
+            bool in_str = false;
+            char q_char = 0;
+            for (size_t i = 0; i < rline.size(); ++i) {
+                char c = rline[i];
+                if (in_str) {
+                    cur += c;
+                    if (c == q_char && (i == 0 || rline[i-1] != '\\')) in_str = false;
+                } else {
+                    if (c == '"' || c == '\'') {
+                        in_str = true;
+                        q_char = c;
+                        cur += c;
+                    } else if (c == '{') {
+                        cur += c;
+                        std::string t = trim(cur);
+                        if (!t.empty()) lines.push_back(t);
+                        cur.clear();
+                    } else if (c == '}') {
+                        std::string t = trim(cur);
+                        if (!t.empty()) lines.push_back(t);
+                        cur.clear();
+                        lines.push_back("}");
+                    } else {
+                        cur += c;
+                    }
+                }
+            }
+            std::string rem = trim(cur);
+            if (!rem.empty()) lines.push_back(rem);
+        }
+
         return lines;
     }
 
@@ -1421,6 +1495,101 @@ public:
         return executeSource(ss.str(), args);
     }
 
+    static VMVal executeReplSnippet(
+        const std::string& input,
+        VMContext& ctx,
+        bool& is_expr,
+        std::string& err_msg
+    ) {
+        is_expr = false;
+        err_msg.clear();
+        try {
+            auto lines = tokenizeLines(input);
+            if (lines.empty()) return VMVal();
+
+            if (lines.size() == 1) {
+                std::string single = lines[0];
+                if (!single.empty() && single.back() == ';') single.pop_back();
+                single = trim(single);
+
+                // Ignore print statements from returning expressions
+                if (startsWith(single, "io.println") || startsWith(single, "io.print") || startsWith(single, "io.clear")) {
+                    ExprEvaluator::evaluate(single, ctx);
+                    is_expr = false;
+                    return VMVal();
+                }
+
+                // Check if it's assignment
+                size_t eq_pos = single.find('=');
+                bool is_assign = false;
+                if (eq_pos != std::string::npos && eq_pos > 0 &&
+                    single[eq_pos - 1] != '!' && single[eq_pos - 1] != '=' &&
+                    single[eq_pos - 1] != '<' && single[eq_pos - 1] != '>' &&
+                    (eq_pos + 1 >= single.size() || (single[eq_pos + 1] != '=' && single[eq_pos + 1] != '>'))) {
+                    std::string left = trim(single.substr(0, eq_pos));
+                    if (left.front() == '@' || left.front() == '&') left = left.substr(1);
+                    if (isIdentifier(left)) {
+                        is_assign = true;
+                    }
+                }
+                for (const std::string& op : {"+=", "-=", "*=", "/="}) {
+                    size_t op_p = single.find(op);
+                    if (op_p != std::string::npos) {
+                        std::string left = trim(single.substr(0, op_p));
+                        if (left.front() == '@' || left.front() == '&') left = left.substr(1);
+                        if (isIdentifier(left)) {
+                            is_assign = true;
+                            break;
+                        }
+                    }
+                }
+                if (single.find('[') != std::string::npos && single.find("]=") != std::string::npos) {
+                    is_assign = true;
+                }
+
+                if (is_assign) {
+                    std::vector<NodePtr> nodes;
+                    size_t i = 0;
+                    parseBlock(lines, i, nodes, ctx);
+                    for (const auto& node : nodes) node->execute(ctx);
+                    is_expr = false;
+                    return VMVal();
+                }
+
+                // If not statement, evaluate as expression
+                if (!startsWith(single, "!func") && !startsWith(single, "func") &&
+                    !startsWith(single, "!if") && !startsWith(single, "?if") &&
+                    !startsWith(single, "!for") && !startsWith(single, "!while") &&
+                    !startsWith(single, "&")) {
+                    VMVal v = ExprEvaluator::evaluate(single, ctx);
+                    is_expr = true;
+                    return v;
+                }
+            }
+
+            // Block or multi-statement
+            std::vector<NodePtr> nodes;
+            size_t i = 0;
+            parseBlock(lines, i, nodes, ctx);
+            VMVal last_val;
+            for (const auto& node : nodes) {
+                last_val = node->execute(ctx);
+                if (ctx.signal == FlowSignal::Return) {
+                    ctx.signal = FlowSignal::None;
+                    break;
+                }
+            }
+            is_expr = false;
+            return last_val;
+        } catch (const std::exception& e) {
+            err_msg = e.what();
+            return VMVal();
+        } catch (...) {
+            err_msg = "Runtime evaluation error";
+            return VMVal();
+        }
+    }
+
 private:
     static void parseBlock(
         const std::vector<std::string>& lines,
@@ -1451,8 +1620,9 @@ private:
                 continue;
             }
 
-            if (startsWith(line, "!func ") && endsWith(line, "{")) {
-                std::string decl = trim(line.substr(6, line.size() - 7));
+            if ((startsWith(line, "!func ") || startsWith(line, "func ")) && endsWith(line, "{")) {
+                size_t prefix_len = startsWith(line, "!func ") ? 6 : 5;
+                std::string decl = trim(line.substr(prefix_len, line.size() - prefix_len - 1));
                 size_t p_open = decl.find('(');
                 size_t p_close = decl.find(')');
                 if (p_open != std::string::npos && p_close != std::string::npos) {
@@ -1466,7 +1636,10 @@ private:
                         p_item = trim(p_item);
                         size_t as_pos = p_item.find(" as ");
                         if (as_pos != std::string::npos) p_item = trim(p_item.substr(0, as_pos));
+                        size_t colon_pos = p_item.find(':');
+                        if (colon_pos != std::string::npos) p_item = trim(p_item.substr(0, colon_pos));
                         if (p_item.front() == '@') p_item = p_item.substr(1);
+                        p_item = trim(p_item);
                         if (!p_item.empty()) fn->params.push_back(p_item);
                     }
                     parseBlock(lines, idx, fn->body, ctx);
@@ -1612,19 +1785,22 @@ private:
                 continue;
             }
 
-            // Subscript Assignment: @arr[idx] = val
-            if (startsWith(line, "@") && line.find('[') != std::string::npos && line.find("]=") != std::string::npos) {
+            // Subscript Assignment: @arr[idx] = val or arr[idx] = val
+            if (line.find('[') != std::string::npos && line.find("]=") != std::string::npos) {
                 size_t b_open = line.find('[');
-                std::string vname = line.substr(1, b_open - 1);
-                size_t b_close = line.find(']');
-                std::string ie = line.substr(b_open + 1, b_close - b_open - 1);
-                size_t eq = line.find('=', b_close);
-                std::string ve = trim(line.substr(eq + 1));
-                out_nodes.push_back(std::make_shared<StmtSubscriptAssign>(vname, ie, ve));
-                continue;
+                std::string vname = trim(line.substr(0, b_open));
+                if (vname.front() == '@' || vname.front() == '&') vname = vname.substr(1);
+                if (isIdentifier(vname)) {
+                    size_t b_close = line.find(']');
+                    std::string ie = line.substr(b_open + 1, b_close - b_open - 1);
+                    size_t eq = line.find('=', b_close);
+                    std::string ve = trim(line.substr(eq + 1));
+                    out_nodes.push_back(std::make_shared<StmtSubscriptAssign>(vname, ie, ve));
+                    continue;
+                }
             }
 
-            // Compound Variable Assignment: @x += 1, @x -= 1, etc.
+            // Compound Variable Assignment: @x += 1, x += 1, etc.
             size_t op_pos = std::string::npos;
             std::string found_op = "";
             for (const std::string& op : {"+=", "-=", "*=", "/="}) {
@@ -1635,24 +1811,33 @@ private:
                     break;
                 }
             }
-            if (startsWith(line, "@") && op_pos != std::string::npos) {
-                std::string vname = trim(line.substr(1, op_pos - 1));
-                std::string ex = trim(line.substr(op_pos + found_op.size()));
-                out_nodes.push_back(std::make_shared<StmtAssign>(vname, found_op, ex));
-                continue;
+            if (op_pos != std::string::npos) {
+                std::string vname = trim(line.substr(0, op_pos));
+                if (vname.front() == '@' || vname.front() == '&') vname = vname.substr(1);
+                if (isIdentifier(vname)) {
+                    std::string ex = trim(line.substr(op_pos + found_op.size()));
+                    out_nodes.push_back(std::make_shared<StmtAssign>(vname, found_op, ex));
+                    continue;
+                }
             }
 
-            // Generic Variable Assignment: @x = expr [| type]
-            if (startsWith(line, "@") && line.find('=') != std::string::npos) {
-                size_t eq_pos = line.find('=');
-                std::string vname = trim(line.substr(1, eq_pos - 1));
-                std::string expr = trim(line.substr(eq_pos + 1));
-                size_t pipe_pos = expr.find('|');
-                if (pipe_pos != std::string::npos && expr.find('|', pipe_pos + 1) == std::string::npos) {
-                    expr = trim(expr.substr(0, pipe_pos));
+            // Generic Variable Assignment: @x = expr or x = expr [| type]
+            size_t eq_pos = line.find('=');
+            if (eq_pos != std::string::npos && eq_pos > 0 &&
+                line[eq_pos - 1] != '!' && line[eq_pos - 1] != '=' &&
+                line[eq_pos - 1] != '<' && line[eq_pos - 1] != '>' &&
+                (eq_pos + 1 >= line.size() || (line[eq_pos + 1] != '=' && line[eq_pos + 1] != '>'))) {
+                std::string vname = trim(line.substr(0, eq_pos));
+                if (vname.front() == '@' || vname.front() == '&') vname = vname.substr(1);
+                if (isIdentifier(vname)) {
+                    std::string expr = trim(line.substr(eq_pos + 1));
+                    size_t pipe_pos = expr.find('|');
+                    if (pipe_pos != std::string::npos && expr.find('|', pipe_pos + 1) == std::string::npos) {
+                        expr = trim(expr.substr(0, pipe_pos));
+                    }
+                    out_nodes.push_back(std::make_shared<StmtAssign>(vname, "=", expr));
+                    continue;
                 }
-                out_nodes.push_back(std::make_shared<StmtAssign>(vname, "=", expr));
-                continue;
             }
 
             // Flow control: !return, !break, !continue

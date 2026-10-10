@@ -3649,26 +3649,18 @@ int main(int argc, char* argv[]) {
             if (!raw_code.empty()) raw_code += " ";
             raw_code += argv[i];
         }
-        std::string full_code;
-        if (raw_code.find("!main") == std::string::npos) {
-            full_code = "$import lib \"iostream\" as io\n"
-                        "$import lib \"str\" as str\n"
-                        "$import lib \"math\" as math\n"
-                        "$import lib \"sys\" as sys\n"
-                        "$import lib \"fs\" as fs\n"
-                        "$import lib \"time\" as time\n"
-                        "$import lib \"net\" as net\n\n"
-                        "!main {\n    " + raw_code + "\n}\n";
-        } else {
-            full_code = raw_code;
+        viss::vm::VMContext eval_ctx;
+        bool is_expr = false;
+        std::string err_m;
+        auto res = viss::vm::VissVM::executeReplSnippet(raw_code, eval_ctx, is_expr, err_m);
+        if (!err_m.empty()) {
+            std::cerr << "[Viss Error] " << err_m << "\n";
+            return 1;
         }
-        fs::path temp_file = fs::temp_directory_path() / "viss_eval_tmp.viss";
-        std::ofstream tof(temp_file);
-        tof << full_code;
-        tof.close();
-
-        viss_file = temp_file.string();
-        run_after = true;
+        if (is_expr && res.type != viss::vm::VMType::Null) {
+            std::cout << res.to_string() << "\n";
+        }
+        return 0;
     }
 
     if (cmd == "sfx") {
@@ -3761,15 +3753,17 @@ int main(int argc, char* argv[]) {
 
     bool force_vm = false;
     for (int ai = 1; ai < argc; ++ai) {
-        if (std::string(argv[ai]) == "--vm") force_vm = true;
+        std::string a = argv[ai];
+        if (a == "--vm" || a == "--fast" || a == "-fast") force_vm = true;
     }
     if (force_vm) {
         std::string target = "";
         std::vector<std::string> pass_args;
         for (int ai = 1; ai < argc; ++ai) {
             std::string a = argv[ai];
-            if (a == "--vm" || a == "run") continue;
-            if (target.empty()) target = a;
+            if (a == "--vm" || a == "--fast" || a == "-fast" || a == "run") continue;
+            if (target.empty() && endsWith(a, ".viss")) target = a;
+            else if (target.empty()) target = a;
             else pass_args.push_back(a);
         }
         if (!target.empty()) {
@@ -4130,7 +4124,16 @@ int main(int argc, char* argv[]) {
 #ifndef _WIN32
     inc_paths += "-I/usr/local/include/viss -I/usr/include/viss -I/usr/local/lib/viss -I/usr/share/viss ";
 #endif
-    std::string compile_cmd = std::string("g++ -std=c++20 -O2 -pipe ")
+    bool is_optimized = false;
+    for (int ai = 2; ai < argc; ++ai) {
+        std::string a = argv[ai];
+        if (a == "-O2" || a == "-O3" || a == "--release" || a == "-O") {
+            is_optimized = true;
+            break;
+        }
+    }
+    std::string opt_flag = (is_optimized || !run_after) ? "-O2" : "-O0";
+    std::string compile_cmd = std::string("g++ -std=c++20 ") + opt_flag + " -pipe "
                             + inc_paths
                             + "\"" + cpp_file.string() + "\" "
                             + "-o \"" + exe_file.string() + "\"";
@@ -4209,52 +4212,121 @@ int main(int argc, char* argv[]) {
 }
 
 void runRepl() {
-    std::cout << "====================================================\n";
-    std::cout << "  Viss v" << VERSION << " \"" << CODENAME << "\" Interactive REPL ^_^\n";
-    std::cout << "  Type 'help' for commands, 'clear' to reset, 'exit' to quit.\n";
-    std::cout << "====================================================\n\n";
+    std::cout << "\033[1;36m=================================================================\033[0m\n";
+    std::cout << "\033[1;36m  Viss v" << VERSION << " \"" << CODENAME << "\" Interactive REPL ^_^\033[0m\n";
+    std::cout << "  Real-time in-memory execution engine (0ms compile overhead)\n";
+    std::cout << "  Type expressions or code. Commands: \033[33mhelp\033[0m, \033[33mvars\033[0m, \033[33mfuncs\033[0m, \033[33mclear\033[0m, \033[33mexit\033[0m\n";
+    std::cout << "\033[1;36m=================================================================\033[0m\n\n";
 
-    fs::create_directories(".viss_cache/repl");
-    fs::path repl_file = ".viss_cache/repl/repl_session.viss";
-
-    std::vector<std::string> session_statements;
+    viss::vm::VMContext repl_ctx;
     std::string multiline_acc = "";
     int brace_depth = 0;
 
     while (true) {
-        std::cout << (brace_depth > 0 ? "... " : ">>> ") << std::flush;
+        if (brace_depth > 0) {
+            std::cout << "\033[33m... \033[0m" << std::flush;
+        } else {
+            std::cout << "\033[1;32m>>> \033[0m" << std::flush;
+        }
+
         std::string line;
         if (!std::getline(std::cin, line)) break;
         std::string trimmed = trim(line);
         if (trimmed.empty() && brace_depth == 0) continue;
 
         if (brace_depth == 0) {
-            if (trimmed == "exit" || trimmed == "quit" || trimmed == "!exit") {
+            if (trimmed == "exit" || trimmed == "quit" || trimmed == "!exit" || trimmed == ":q") {
                 std::cout << "Bye! :3\n";
                 break;
             }
-            if (trimmed == "clear" || trimmed == "!clear") {
-                session_statements.clear();
-                std::cout << "REPL session cleared.\n";
+            if (trimmed == "clear" || trimmed == "!clear" || trimmed == "reset") {
+                repl_ctx.scopes.clear();
+                repl_ctx.scopes.emplace_back();
+                repl_ctx.functions.clear();
+                std::cout << "[Viss REPL] Session cleared.\n";
                 continue;
             }
-            if (trimmed == "help" || trimmed == "!help") {
-                std::cout << "REPL Commands:\n"
-                          << "  help       Show this help\n"
-                          << "  clear      Clear all session variables\n"
-                          << "  exit       Exit REPL\n"
-                          << "Examples:\n"
-                          << "  @x = 42\n"
-                          << "  @x * 2\n"
-                          << "  &buf create | bytes, 16\n"
+            if (trimmed == "help" || trimmed == "!help" || trimmed == "?") {
+                std::cout << "\n\033[1;33m--- Viss Real-Time Interactive REPL Help ---\033[0m\n"
+                          << "  \033[32mhelp, ?\033[0m          Show this help cheatsheet\n"
+                          << "  \033[32mvars\033[0m             List active variables and their current values\n"
+                          << "  \033[32mfuncs\033[0m            List defined functions\n"
+                          << "  \033[32mload <file>\033[0m      Load and execute a .viss file into session\n"
+                          << "  \033[32mclear, reset\033[0m     Reset all variables and functions\n"
+                          << "  \033[32mexit, quit\033[0m       Exit REPL\n\n"
+                          << "\033[1;33m--- Examples ---\033[0m\n"
+                          << "  @x = 42                       (or x = 42)\n"
+                          << "  @x * 2                        => 84\n"
+                          << "  @list = [10, 20, 30]\n"
+                          << "  @list.map(|v| v * 3)          => [30, 60, 90]\n"
+                          << "  math.sqrt(144)                => 12\n"
+                          << "  str.upper(\"viss is fun!\")     => \"VISS IS FUN!\"\n"
+                          << "  !func add(@a, @b) { !return @a + @b; }\n"
+                          << "  add(15, 27)                   => 42\n"
                           << "  io.println(\"Hello Viss!\")\n\n";
+                continue;
+            }
+            if (trimmed == "vars" || trimmed == "!vars") {
+                std::cout << "\n\033[1;34m=== Active Variables ===\033[0m\n";
+                if (repl_ctx.scopes.empty() || repl_ctx.scopes.front().empty()) {
+                    std::cout << "  (no variables defined yet)\n\n";
+                } else {
+                    for (const auto& kv : repl_ctx.scopes.front()) {
+                        std::cout << "  @" << kv.first << " : \033[36m" << kv.second.type_name() << "\033[0m = "
+                                  << kv.second.to_repr() << "\n";
+                    }
+                    std::cout << "\n";
+                }
+                continue;
+            }
+            if (trimmed == "funcs" || trimmed == "!funcs") {
+                std::cout << "\n\033[1;34m=== Defined Functions ===\033[0m\n";
+                if (repl_ctx.functions.empty()) {
+                    std::cout << "  (no functions defined yet)\n\n";
+                } else {
+                    for (const auto& kv : repl_ctx.functions) {
+                        std::cout << "  !func " << kv.first << "(";
+                        for (size_t pi = 0; pi < kv.second->params.size(); ++pi) {
+                            std::cout << kv.second->params[pi] << (pi + 1 < kv.second->params.size() ? ", " : "");
+                        }
+                        std::cout << ")\n";
+                    }
+                    std::cout << "\n";
+                }
+                continue;
+            }
+            if (startsWith(trimmed, "load ") || startsWith(trimmed, "run ")) {
+                std::string fpath = trim(trimmed.substr(5));
+                if (!fs::exists(fpath)) {
+                    std::cerr << "[Viss REPL Error] File not found: " << fpath << "\n";
+                } else {
+                    std::ifstream inf(fpath);
+                    std::stringstream ss; ss << inf.rdbuf();
+                    std::string err_m;
+                    bool is_e = false;
+                    viss::vm::VissVM::executeReplSnippet(ss.str(), repl_ctx, is_e, err_m);
+                    if (!err_m.empty()) {
+                        std::cerr << "[Viss REPL Error] " << err_m << "\n";
+                    } else {
+                        std::cout << "[Viss REPL] Successfully loaded '" << fpath << "'. ^_^\n";
+                    }
+                }
                 continue;
             }
         }
 
-        for (char c : line) {
-            if (c == '{') brace_depth++;
-            else if (c == '}') { if (brace_depth > 0) brace_depth--; }
+        // Multiline bracket counting
+        bool in_str = false;
+        char q_char = 0;
+        for (size_t ci = 0; ci < line.size(); ++ci) {
+            char c = line[ci];
+            if (in_str) {
+                if (c == q_char && (ci == 0 || line[ci-1] != '\\')) in_str = false;
+            } else {
+                if (c == '"' || c == '\'') { in_str = true; q_char = c; }
+                else if (c == '{') brace_depth++;
+                else if (c == '}') { if (brace_depth > 0) brace_depth--; }
+            }
         }
 
         multiline_acc += (multiline_acc.empty() ? "" : "\n") + line;
@@ -4262,75 +4334,18 @@ void runRepl() {
             continue; // Wait for multiline block to finish
         }
 
-        std::string stmt = trim(multiline_acc);
+        std::string snippet = trim(multiline_acc);
         multiline_acc.clear();
-        if (stmt.empty()) continue;
+        if (snippet.empty()) continue;
 
-        // Determine if line is an expression or statement
-        bool is_expr = true;
-        if (startsWith(stmt, "@") && stmt.find('=') != std::string::npos) is_expr = false;
-        else if (startsWith(stmt, "&")) is_expr = false;
-        else if (startsWith(stmt, "!") || startsWith(stmt, "?") || startsWith(stmt, "$")) is_expr = false;
-        else if (startsWith(stmt, "io.") || startsWith(stmt, "rt.") || startsWith(stmt, "sys.")) is_expr = false;
+        bool is_expr = false;
+        std::string err_msg;
+        viss::vm::VMVal res = viss::vm::VissVM::executeReplSnippet(snippet, repl_ctx, is_expr, err_msg);
 
-        std::string line_to_run = stmt;
-        if (is_expr) {
-            line_to_run = "io.println(" + stmt + ");";
-        }
-
-        // Generate temporary viss file
-        std::ofstream out(repl_file);
-        out << "$import lib \"iostream\" as io\n";
-        out << "$import lib \"retrotech\" as rt\n\n";
-        out << "!main {\n";
-        for (const auto& s : session_statements) {
-            out << "    " << s << "\n";
-        }
-        out << "    " << line_to_run << "\n";
-        out << "}\n";
-        out.close();
-
-        // Run via transpile and system compile
-        fs::path cpp_out = ".viss_cache/repl/repl_session.cpp";
-        fs::path exe_out = ".viss_cache/repl/repl_session.exe";
-        fs::path err_log = ".viss_cache/repl/repl_err.log";
-        std::ifstream in(repl_file);
-        std::stringstream buf; buf << in.rdbuf();
-        std::string code = transpile(buf.str(), "repl_session.viss", ".viss_cache/repl");
-        if (code.empty()) continue;
-
-        std::ofstream out_cpp(cpp_out); out_cpp << code; out_cpp.close();
-
-        std::string viss_root = getExecutableDir();
-        std::string cxx = findCompiler();
-        fs::path cxx_dir = fs::path(cxx).parent_path();
-#ifdef _WIN32
-        std::string orig_path = "";
-        char p_buf[32767];
-        if (GetEnvironmentVariableA("PATH", p_buf, sizeof(p_buf))) orig_path = p_buf;
-        std::string new_path = cxx_dir.string() + ";" + orig_path;
-        SetEnvironmentVariableA("PATH", new_path.c_str());
-#endif
-        fs::path viss_parent = fs::path(viss_root).parent_path();
-        std::string inc_paths = "-I\"" + viss_root + "\" "
-                              + "-I\"" + viss_parent.string() + "\" "
-                              + "-I. ";
-#ifndef _WIN32
-        inc_paths += "-I/usr/local/include/viss -I/usr/include/viss -I/usr/local/lib/viss -I/usr/share/viss ";
-#endif
-#ifdef _WIN32
-        std::string cmd = "g++ -std=c++20 -O1 -pipe " + inc_paths + "\"" + cpp_out.string() + "\" -o \"" + exe_out.string() + "\" -lwinmm -lws2_32 -lwininet -lgdi32 -lgdiplus -lcomdlg32 -lole32 -lshell32 2> \"" + err_log.string() + "\"";
-#else
-        std::string cmd = "g++ -std=c++20 -O1 -pipe " + inc_paths + "\"" + cpp_out.string() + "\" -o \"" + exe_out.string() + "\" -pthread -ldl 2> \"" + err_log.string() + "\"";
-#endif
-        int ret = std::system(cmd.c_str());
-        if (ret == 0) {
-            std::system(exe_out.string().c_str());
-            if (!is_expr) {
-                session_statements.push_back(stmt);
-            }
-        } else {
-            sanitizeAndPrintCompilerErrors(err_log.string(), repl_file.string());
+        if (!err_msg.empty()) {
+            std::cerr << "\033[31m[Viss Runtime Error]\033[0m " << err_msg << "\n";
+        } else if (is_expr && res.type != viss::vm::VMType::Null) {
+            std::cout << "\033[1;36m=> " << res.to_repr() << "\033[0m\n";
         }
     }
 }
