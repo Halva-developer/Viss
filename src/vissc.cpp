@@ -1547,7 +1547,12 @@ std::string transformLambdas(const std::string& expr, ScopeTracker& ctx) {
                             std::string raw_body = trim(expr.substr(b_start, b_end - b_start));
                             // Recursive transform inside body for nested lambdas
                             raw_body = transformLambdas(raw_body, ctx);
-                            // Replace !return with return
+                            // Control flow keywords inside lambda body
+                            raw_body = std::regex_replace(raw_body, std::regex(R"(\?if\b)"), "if");
+                            raw_body = std::regex_replace(raw_body, std::regex(R"(\?elif\b)"), "else if");
+                            raw_body = std::regex_replace(raw_body, std::regex(R"(\?else\b)"), "else");
+                            raw_body = std::regex_replace(raw_body, std::regex(R"(!for\b)"), "for");
+                            raw_body = std::regex_replace(raw_body, std::regex(R"(!while\b)"), "while");
                             raw_body = std::regex_replace(raw_body, std::regex(R"(!return\b)"), "return");
 
                             // Strip '@' from parameter references inside body
@@ -1580,8 +1585,18 @@ std::string transformLambdas(const std::string& expr, ScopeTracker& ctx) {
                                 lambda_cpp += "auto&& " + param_names[pi] + (pi + 1 < param_names.size() ? ", " : "");
                             }
                             lambda_cpp += ") { ";
-                            if (raw_body.find("return ") == std::string::npos && raw_body.find("return\t") == std::string::npos && !startsWith(raw_body, "return")) {
-                                if (endsWith(raw_body, ";")) raw_body.pop_back();
+                            bool is_stmt_block = (raw_body.find(';') != std::string::npos ||
+                                                  raw_body.find('{') != std::string::npos ||
+                                                  raw_body.find('}') != std::string::npos ||
+                                                  startsWith(raw_body, "if") ||
+                                                  startsWith(raw_body, "for") ||
+                                                  startsWith(raw_body, "while"));
+
+                            bool has_return = (raw_body.find("return ") != std::string::npos ||
+                                               raw_body.find("return\t") != std::string::npos ||
+                                               startsWith(raw_body, "return"));
+
+                            if (!is_stmt_block && !has_return) {
                                 lambda_cpp += "return " + raw_body + "; }";
                             } else {
                                 lambda_cpp += raw_body;
