@@ -2132,6 +2132,16 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
     includes_section.push_back("#else");
     includes_section.push_back("#include \"libs/vissrt.hpp\"");
     includes_section.push_back("#endif");
+    includes_section.push_back("#if __has_include(\"libs/std/db.hpp\")");
+    includes_section.push_back("#include \"libs/std/db.hpp\"");
+    includes_section.push_back("#include \"libs/std/chan.hpp\"");
+    includes_section.push_back("#elif __has_include(\"std/db.hpp\")");
+    includes_section.push_back("#include \"std/db.hpp\"");
+    includes_section.push_back("#include \"std/chan.hpp\"");
+    includes_section.push_back("#elif __has_include(\"viss/std/db.hpp\")");
+    includes_section.push_back("#include \"viss/std/db.hpp\"");
+    includes_section.push_back("#include \"viss/std/chan.hpp\"");
+    includes_section.push_back("#endif");
     aliases_section.push_back("using namespace viss;");
     aliases_section.push_back("namespace io = viss::io;");
     aliases_section.push_back("namespace sys = viss::sys;");

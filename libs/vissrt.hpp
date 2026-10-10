@@ -3079,6 +3079,9 @@ namespace viss {
 #include "std/audio.hpp"
 #include "std/media.hpp"
 #include "std/gui.hpp"
+#include "std/db.hpp"
+#include "std/chan.hpp"
+#include "std/mask.hpp"
 
 namespace viss {
     namespace asyncIO = async;
