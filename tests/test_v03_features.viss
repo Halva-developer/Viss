@@ -61,6 +61,6 @@ $import lib "net" as net
     io.println("  [Test 3 PASSED] Net helpers verified!");
 
     io.println("\n==================================================");
-    io.println("  ALL VISS v0.3.0 TESTS PASSED SUCCESSFULLY! ^_^");
+    io.println("  ALL VISS v0.3.0 TESTS PASSED SUCCESSFULLY.");
     io.println("==================================================");
 }

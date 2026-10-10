@@ -1,0 +1,37 @@
+// =============================================================================
+// Viss Example 03: Multi-Threaded HTTP Web Server
+// Run with: viss run examples/03_http_web_server.viss
+// =============================================================================
+
+$import lib "iostream" as io
+$import lib "net" as net
+$import lib "sys" as sys
+
+!main {
+    io.println("=== Starting Viss HTTP Web Server ===");
+    @srv = net.create_server();
+
+    // Define routes
+    @srv.get("/", !func(req, res) {
+        res.send("Welcome to Viss Web Server powered by Peppermint Butler!");
+    });
+
+    @srv.get("/api/status", !func(req, res) {
+        res.json('{"status":"online","version":"0.3.0","memory":"native"}');
+    });
+
+    // Start background listening on port 8088
+    @port = 8088;
+    @ok = @srv.listen(@port, true);
+    io.println(i"HTTP Server listening on http://127.0.0.1:{@port}/ (Status: {@ok})");
+
+    // Sleep a moment to simulate active service and test request
+    sys.sleep(150);
+
+    // Make local client request
+    @reply = net.http_get("http://127.0.0.1:8088/api/status");
+    io.println(i"Client received response: {@reply}");
+
+    @srv.stop();
+    io.println("Server stopped cleanly.");
+}

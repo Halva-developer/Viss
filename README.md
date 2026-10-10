@@ -302,41 +302,42 @@ $import lib "iostream" as io  // Import console I/O
 
 ## CLI Usage & Toolchain
 
-The Viss toolchain provides subcommands for compilation, instant execution, package management, language server, and syntax diagnostics:
+The Viss toolchain provides subcommands for unified multiplatform compilation, instant execution, package management, language server, and syntax diagnostics:
 
 ```bash
-# Check syntax and diagnostics:
-viss check oldgame.viss
+# Multiplatform Binary Builder (v0.3.0):
+viss create exe app.viss [-o app.exe] [--gui] [--icon icon.ico]  # Windows standalone executable
+viss create bin app.viss [-o app]                                # Linux ELF binary / distribution pkg
+viss create apple app.viss [-o app.app]                          # macOS Application Bundle (.app)
 
-# Transpile and compile to native executable:
-viss compile oldgame.viss
+# Fast Execution & REPL:
+viss repl                                  # Real-time in-memory Pythonic REPL (or just run 'viss')
+viss vm script.viss                        # Native VissVM execution (0ms compile overhead)
+viss exec script.viss                      # Alias for 'viss vm'
+viss -e "math.sqrt(16.0)"                  # Evaluate inline Viss expression directly
+viss run app.viss [--fast]                 # Transpile, compile, and run (with caching)
 
-# Compile and immediately run:
-viss run oldgame.viss
+# Package Manager:
+viss pkg install <package|git-url> [-g]    # Install package
+viss pkg purge <package>                   # Remove installed package
+viss pkg update                            # Fetch latest repository index
+viss pkg upgrade                           # Upgrade all installed packages
+viss pkg available                         # Browse available packages from registry
+viss pkg search <query>                    # Search packages by name or description
+viss pkg list                              # List installed packages
+viss pkg server <url|none>                 # Configure package registry endpoint
+viss pkg init [name]                       # Initialize new package manifest
 
-# Run directly via native VissVM (no C++ compiler needed):
-viss vm script.viss
-
-# Package Manager (Peppermint Butler v0.3.0):
-viss pkg install <package-name|git-url> [-g|--global]
-viss pkg purge <package-name>
-viss pkg update
-viss pkg upgrade
-viss pkg list
-viss pkg server <start|status> [-port 8080]
-viss pkg init [project-name]
-
-# Language Server Protocol (LSP daemon for editors):
-viss lsp
-
-# Bundle standalone zero-dependency executable:
-viss bundle oldgame.viss -o MyGame.exe
-
-# Interactive Read-Eval-Print Loop:
-viss repl
-
-# Display toolchain version & architecture:
-viss version
+# Toolchain, Diagnostics & Bundling:
+viss check app.viss                        # Fast syntax validator and linter
+viss fmt [--check] app.viss                # Format source code to canonical style
+viss build app.viss                        # Transpile and compile to standard executable
+viss bundle app.viss -o app.exe            # 100% standalone binary (Zero DLL dependencies)
+viss sfx installer.viss -p dir/ -o out.exe # Self-extracting single-file installer
+viss lsp                                   # Start Language Server Protocol daemon
+viss test                                  # Run automated test suites in tests/
+viss clean                                 # Clean cache (.viss_cache/)
+viss version                               # Print toolchain version & codename
 ```
 
 ---

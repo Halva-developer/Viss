@@ -1,0 +1,34 @@
+// =============================================================================
+// Viss Example 01: Core Basics & The Prefix Architecture
+// Run with: viss run examples/01_basics.viss
+// Or VM:   viss vm examples/01_basics.viss
+// =============================================================================
+
+$import lib "io" as io
+$import lib "math" as math
+
+!func greet(name as str) -> str {
+    return i"Hello, {@name}! Welcome to Viss v0.3.0 'Peppermint Butler'.";
+}
+
+!main {
+    !defer io.println(">> Program execution finished cleanly. <<");
+
+    // 1. Data identifiers and variables
+    @user = "Developer";
+    @welcome = greet(@user);
+    io.println(@welcome);
+
+    // 2. Built-in 2D Vector math
+    @pos = vec2(3.0, 4.0);
+    @distance = @pos.len();
+    io.println(i"Vector ({@pos.x}, {@pos.y}) length = {@distance}");
+
+    // 3. Pipeline operator (|>)
+    @raw = "   viss language   " |> str.trim |> str.upper;
+    io.println(i"Pipeline result: '{@raw}'");
+
+    // 4. Elvis operator fallback (?:)
+    @nickname = "" ?: "Anonymous Guest";
+    io.println(i"User: {@nickname}");
+}

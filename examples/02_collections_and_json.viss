@@ -1,0 +1,38 @@
+// =============================================================================
+// Viss Example 02: Advanced Collections, Slices, and JSON
+// Run with: viss run examples/02_collections_and_json.viss
+// =============================================================================
+
+$import lib "io" as io
+$import lib "collections" as collections
+$import lib "json" as json
+
+!main {
+    // 1. Lists and Negative Indexing
+    @numbers = [10, 20, 30, 40, 50];
+    @last = @numbers[-1];
+    @second_last = @numbers[-2];
+    io.println(i"Last: {@last}, 2nd Last: {@second_last}");
+
+    // 2. Membership checking
+    ?if 30 in @numbers {
+        io.println("30 is present in @numbers!");
+    }
+    ?if 999 !in @numbers {
+        io.println("999 is NOT in @numbers.");
+    }
+
+    // 3. Zip and Iteration
+    @names = ["Viss", "Python", "C++"];
+    @types = ["Native", "Interpreted", "Compiled"];
+    @zipped = collections.zip(@names, @types);
+
+    !for @item in @zipped {
+        io.println(i"Language: {@item[0]} -> Paradigm: {@item[1]}");
+    }
+
+    // 4. JSON Serialization & Deserialization
+    @payload = "{\"framework\": \"Viss\", \"version\": \"0.3.0\", \"role\": \"Peppermint Butler\"}";
+    @doc = json.loads(@payload);
+    io.println(i"Parsed JSON framework: {@doc[\"framework\"]}, version: {@doc[\"version\"]}");
+}

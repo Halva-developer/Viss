@@ -1,0 +1,34 @@
+// =============================================================================
+// Viss Example 05: Go-Style CSP Concurrency Channels
+// Run with: viss run examples/05_concurrency_channels.viss
+// =============================================================================
+
+$import lib "io" as io
+$import lib "chan" as chan
+
+!main {
+    io.println("=== Go-Style Channels in Viss ===");
+
+    // Create buffered thread-safe string channel with capacity 5
+    @ch = chan.create_str(5);
+
+    // Send messages into channel
+    @ch.send("Task Alpha started");
+    @ch.send("Data processing completed");
+    @ch.send("Ready for deployment");
+
+    io.println(i"Channel buffered size: {@ch.size()}");
+
+    // Receive messages in FIFO order
+    @m1 = @ch.recv();
+    @m2 = @ch.recv();
+    @m3 = @ch.recv();
+
+    io.println(i"Received 1: {@m1}");
+    io.println(i"Received 2: {@m2}");
+    io.println(i"Received 3: {@m3}");
+
+    // Close channel
+    @ch.close();
+    io.println(i"Channel is closed: {@ch.is_closed()}");
+}

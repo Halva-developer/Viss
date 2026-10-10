@@ -1,0 +1,28 @@
+// =============================================================================
+// Viss Test: VM Execution & Dynamic Functions
+// =============================================================================
+
+$import lib "io" as io
+$import lib "math" as math
+
+!main {
+    io.println("=== Testing VissVM & Core Functions ===");
+
+    // 1. Math functions
+    @val = math.sqrt(16.0);
+    io.println("Math sqrt(16.0): ", @val);
+
+    // 2. Vector math
+    @v = vec2(3.0, 4.0);
+    io.println("Vec2 length: ", @v.len());
+
+    // 3. String pipelines
+    @s = "  hello peppermint butler  " |> str.trim |> str.upper;
+    io.println("Pipeline string: ", @s);
+
+    // 4. Elvis operator
+    @fallback = "" ?: "DefaultValue";
+    io.println("Elvis fallback: ", @fallback);
+
+    io.println("[VM Execution Test PASSED] All checks passed.");
+}

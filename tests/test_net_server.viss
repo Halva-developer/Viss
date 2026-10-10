@@ -35,5 +35,5 @@ $import lib "sys" as sys
     io.println("Response 2:", @resp2);
 
     @srv.stop();
-    io.println("[HTTP Server Test PASSED] Server test completed successfully! ^_^");
+    io.println("[HTTP Server Test PASSED] Server test completed successfully.");
 }

@@ -1,0 +1,33 @@
+// =============================================================================
+// Viss Example 04: Embedded SQLite Database Engine
+// Run with: viss run examples/04_sqlite_database.viss
+// =============================================================================
+
+$import lib "io" as io
+$import lib "db" as db
+
+!main {
+    io.println("=== Initializing Embedded SQLite Database ===");
+
+    // Open or create SQLite database file
+    @database = db.open("app_data.db");
+
+    // Execute schema migrations
+    @database.exec("CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, status TEXT);");
+
+    // Insert records
+    @database.exec("INSERT INTO tasks (title, status) VALUES ('Implement Viss v0.3.0', 'Completed');");
+    @database.exec("INSERT INTO tasks (title, status) VALUES ('Build Cross-Platform Binary', 'Completed');");
+
+    // Count rows
+    @total = @database.count("tasks");
+    io.println(i"Total task records: {@total}");
+
+    // Query rows directly to JSON format
+    @rows_json = @database.query_json("SELECT id, title, status FROM tasks;");
+    io.println(i"Query results (JSON):\n{@rows_json}");
+
+    // Clean close
+    @database.close();
+    io.println("Database closed successfully.");
+}

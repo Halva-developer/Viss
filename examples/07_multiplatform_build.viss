@@ -1,0 +1,20 @@
+// =============================================================================
+// Viss Example 07: Multiplatform Target Building
+// Build for Windows: viss create exe examples/07_multiplatform_build.viss
+// Build for Linux:   viss create bin examples/07_multiplatform_build.viss
+// Build for macOS:   viss create apple examples/07_multiplatform_build.viss
+// =============================================================================
+
+$import lib "io" as io
+$import lib "sys" as sys
+
+!main {
+    io.println("==================================================");
+    io.println("  Viss Multiplatform Standalone Application");
+    io.println("  Release: v0.3.0 'Peppermint Butler'");
+    io.println("==================================================");
+
+    io.println("Host Operating System: ", sys.os());
+    io.println("Logical CPU Cores:     ", sys.cpu_count());
+    io.println("Build Status:           Native Zero-Dependency Binary");
+}

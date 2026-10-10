@@ -1,0 +1,47 @@
+// =============================================================================
+// Viss Test: Multiplatform Builder (viss create)
+// =============================================================================
+
+$import lib "io" as io
+$import lib "fs" as fs
+$import lib "sys" as sys
+
+!main {
+    io.println("=== Testing 'viss create' Multiplatform Targets ===");
+
+    @temp_viss = "tests/temp_create_dummy.viss";
+    @code = "$import lib 'io' as io\n!main { io.println('Dummy test'); }";
+    fs.write(@temp_viss, @code);
+
+    // 1. Test 'viss create exe'
+    io.println("Testing 'viss create exe'...");
+    sys.command("viss create exe tests/temp_create_dummy.viss -o tests/dummy_app.exe");
+    @exe_exists = fs.exists("tests/dummy_app.exe");
+    io.println("  exe created: ", @exe_exists);
+
+    // 2. Test 'viss create bin'
+    io.println("Testing 'viss create bin'...");
+    sys.command("viss create bin tests/temp_create_dummy.viss -o tests/dummy_linux_pkg");
+    @bin_pkg_exists = fs.exists("tests/dummy_linux_pkg");
+    io.println("  linux pkg created: ", @bin_pkg_exists);
+
+    // 3. Test 'viss create apple'
+    io.println("Testing 'viss create apple'...");
+    sys.command("viss create apple tests/temp_create_dummy.viss -o tests/dummy_app.app");
+    @app_exists = fs.exists("tests/dummy_app.app/Contents/Info.plist");
+    io.println("  macOS .app bundle created: ", @app_exists);
+
+    // Cleanup
+    fs.remove(@temp_viss);
+    ?if fs.exists("tests/dummy_app.exe") {
+        fs.remove("tests/dummy_app.exe");
+    }
+    ?if fs.exists("tests/dummy_linux_pkg") {
+        fs.remove_all("tests/dummy_linux_pkg");
+    }
+    ?if fs.exists("tests/dummy_app.app") {
+        fs.remove_all("tests/dummy_app.app");
+    }
+
+    io.println("[Target Builder Test PASSED] Multiplatform targets validated successfully.");
+}

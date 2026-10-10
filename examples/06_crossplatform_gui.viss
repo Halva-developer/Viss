@@ -1,0 +1,25 @@
+// =============================================================================
+// Viss Example 06: Native Desktop GUI Window
+// Run with: viss run examples/06_crossplatform_gui.viss
+// Build GUI exe: viss create exe examples/06_crossplatform_gui.viss --gui
+// =============================================================================
+
+$import lib "io" as io
+$import lib "gui" as gui
+
+!main {
+    io.println("Initializing Viss Desktop GUI...");
+
+    // Create desktop window (width 640, height 480)
+    @win = gui.create_window("Viss v0.3.0 GUI Application", 640, 480);
+
+    // Add widgets
+    @lbl = gui.label(@win, "Welcome to Native Viss Desktop GUI!", 30, 30, 360, 30);
+    @btn = gui.button(@win, "Click Me", 30, 80, 160, 40, || {
+        io.println("Button was clicked!");
+    });
+
+    io.println("GUI components initialized successfully.");
+    // To run the main GUI event loop, call:
+    // gui.run(@win);
+}

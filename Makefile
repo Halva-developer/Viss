@@ -42,7 +42,7 @@ else
 	mkdir -p bin
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(SRC) -o bin/$(TARGET) $(LDFLAGS)
 endif
-	@echo "Build complete: $(TARGET) ^_^"
+	@echo "Build complete: $(TARGET)"
 
 clean:
 	rm -rf bin/$(TARGET) $(TARGET) .viss_cache test_*.exe *.tmp.*
@@ -65,7 +65,7 @@ install: build
 		which update-mime-database >/dev/null 2>&1 && update-mime-database $(PREFIX)/share/mime || true; \
 		which update-desktop-database >/dev/null 2>&1 && update-desktop-database $(PREFIX)/share/applications || true; \
 	fi
-	@echo "Viss installed successfully! Run 'viss -v' to verify. :3"
+	@echo "Viss installed successfully. Run 'viss -v' to verify."
 
 uninstall:
 	rm -f $(DESTDIR)$(BINDIR)/$(TARGET)
