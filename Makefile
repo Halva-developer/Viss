@@ -51,9 +51,12 @@ install: build
 	install -d $(DESTDIR)$(BINDIR)
 	install -d $(DESTDIR)$(DATADIR)/libs
 	install -d $(DESTDIR)$(INCDIR)
+	install -d $(DESTDIR)$(INCDIR)/libs
 	install -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/$(TARGET)
 	cp -r libs/* $(DESTDIR)$(DATADIR)/libs/
 	cp -r libs/* $(DESTDIR)$(INCDIR)/
+	cp -r libs/* $(DESTDIR)$(INCDIR)/libs/
+	chmod -R a+rX $(DESTDIR)$(DATADIR) $(DESTDIR)$(INCDIR)
 	@if [ -d packaging/linux ]; then \
 		install -d $(DESTDIR)$(MIMEDIR); \
 		install -d $(DESTDIR)$(APPLICATIONSDIR); \
@@ -84,10 +87,6 @@ tar:
 	@./packaging/linux/build_tar.sh
 
 test: build
-ifeq ($(OS),Windows_NT)
 	./$(TARGET) test
-else
-	./bin/$(TARGET) test
-endif
 
 .PHONY: all build clean install uninstall deb tar test

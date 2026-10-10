@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Viss Language Universal Installer for Linux & macOS
-# Version: 0.2.2 "Prismo & Cosmic Owl"
+# Version: 0.3.0 "Peppermint Butler"
 # =============================================================================
 
 set -e
@@ -21,7 +21,7 @@ echo "    \ \/ / | / __/ __|    "
 echo "     \  /  | \__ \__ \    "
 echo "      \/   |_|___/___/    "
 echo -e "${NC}"
-echo -e "${GREEN}Viss Language Engine v0.2.2 \"Prismo & Cosmic Owl\" Installer${NC}"
+echo -e "${GREEN}Viss Language Engine v0.3.0 \"Peppermint Butler\" Installer${NC}"
 echo -e "Target OS: $(uname -s) ($(uname -m))\n"
 
 # 1. Check prerequisites
@@ -85,12 +85,15 @@ echo -e "${CYAN}[*] Installing binaries and standard libraries...${NC}"
 $SUDO_CMD mkdir -p "$BIN_DIR"
 $SUDO_CMD mkdir -p "$LIB_DIR"
 $SUDO_CMD mkdir -p "$INC_DIR"
+$SUDO_CMD mkdir -p "$INC_DIR/libs"
 
 $SUDO_CMD cp bin/viss "$BIN_DIR/viss"
 $SUDO_CMD chmod 755 "$BIN_DIR/viss"
 
 $SUDO_CMD cp -r libs/* "$LIB_DIR/"
 $SUDO_CMD cp -r libs/* "$INC_DIR/"
+$SUDO_CMD cp -r libs/* "$INC_DIR/libs/"
+$SUDO_CMD chmod -R a+rX "$INSTALL_PREFIX/share/viss" "$INC_DIR"
 
 # 5. Linux Desktop Integration
 if [ "$(uname -s)" = "Linux" ]; then
@@ -121,6 +124,6 @@ case ":$PATH:" in
 esac
 
 # 7. Verification
-echo -e "\n${GREEN}${BOLD}=== Installation Complete! ^_^ ===${NC}"
+echo -e "\n${GREEN}${BOLD}=== Installation Complete! ===${NC}"
 "$BIN_DIR/viss" -v
 echo -e "\nRun '${BOLD}viss --help${NC}' to get started!"

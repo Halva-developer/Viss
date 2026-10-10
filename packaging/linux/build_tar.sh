@@ -32,9 +32,10 @@ cp -r libs/* "$STAGING_DIR/libs/"
 cp README.md "$STAGING_DIR/"
 cp LICENSE "$STAGING_DIR/"
 cp install.sh "$STAGING_DIR/"
+chmod -R a+rX "$STAGING_DIR"
 
 # 3. Create tarball
 tar -czf "dist/${DIST_NAME}.tar.gz" -C "/tmp" "$DIST_NAME"
-echo "Distribution archive created: dist/${DIST_NAME}.tar.gz ^_^"
+echo "Distribution archive created: dist/${DIST_NAME}.tar.gz"
 
 rm -rf "$STAGING_DIR"

@@ -246,9 +246,9 @@ namespace updater {
             return true;
         }
 #else
-        std::string b_cmd = "cd \"" + temp_build_dir.string() + "\" && make clean && make -j4";
+        std::string b_cmd = "cd \"" + temp_build_dir.string() + "\" && make clean && make -j2";
         build_ret = std::system(b_cmd.c_str());
-        if (build_ret == 0 && sfs::exists(temp_build_dir / "bin/viss")) {
+        if (build_ret == 0 && (sfs::exists(temp_build_dir / "viss") || sfs::exists(temp_build_dir / "bin/viss"))) {
             std::cout << "[Viss Updater] Installing binary and libraries...\n";
             bool is_root = (geteuid() == 0);
             std::string inst_cmd = "cd \"" + temp_build_dir.string() + "\" && " + (is_root ? "make install" : "sudo make install");

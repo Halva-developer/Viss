@@ -109,6 +109,57 @@ std::string findCompiler() {
     return "g++";
 }
 
+std::string getVissIncludeFlags(const fs::path& file_dir = "") {
+    std::string viss_root = getExecutableDir();
+    fs::path viss_parent = fs::path(viss_root).parent_path();
+
+    std::string inc_paths = "-I\"" + viss_root + "\" "
+                          + "-I\"" + viss_parent.string() + "\" ";
+    if (!file_dir.empty()) {
+        inc_paths += "-I\"" + file_dir.string() + "\" ";
+    }
+    inc_paths += "-I. ";
+
+    // Relative to binary location
+    fs::path bin_libs = fs::path(viss_root) / "libs";
+    if (fs::exists(bin_libs)) {
+        inc_paths += "-I\"" + bin_libs.string() + "\" ";
+    }
+    fs::path parent_libs = viss_parent / "libs";
+    if (fs::exists(parent_libs)) {
+        inc_paths += "-I\"" + parent_libs.string() + "\" ";
+    }
+    fs::path parent_share = viss_parent / "share" / "viss";
+    if (fs::exists(parent_share)) {
+        inc_paths += "-I\"" + parent_share.string() + "\" ";
+        if (fs::exists(parent_share / "libs")) {
+            inc_paths += "-I\"" + (parent_share / "libs").string() + "\" ";
+        }
+    }
+    fs::path parent_inc = viss_parent / "include" / "viss";
+    if (fs::exists(parent_inc)) {
+        inc_paths += "-I\"" + parent_inc.string() + "\" ";
+        if (fs::exists(parent_inc / "libs")) {
+            inc_paths += "-I\"" + (parent_inc / "libs").string() + "\" ";
+        }
+    }
+
+#ifndef _WIN32
+    // Unix / Linux / macOS standard system paths
+    inc_paths += "-I/usr/local/share/viss -I/usr/local/share/viss/libs "
+                 "-I/usr/local/include/viss -I/usr/local/include/viss/libs -I/usr/local/include "
+                 "-I/usr/share/viss -I/usr/share/viss/libs "
+                 "-I/usr/include/viss -I/usr/include/viss/libs -I/usr/include "
+                 "-I/usr/local/lib/viss "
+                 "-I/opt/homebrew/share/viss -I/opt/homebrew/include/viss ";
+#else
+    if (fs::exists("C:\\AGY\\Viss_Helper")) {
+        inc_paths += "-I\"C:\\AGY\\Viss_Helper\" -I\"C:\\AGY\\Viss_Helper\\libs\" ";
+    }
+#endif
+    return inc_paths;
+}
+
 // =============================================================================
 // 2. STRING LITERAL EXTRACTION & RESTORATION
 // =============================================================================
@@ -2072,8 +2123,15 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
     std::vector<std::string> functions_section;
     std::vector<std::string> main_section;
 
+    includes_section.push_back("#if __has_include(\"libs/vissrt.hpp\")");
     includes_section.push_back("#include \"libs/vissrt.hpp\"");
-    includes_section.push_back("#include \"libs/std/mask.hpp\"");
+    includes_section.push_back("#elif __has_include(\"vissrt.hpp\")");
+    includes_section.push_back("#include \"vissrt.hpp\"");
+    includes_section.push_back("#elif __has_include(\"viss/vissrt.hpp\")");
+    includes_section.push_back("#include \"viss/vissrt.hpp\"");
+    includes_section.push_back("#else");
+    includes_section.push_back("#include \"libs/vissrt.hpp\"");
+    includes_section.push_back("#endif");
     aliases_section.push_back("using namespace viss;");
     aliases_section.push_back("namespace io = viss::io;");
     aliases_section.push_back("namespace sys = viss::sys;");
@@ -2101,12 +2159,6 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
     aliases_section.push_back("namespace win = viss::gui;");
     aliases_section.push_back("namespace db = viss::db;");
     aliases_section.push_back("namespace chan = viss::chan;");
-    includes_section.push_back("#include \"libs/std/net.hpp\"");
-    includes_section.push_back("#include \"libs/std/db.hpp\"");
-    includes_section.push_back("#include \"libs/std/chan.hpp\"");
-    includes_section.push_back("#include \"libs/std/audio.hpp\"");
-    includes_section.push_back("#include \"libs/std/media.hpp\"");
-    includes_section.push_back("#include \"libs/std/gui.hpp\"");
 
     std::vector<std::string> imported_aliases = {
         "io", "sys", "fs", "math", "str", "rt", "async", "json",
@@ -2174,10 +2226,23 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             continue;
         }
 
-        // $import lib "..." as ... or $impoer lib "..." as ...
-        if (std::regex_match(stripped, m_imp, std::regex(R"(^\$impo(?:rt|er)\s+lib\s+([^\s]+)\s+as\s+([a-zA-Z0-9_]+);?$)"))) {
+        // $import lib "..." [as ...] or $impoer lib "..." [as ...]
+        if (std::regex_match(stripped, m_imp, std::regex(R"(^\$impo(?:rt|er)\s+lib\s+([^\s]+)(?:\s+as\s+([a-zA-Z0-9_]+))?;?$)"))) {
             std::string lib_name = resolveStringLiteralToken(m_imp[1].str(), string_literals);
-            std::string alias = m_imp[2].str();
+            std::string alias = (m_imp.size() > 2 && m_imp[2].matched) ? m_imp[2].str() : "";
+            if (alias.empty()) {
+                if (lib_name == "iostream" || lib_name == "io") alias = "io";
+                else if (lib_name == "asyncIO" || lib_name == "async") alias = "async";
+                else if (lib_name == "retrotech" || lib_name == "rt") alias = "rt";
+                else if (lib_name == "bytemask" || lib_name == "colormask" || lib_name == "mask") alias = "mask";
+                else if (lib_name == "crypto") alias = "crypto";
+                else if (lib_name == "json") alias = "json";
+                else if (lib_name == "time") alias = "time";
+                else if (lib_name == "sound" || lib_name == "snd" || lib_name == "audio") alias = "audio";
+                else if (lib_name == "gui" || lib_name == "ui" || lib_name == "window" || lib_name == "win") alias = "gui";
+                else if (lib_name == "media" || lib_name == "tag") alias = "media";
+                else alias = lib_name;
+            }
             imported_aliases.push_back(alias);
             if (lib_name == "asyncIO" || lib_name == "async") {
                 aliases_section.push_back("namespace " + alias + " = viss::async;");
@@ -2221,6 +2286,11 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
         }
 
         if (std::regex_match(stripped, m_imp, std::regex(R"(^@use\s+<?([a-zA-Z0-9_]+)>?\s+for\s+\*;?$)"))) {
+            continue;
+        }
+
+        // Catch-all for any other $import statement to avoid leaking syntax errors into C++
+        if (startsWith(stripped, "$import") || startsWith(stripped, "$impoer")) {
             continue;
         }
 
@@ -3696,10 +3766,7 @@ int handleCreateCommand(int argc, char* argv[]) {
 #endif
 
         fs::path err_log = cache_dir / "build_err.log";
-        std::string inc_paths = "-I\"" + viss_root + "\" "
-                              + "-I\"" + viss_parent.string() + "\" "
-                              + "-I\"" + file_dir.string() + "\" "
-                              + "-I. ";
+        std::string inc_paths = getVissIncludeFlags(file_dir);
 
 #ifdef _WIN32
         std::string win_cxx = "g++";
@@ -3762,12 +3829,7 @@ int handleCreateCommand(int argc, char* argv[]) {
         fs::path cpp_file = cache_dir / (stem + "_linux.cpp");
         std::ofstream out(cpp_file); out << cpp_code; out.close();
 
-        std::string viss_root = getExecutableDir();
-        fs::path viss_parent = fs::path(viss_root).parent_path();
-        std::string inc_paths = "-I\"" + viss_root + "\" "
-                              + "-I\"" + viss_parent.string() + "\" "
-                              + "-I\"" + file_dir.string() + "\" "
-                              + "-I/usr/local/include/viss -I/usr/include/viss -I/usr/local/lib/viss -I/usr/share/viss -I. ";
+        std::string inc_paths = getVissIncludeFlags(file_dir);
 
         fs::path err_log = cache_dir / "build_err.log";
         std::string cmd = "g++ -std=c++20 -O3 -pipe -static-libgcc -static-libstdc++ -s "
@@ -3792,11 +3854,7 @@ int handleCreateCommand(int argc, char* argv[]) {
             fs::path cpp_file = cache_dir / (stem + "_linux.cpp");
             std::ofstream out(cpp_file); out << cpp_code; out.close();
 
-            std::string viss_root = getExecutableDir();
-            fs::path viss_parent = fs::path(viss_root).parent_path();
-            std::string inc_paths = "-I\"" + viss_root + "\" "
-                                  + "-I\"" + viss_parent.string() + "\" "
-                                  + "-I\"" + file_dir.string() + "\" -I. ";
+            std::string inc_paths = getVissIncludeFlags(file_dir);
             fs::path err_log = cache_dir / "build_err.log";
             std::string cmd = "x86_64-linux-gnu-g++ -std=c++20 -O3 -pipe -static -static-libgcc -static-libstdc++ -s "
                             + inc_paths + "\"" + cpp_file.string() + "\" -o \"" + out_path + "\" -pthread -ldl"
@@ -4232,13 +4290,7 @@ int main(int argc, char* argv[]) {
         SetEnvironmentVariableA("PATH", new_path.c_str());
 #endif
         fs::path err_log = cache_dir / "bundle_err.log";
-        std::string inc_paths = "-I\"" + viss_root + "\" "
-                              + "-I\"" + viss_parent.string() + "\" "
-                              + "-I\"" + file_dir.string() + "\" "
-                              + "-I. ";
-#ifndef _WIN32
-        inc_paths += "-I/usr/local/include/viss -I/usr/include/viss -I/usr/local/lib/viss -I/usr/share/viss ";
-#endif
+        std::string inc_paths = getVissIncludeFlags(file_dir);
         std::string bundle_cmd = std::string("g++ -std=c++20 -O3 -pipe ")
 #ifdef _WIN32
                                 + "-static -static-libgcc -static-libstdc++ -s "
@@ -4523,14 +4575,7 @@ int main(int argc, char* argv[]) {
 #endif
 
     fs::path err_log = cache_dir / "build_err.log";
-    fs::path viss_parent = fs::path(viss_root).parent_path();
-    std::string inc_paths = "-I\"" + viss_root + "\" "
-                          + "-I\"" + viss_parent.string() + "\" "
-                          + "-I\"" + file_dir.string() + "\" "
-                          + "-I. ";
-#ifndef _WIN32
-    inc_paths += "-I/usr/local/include/viss -I/usr/include/viss -I/usr/local/lib/viss -I/usr/share/viss ";
-#endif
+    std::string inc_paths = getVissIncludeFlags(file_dir);
     bool is_optimized = false;
     for (int ai = 2; ai < argc; ++ai) {
         std::string a = argv[ai];
