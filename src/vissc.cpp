@@ -3557,7 +3557,7 @@ int formatFile(const std::string& path, bool check_only = false) {
     std::string formatted = formatCode(orig);
     if (check_only) {
         if (orig == formatted) {
-            std::cout << "[Viss Formatter] File '" << path << "' is cleanly formatted. ^_^\n";
+            std::cout << "[Viss Formatter] File '" << path << "' is cleanly formatted.\n";
             return 0;
         } else {
             std::cerr << "[Viss Formatter] File '" << path << "' needs formatting.\n";
@@ -3566,12 +3566,364 @@ int formatFile(const std::string& path, bool check_only = false) {
     }
     std::ofstream out(path);
     out << formatted;
-    std::cout << "[Viss Formatter] Formatted '" << path << "' successfully! ^_^\n";
+    std::cout << "[Viss Formatter] Formatted '" << path << "' successfully.\n";
     return 0;
 }
 
 // =============================================================================
-// 9. INTERACTIVE REPL
+// 9. BINARY CREATION & CROSS-PLATFORM BUILDER
+// =============================================================================
+
+int handleCreateCommand(int argc, char* argv[]) {
+    if (argc < 4) {
+        std::cerr << "Usage: viss create <target> <file.viss> [options]\n\n"
+                  << "Targets:\n"
+                  << "  exe, windows, win    Windows standalone executable (.exe)\n"
+                  << "  bin, linux, elf      Linux/Unix standalone binary / distribution package\n"
+                  << "  apple, macos, mac    macOS standalone application bundle (.app)\n\n"
+                  << "Options:\n"
+                  << "  -o <output>          Specify output binary / directory name\n"
+                  << "  --gui, -w            Build windowed/GUI application without console\n"
+                  << "  --icon <file.ico>    Embed icon into executable or application bundle\n";
+        return 1;
+    }
+
+    std::string target = argv[2];
+    for (char& c : target) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    std::string source_file = argv[3];
+
+    if (!fs::exists(source_file)) {
+        std::cerr << "[Viss Create Error] Source file '" << source_file << "' not found.\n";
+        return 1;
+    }
+
+    std::string out_path = "";
+    bool is_gui = false;
+    std::string icon_path = "";
+
+    for (int i = 4; i < argc; ++i) {
+        std::string arg = argv[i];
+        if ((arg == "-o" || arg == "--out" || arg == "--output") && i + 1 < argc) {
+            out_path = argv[++i];
+        } else if (arg == "--gui" || arg == "-w" || arg == "--windowed") {
+            is_gui = true;
+        } else if (arg == "--icon" && i + 1 < argc) {
+            icon_path = argv[++i];
+        }
+    }
+
+    fs::path p(source_file);
+    std::string stem = p.stem().string();
+    fs::path file_dir = fs::absolute(p).parent_path();
+    fs::path cache_dir = file_dir / ".viss_cache" / stem;
+    fs::create_directories(cache_dir);
+
+    std::ifstream in(source_file);
+    if (!in.is_open()) {
+        std::cerr << "[Viss Create Error] Cannot open '" << source_file << "'.\n";
+        return 1;
+    }
+    std::stringstream buffer; buffer << in.rdbuf();
+    std::string viss_code = buffer.str();
+
+    std::cout << "[Viss Create] Transpiling " << p.filename().string() << " for target '" << target << "'...\n";
+    std::string cpp_code = transpile(viss_code, p.filename().string(), file_dir.string());
+    if (cpp_code.empty()) return 1;
+
+    // Check GUI hints in code
+    if (!is_gui) {
+        if (viss_code.find("\"gui\"") != std::string::npos ||
+            viss_code.find("\"ui\"") != std::string::npos ||
+            viss_code.find("\"window\"") != std::string::npos ||
+            viss_code.find("ui.create") != std::string::npos ||
+            viss_code.find("gui.create") != std::string::npos ||
+            cpp_code.find("viss::gui") != std::string::npos) {
+            is_gui = true;
+        }
+    }
+
+    // 1. WINDOWS TARGET
+    if (target == "exe" || target == "windows" || target == "win" || target == "pe") {
+        if (out_path.empty()) {
+            out_path = stem + ".exe";
+        }
+        if (!endsWith(out_path, ".exe")) {
+            out_path += ".exe";
+        }
+
+        fs::path cpp_file = cache_dir / (stem + "_win.cpp");
+        std::ofstream out(cpp_file); out << cpp_code; out.close();
+
+        std::string viss_root = getExecutableDir();
+        fs::path viss_parent = fs::path(viss_root).parent_path();
+        std::string cxx = findCompiler();
+        fs::path cxx_dir = fs::path(cxx).parent_path();
+
+#ifdef _WIN32
+        std::string orig_path = "";
+        char p_buf[32767];
+        if (GetEnvironmentVariableA("PATH", p_buf, sizeof(p_buf))) orig_path = p_buf;
+        std::string new_path = cxx_dir.string() + ";" + orig_path;
+        SetEnvironmentVariableA("PATH", new_path.c_str());
+#endif
+
+        fs::path err_log = cache_dir / "build_err.log";
+        std::string inc_paths = "-I\"" + viss_root + "\" "
+                              + "-I\"" + viss_parent.string() + "\" "
+                              + "-I\"" + file_dir.string() + "\" "
+                              + "-I. ";
+
+        std::string cmd = "g++ -std=c++20 -O3 -pipe -static -static-libgcc -static-libstdc++ -s "
+                        + inc_paths
+                        + "\"" + cpp_file.string() + "\" "
+                        + "-o \"" + out_path + "\"";
+
+        if (is_gui) cmd += " -mwindows";
+
+        // Embed icon
+        if (icon_path.empty()) {
+            if (fs::exists(file_dir / "app_icon.ico")) icon_path = (file_dir / "app_icon.ico").string();
+            else if (fs::exists(file_dir / "icon.ico")) icon_path = (file_dir / "icon.ico").string();
+            else if (fs::exists(fs::current_path() / "app_icon.ico")) icon_path = (fs::current_path() / "app_icon.ico").string();
+        }
+        if (!icon_path.empty() && fs::exists(icon_path)) {
+            fs::path rc_path = cache_dir / "app_icon.rc";
+            fs::path res_obj = cache_dir / "app_icon.res.o";
+            std::string ico_fwd = replaceAll(icon_path, "\\", "/");
+            std::ofstream rcf(rc_path);
+            rcf << "1 ICON \"" << ico_fwd << "\"\n";
+            rcf.close();
+            std::string wr_cmd = "windres -i \"" + rc_path.string() + "\" -o \"" + res_obj.string() + "\" -O coff";
+            if (std::system(wr_cmd.c_str()) == 0 && fs::exists(res_obj)) {
+                cmd += " \"" + res_obj.string() + "\"";
+            }
+        }
+
+        cmd += " -lwinmm -lws2_32 -lwininet -lgdi32 -lgdiplus -lcomdlg32 -lole32 -loleaut32 -luuid -lshell32";
+        cmd += " 2> \"" + err_log.string() + "\"";
+
+        std::cout << "[Viss Create] Compiling standalone Windows executable: " << out_path << "...\n";
+        int ret = std::system(cmd.c_str());
+        if (ret != 0) {
+            sanitizeAndPrintCompilerErrors(err_log.string(), source_file);
+            return ret;
+        }
+
+        uintmax_t bsz = fs::exists(out_path) ? fs::file_size(out_path) : 0;
+        std::cout << "[Viss Create] Success: Standalone Windows executable created -> " << out_path
+                  << " (" << bsz << " bytes, zero dependencies)\n";
+        return 0;
+    }
+
+    // 2. LINUX TARGET
+    if (target == "bin" || target == "linux" || target == "elf" || target == "unix") {
+        if (out_path.empty()) {
+            out_path = stem;
+        }
+
+#ifndef _WIN32
+        // On native Linux/Unix, build directly
+        fs::path cpp_file = cache_dir / (stem + "_linux.cpp");
+        std::ofstream out(cpp_file); out << cpp_code; out.close();
+
+        std::string viss_root = getExecutableDir();
+        fs::path viss_parent = fs::path(viss_root).parent_path();
+        std::string inc_paths = "-I\"" + viss_root + "\" "
+                              + "-I\"" + viss_parent.string() + "\" "
+                              + "-I\"" + file_dir.string() + "\" "
+                              + "-I/usr/local/include/viss -I/usr/include/viss -I/usr/local/lib/viss -I/usr/share/viss -I. ";
+
+        fs::path err_log = cache_dir / "build_err.log";
+        std::string cmd = "g++ -std=c++20 -O3 -pipe -static-libgcc -static-libstdc++ -s "
+                        + inc_paths
+                        + "\"" + cpp_file.string() + "\" "
+                        + "-o \"" + out_path + "\" -pthread -ldl "
+                        + " 2> \"" + err_log.string() + "\"";
+
+        std::cout << "[Viss Create] Compiling Linux ELF binary: " << out_path << "...\n";
+        int ret = std::system(cmd.c_str());
+        if (ret != 0) {
+            sanitizeAndPrintCompilerErrors(err_log.string(), source_file);
+            return ret;
+        }
+        uintmax_t bsz = fs::exists(out_path) ? fs::file_size(out_path) : 0;
+        std::cout << "[Viss Create] Success: Linux binary created -> " << out_path << " (" << bsz << " bytes)\n";
+        return 0;
+#else
+        // Check if cross-compiler x86_64-linux-gnu-g++ is available on Windows
+        bool has_cross = (std::system("x86_64-linux-gnu-g++ --version > nul 2>&1") == 0);
+        if (has_cross) {
+            fs::path cpp_file = cache_dir / (stem + "_linux.cpp");
+            std::ofstream out(cpp_file); out << cpp_code; out.close();
+
+            std::string viss_root = getExecutableDir();
+            fs::path viss_parent = fs::path(viss_root).parent_path();
+            std::string inc_paths = "-I\"" + viss_root + "\" "
+                                  + "-I\"" + viss_parent.string() + "\" "
+                                  + "-I\"" + file_dir.string() + "\" -I. ";
+            fs::path err_log = cache_dir / "build_err.log";
+            std::string cmd = "x86_64-linux-gnu-g++ -std=c++20 -O3 -pipe -static -static-libgcc -static-libstdc++ -s "
+                            + inc_paths + "\"" + cpp_file.string() + "\" -o \"" + out_path + "\" -pthread -ldl"
+                            + " 2> \"" + err_log.string() + "\"";
+            std::cout << "[Viss Create] Cross-compiling standalone Linux ELF binary: " << out_path << "...\n";
+            int ret = std::system(cmd.c_str());
+            if (ret == 0 && fs::exists(out_path)) {
+                uintmax_t bsz = fs::file_size(out_path);
+                std::cout << "[Viss Create] Success: Standalone Linux binary created -> " << out_path << " (" << bsz << " bytes)\n";
+                return 0;
+            }
+        }
+
+        // Generate self-contained Linux distribution package
+        fs::path dist_dir = out_path.empty() ? (stem + "_linux_dist") : out_path;
+        if (fs::exists(dist_dir)) fs::remove_all(dist_dir);
+        fs::create_directories(dist_dir);
+
+        fs::path out_src = dist_dir / (stem + ".cpp");
+        std::ofstream src_f(out_src); src_f << cpp_code; src_f.close();
+
+        // Makefile
+        fs::path out_make = dist_dir / "Makefile";
+        std::ofstream make_f(out_make);
+        make_f << "CXX ?= g++\n"
+               << "CXXFLAGS ?= -std=c++20 -O3 -pipe -Wall -Wextra\n"
+               << "LDFLAGS ?= -pthread -ldl\n"
+               << "TARGET = " << stem << "\n"
+               << "SRC = " << stem << ".cpp\n\n"
+               << "all: $(TARGET)\n\n"
+               << "$(TARGET): $(SRC)\n"
+               << "\t$(CXX) $(CXXFLAGS) -static-libgcc -static-libstdc++ -s $(SRC) -o $(TARGET) $(LDFLAGS)\n\n"
+               << "clean:\n"
+               << "\trm -f $(TARGET)\n\n"
+               << "install:\n"
+               << "\tcp $(TARGET) /usr/local/bin/\n\n"
+               << ".PHONY: all clean install\n";
+        make_f.close();
+
+        // build.sh
+        fs::path out_sh = dist_dir / "build.sh";
+        std::ofstream sh_f(out_sh);
+        sh_f << "#!/usr/bin/env bash\n"
+             << "set -e\n"
+             << "echo \"[Viss] Compiling " << stem << " on Linux...\"\n"
+             << "g++ -std=c++20 -O3 -pipe -static-libgcc -static-libstdc++ -s " << stem << ".cpp -o " << stem << " -pthread -ldl\n"
+             << "chmod +x " << stem << "\n"
+             << "echo \"[Viss] Build completed successfully: ./" << stem << "\"\n";
+        sh_f.close();
+
+        // README.md
+        fs::path out_readme = dist_dir / "README.md";
+        std::ofstream rm_f(out_readme);
+        rm_f << "# " << stem << " (Linux Distribution)\n\n"
+             << "Generated by Viss Compiler v" << VERSION << " \"" << CODENAME << "\".\n\n"
+             << "## Build on Linux:\n"
+             << "```bash\n"
+             << "chmod +x build.sh\n"
+             << "./build.sh\n"
+             << "```\n"
+             << "Or using Make:\n"
+             << "```bash\n"
+             << "make\n"
+             << "./" << stem << "\n"
+             << "```\n";
+        rm_f.close();
+
+        std::cout << "[Viss Create] Linux distribution package generated: " << dist_dir.string() << "/\n"
+                  << "  -> Source: " << out_src.filename().string() << "\n"
+                  << "  -> Makefile & build.sh included for native 1-command build on Linux.\n";
+        return 0;
+#endif
+    }
+
+    // 3. APPLE / MACOS TARGET
+    if (target == "apple" || target == "macos" || target == "mac" || target == "darwin" || target == "app") {
+        fs::path app_bundle = out_path.empty() ? (stem + ".app") : out_path;
+        if (!endsWith(app_bundle.string(), ".app")) {
+            app_bundle += ".app";
+        }
+
+        fs::path contents_dir = app_bundle / "Contents";
+        fs::path macos_dir = contents_dir / "MacOS";
+        fs::path res_dir = contents_dir / "Resources";
+        fs::create_directories(macos_dir);
+        fs::create_directories(res_dir);
+
+        // Info.plist
+        fs::path plist_file = contents_dir / "Info.plist";
+        std::ofstream plist(plist_file);
+        plist << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+              << "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+              << "<plist version=\"1.0\">\n"
+              << "<dict>\n"
+              << "    <key>CFBundleExecutable</key>\n"
+              << "    <string>" << stem << "</string>\n"
+              << "    <key>CFBundleIdentifier</key>\n"
+              << "    <string>cc.horni.viss." << stem << "</string>\n"
+              << "    <key>CFBundleName</key>\n"
+              << "    <string>" << stem << "</string>\n"
+              << "    <key>CFBundleDisplayName</key>\n"
+              << "    <string>" << stem << "</string>\n"
+              << "    <key>CFBundlePackageType</key>\n"
+              << "    <string>APPL</string>\n"
+              << "    <key>CFBundleSignature</key>\n"
+              << "    <string>\?\?\?\?</string>\n"
+              << "    <key>CFBundleVersion</key>\n"
+              << "    <string>1.0.0</string>\n"
+              << "    <key>CFBundleShortVersionString</key>\n"
+              << "    <string>1.0.0</string>\n"
+              << "    <key>LSMinimumSystemVersion</key>\n"
+              << "    <string>10.15</string>\n"
+              << "    <key>NSHighResolutionCapable</key>\n"
+              << "    <true/>\n"
+              << "</dict>\n"
+              << "</plist>\n";
+        plist.close();
+
+        // Transpiled source inside app bundle
+        fs::path src_out = contents_dir / (stem + ".cpp");
+        std::ofstream src_f(src_out); src_f << cpp_code; src_f.close();
+
+        // macOS Build script
+        fs::path build_sh = app_bundle / "build_macos.sh";
+        std::ofstream bsh(build_sh);
+        bsh << "#!/usr/bin/env bash\n"
+            << "set -e\n"
+            << "DIR=\"$( cd \"$( dirname \"${BASH_SOURCE[0]}\" )\" >/dev/null 2>&1 && pwd )\"\n"
+            << "echo \"[Viss] Building macOS Mach-O executable for " << stem << "...\"\n"
+            << "clang++ -std=c++20 -O3 -pipe \\\n"
+            << "    \"$DIR/Contents/" << stem << ".cpp\" \\\n"
+            << "    -o \"$DIR/Contents/MacOS/" << stem << "\" \\\n"
+            << "    -framework Cocoa -framework IOKit -lpthread\n"
+            << "chmod +x \"$DIR/Contents/MacOS/" << stem << "\"\n"
+            << "echo \"[Viss] Done! Run with: open $DIR\"\n";
+        bsh.close();
+
+#ifdef __APPLE__
+        std::cout << "[Viss Create] Compiling native Mach-O executable for macOS...\n";
+        std::string clang_cmd = "clang++ -std=c++20 -O3 -pipe \"" + src_out.string() + "\" -o \"" + (macos_dir / stem).string() + "\" -framework Cocoa -framework IOKit -lpthread";
+        int c_ret = std::system(clang_cmd.c_str());
+        if (c_ret == 0) {
+            std::cout << "[Viss Create] Success: Native macOS .app bundle built: " << app_bundle.string() << "\n";
+            return 0;
+        }
+#endif
+
+        std::cout << "[Viss Create] Apple macOS application bundle created: " << app_bundle.string() << "/\n"
+                  << "  -> Bundle structure: Contents/Info.plist, Contents/MacOS/, Contents/Resources/\n"
+                  << "  -> Transpiled source and build_macos.sh included.\n";
+        return 0;
+    }
+
+    std::cerr << "[Viss Create Error] Unknown target '" << target << "'.\n"
+              << "Supported targets:\n"
+              << "  exe, windows, win    - Standalone Windows executable (.exe)\n"
+              << "  bin, linux, elf      - Standalone Linux ELF binary / package\n"
+              << "  apple, macos, mac    - macOS application bundle (.app)\n";
+    return 1;
+}
+
+// =============================================================================
+// 10. INTERACTIVE REPL
 // =============================================================================
 
 void runRepl();
@@ -3580,6 +3932,7 @@ void printHelp() {
     std::cout << "Viss Programming Language Compiler & Toolchain v" << VERSION << " \"" << CODENAME << "\" (Native)\n\n"
               << "Usage: viss [command] <file.viss> [options]\n\n"
               << "Commands:\n"
+              << "  create <target> <file>    Unified binary builder (targets: exe, bin, apple)\n"
               << "  exec <file.viss>          Direct native VM execution (instant 0ms, zero C++/g++ needed!)\n"
               << "  vm <file.viss>            Alias for 'exec'\n"
               << "  run <file.viss>           Transpile, compile, and execute with zero-overhead\n"
@@ -3596,10 +3949,14 @@ void printHelp() {
               << "  repl                      Start interactive Viss shell (or run 'viss' with no args)\n"
               << "  clean                     Remove cached binaries (.viss_cache/)\n"
               << "  version                   Print Viss version\n\n"
+              << "Targets for 'viss create':\n"
+              << "  exe, windows, win         Standalone Windows executable (.exe)\n"
+              << "  bin, linux, elf           Standalone Linux ELF binary or distribution package\n"
+              << "  apple, macos, mac         Standalone Apple macOS application bundle (.app)\n\n"
               << "Options:\n"
-              << "  -o <output.exe>           Specify output binary path\n"
-              << "  --gui, --windowed, -w     Build Windows GUI/windowed application (no console window)\n"
-              << "  --icon <icon.ico>         Embed application icon via Windows resource (.ico)\n";
+              << "  -o <output>               Specify output binary / bundle path\n"
+              << "  --gui, --windowed, -w     Build GUI/windowed application (no console window)\n"
+              << "  --icon <icon.ico>         Embed application icon via resource (.ico)\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -3618,6 +3975,10 @@ int main(int argc, char* argv[]) {
     if (cmd == "version" || cmd == "-v" || cmd == "--version") {
         std::cout << "Viss v" << VERSION << " \"" << CODENAME << "\" (Native Toolchain & VM)\n";
         return 0;
+    }
+
+    if (cmd == "create") {
+        return handleCreateCommand(argc, argv);
     }
 
     if (cmd == "pkg") {
@@ -3747,7 +4108,7 @@ int main(int argc, char* argv[]) {
 
         std::uintmax_t out_size = fs::file_size(out_exe);
         std::cout << "[Viss SFX] Standalone self-extracting installer created: " << out_exe
-                  << " (" << out_size << " bytes, zero dependencies) ^_^\n";
+                  << " (" << out_size << " bytes, zero dependencies)\n";
         return 0;
     }
 
@@ -3896,7 +4257,7 @@ int main(int argc, char* argv[]) {
         }
 
         uintmax_t bsz = fs::exists(out_exe) ? fs::file_size(out_exe) : 0;
-        std::cout << "[Viss Bundler] Standalone binary created: " << out_exe << " (" << bsz << " bytes, zero dependencies) ^_^\n";
+        std::cout << "[Viss Bundler] Standalone binary created: " << out_exe << " (" << bsz << " bytes, zero dependencies)\n";
         return 0;
     }
     if (cmd == "fmt") {
@@ -3954,7 +4315,7 @@ int main(int argc, char* argv[]) {
         if (!in.is_open()) { std::cerr << "Error: File '" << viss_file << "' not found.\n"; return 1; }
         std::stringstream buffer; buffer << in.rdbuf();
         transpile(buffer.str(), fs::path(viss_file).filename().string(), fs::absolute(fs::path(viss_file)).parent_path().string());
-        std::cout << "[Viss Checker] File '" << viss_file << "' syntax verified cleanly! ^_^\n";
+        std::cout << "[Viss Checker] File '" << viss_file << "' syntax verified cleanly.\n";
         return 0;
     } else if (cmd == "test") {
         std::string test_dir = (argc > 2) ? argv[2] : "tests";
@@ -4213,7 +4574,7 @@ int main(int argc, char* argv[]) {
 
 void runRepl() {
     std::cout << "\033[1;36m=================================================================\033[0m\n";
-    std::cout << "\033[1;36m  Viss v" << VERSION << " \"" << CODENAME << "\" Interactive REPL ^_^\033[0m\n";
+    std::cout << "\033[1;36m  Viss v" << VERSION << " \"" << CODENAME << "\" Interactive REPL\033[0m\n";
     std::cout << "  Real-time in-memory execution engine (0ms compile overhead)\n";
     std::cout << "  Type expressions or code. Commands: \033[33mhelp\033[0m, \033[33mvars\033[0m, \033[33mfuncs\033[0m, \033[33mclear\033[0m, \033[33mexit\033[0m\n";
     std::cout << "\033[1;36m=================================================================\033[0m\n\n";
@@ -4236,7 +4597,7 @@ void runRepl() {
 
         if (brace_depth == 0) {
             if (trimmed == "exit" || trimmed == "quit" || trimmed == "!exit" || trimmed == ":q") {
-                std::cout << "Bye! :3\n";
+                std::cout << "Exiting REPL.\n";
                 break;
             }
             if (trimmed == "clear" || trimmed == "!clear" || trimmed == "reset") {
@@ -4308,7 +4669,7 @@ void runRepl() {
                     if (!err_m.empty()) {
                         std::cerr << "[Viss REPL Error] " << err_m << "\n";
                     } else {
-                        std::cout << "[Viss REPL] Successfully loaded '" << fpath << "'. ^_^\n";
+                        std::cout << "[Viss REPL] Successfully loaded '" << fpath << "'.\n";
                     }
                 }
                 continue;
