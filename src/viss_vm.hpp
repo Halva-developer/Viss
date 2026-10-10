@@ -544,7 +544,7 @@ public:
         }
         if (is_num) {
             if (has_dot) return VMVal(std::stod(expr));
-            return VMVal(std::stoll(expr));
+            return VMVal((int64_t)std::stoll(expr));
         }
 
         // Method calls on expressions or variables: obj.method(args) or obj.property

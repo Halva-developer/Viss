@@ -14,7 +14,7 @@
 #include <netdb.h>
 #define SOCKET int
 #define INVALID_SOCKET -1
-#define closesocket close
+#define closesocket ::close
 #endif
 
 #include <sstream>
@@ -111,7 +111,94 @@ namespace viss {
             InternetCloseHandle(hInternet);
             return response;
 #else
-            return "";
+            g_last_status_code = 0;
+            std::string s_url = url;
+            std::string proto = "http";
+            std::string host = "";
+            int port = 80;
+            std::string path = "/";
+
+            size_t p_pos = s_url.find("://");
+            size_t rest_start = 0;
+            if (p_pos != std::string::npos) {
+                proto = s_url.substr(0, p_pos);
+                rest_start = p_pos + 3;
+            }
+            size_t slash_pos = s_url.find('/', rest_start);
+            std::string host_port = "";
+            if (slash_pos != std::string::npos) {
+                host_port = s_url.substr(rest_start, slash_pos - rest_start);
+                path = s_url.substr(slash_pos);
+            } else {
+                host_port = s_url.substr(rest_start);
+            }
+            size_t colon_pos = host_port.find(':');
+            if (colon_pos != std::string::npos) {
+                host = host_port.substr(0, colon_pos);
+                port = std::atoi(host_port.substr(colon_pos + 1).c_str());
+            } else {
+                host = host_port;
+                port = (proto == "https") ? 443 : 80;
+            }
+
+            struct addrinfo hints = {}, *res = nullptr;
+            hints.ai_family = AF_INET;
+            hints.ai_socktype = SOCK_STREAM;
+            std::string port_str = std::to_string(port);
+            if (getaddrinfo(host.c_str(), port_str.c_str(), &hints, &res) != 0 || !res) {
+                return "";
+            }
+            int s = ::socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+            if (s < 0) { freeaddrinfo(res); return ""; }
+
+            struct timeval tv = { 5, 0 };
+            setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+            setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+
+            if (::connect(s, res->ai_addr, res->ai_addrlen) != 0) {
+                ::close(s); freeaddrinfo(res); return "";
+            }
+            freeaddrinfo(res);
+
+            std::ostringstream req;
+            req << method << " " << path << " HTTP/1.1\r\n"
+                << "Host: " << host << "\r\n"
+                << "User-Agent: Viss-Net/2.0\r\n"
+                << "Connection: close\r\n";
+            if (!body.empty()) {
+                req << "Content-Length: " << body.size() << "\r\n";
+            }
+            if (!headers.empty()) {
+                req << headers;
+                if (headers.find("\r\n") == std::string::npos) req << "\r\n";
+            }
+            req << "\r\n";
+            if (!body.empty()) req << body;
+
+            std::string req_str = req.str();
+            ::send(s, req_str.data(), req_str.size(), 0);
+
+            std::string resp;
+            char buf[4096];
+            ssize_t n;
+            while ((n = ::recv(s, buf, sizeof(buf), 0)) > 0) {
+                resp.append(buf, n);
+            }
+            ::close(s);
+
+            auto header_end = resp.find("\r\n\r\n");
+            if (header_end != std::string::npos) {
+                auto status_line_end = resp.find("\r\n");
+                if (status_line_end != std::string::npos) {
+                    std::string status_line = resp.substr(0, status_line_end);
+                    auto p1 = status_line.find(' ');
+                    if (p1 != std::string::npos) {
+                        g_last_status_code = std::atoi(status_line.c_str() + p1 + 1);
+                    }
+                }
+                return resp.substr(header_end + 4);
+            }
+            return resp;
 #endif
         }
 
@@ -570,6 +657,19 @@ namespace viss {
             void stop() {
                 if (is_running) {
                     is_running = false;
+                    #ifndef _WIN32
+                    if (server_port > 0) {
+                        int dummy = ::socket(AF_INET, SOCK_STREAM, 0);
+                        if (dummy >= 0) {
+                            struct sockaddr_in daddr = {};
+                            daddr.sin_family = AF_INET;
+                            daddr.sin_port = htons((u_short)server_port);
+                            inet_pton(AF_INET, "127.0.0.1", &daddr.sin_addr);
+                            ::connect(dummy, (struct sockaddr*)&daddr, sizeof(daddr));
+                            ::close(dummy);
+                        }
+                    }
+                    #endif
                     if (server_sock != INVALID_SOCKET) {
                         closesocket(server_sock);
                         server_sock = INVALID_SOCKET;

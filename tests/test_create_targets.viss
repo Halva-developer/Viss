@@ -16,7 +16,7 @@ $import lib "sys" as sys
     // 1. Test 'viss create exe'
     io.println("Testing 'viss create exe'...");
     sys.command("viss create exe tests/temp_create_dummy.viss -o tests/dummy_app.exe");
-    @exe_exists = fs.exists("tests/dummy_app.exe");
+    @exe_exists = fs.exists("tests/dummy_app.exe") || fs.exists("tests/dummy_app_win_dist");
     io.println("  exe created: ", @exe_exists);
 
     // 2. Test 'viss create bin'
@@ -35,6 +35,9 @@ $import lib "sys" as sys
     fs.remove(@temp_viss);
     ?if fs.exists("tests/dummy_app.exe") {
         fs.remove("tests/dummy_app.exe");
+    }
+    ?if fs.exists("tests/dummy_app_win_dist") {
+        fs.remove_all("tests/dummy_app_win_dist");
     }
     ?if fs.exists("tests/dummy_linux_pkg") {
         fs.remove_all("tests/dummy_linux_pkg");

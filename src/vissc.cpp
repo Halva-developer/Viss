@@ -78,23 +78,25 @@ std::vector<std::string> splitByChar(const std::string& s, char delim) {
 }
 
 // Find compiler executable
-std::string getExecutableDir() {
+std::string getExecutablePath() {
 #ifdef _WIN32
     char path[MAX_PATH];
     GetModuleFileNameA(NULL, path, MAX_PATH);
-    std::string p(path);
-    size_t pos = p.find_last_of("\\/");
-    return (pos != std::string::npos) ? p.substr(0, pos) : ".";
+    return std::string(path);
 #else
     char path[1024];
     ssize_t count = readlink("/proc/self/exe", path, 1024);
     if (count != -1) {
-        std::string p(path, count);
-        size_t pos = p.find_last_of("/");
-        return (pos != std::string::npos) ? p.substr(0, pos) : ".";
+        return std::string(path, count);
     }
-    return ".";
+    return "viss";
 #endif
+}
+
+std::string getExecutableDir() {
+    std::string p = getExecutablePath();
+    size_t pos = p.find_last_of("\\/");
+    return (pos != std::string::npos) ? p.substr(0, pos) : ".";
 }
 
 std::string findCompiler() {
@@ -3665,6 +3667,30 @@ int handleCreateCommand(int argc, char* argv[]) {
         if (GetEnvironmentVariableA("PATH", p_buf, sizeof(p_buf))) orig_path = p_buf;
         std::string new_path = cxx_dir.string() + ";" + orig_path;
         SetEnvironmentVariableA("PATH", new_path.c_str());
+#else
+        bool has_mingw = (std::system("x86_64-w64-mingw32-g++ --version > /dev/null 2>&1") == 0);
+        if (!has_mingw) {
+            fs::path dist_dir = out_path.empty() ? (stem + "_win_dist") : out_path;
+            if (dist_dir.extension() == ".exe") dist_dir = dist_dir.stem().string() + "_win_dist";
+            if (fs::exists(dist_dir)) fs::remove_all(dist_dir);
+            fs::create_directories(dist_dir);
+
+            fs::path out_src = dist_dir / (stem + ".cpp");
+            std::ofstream src_f(out_src); src_f << cpp_code; src_f.close();
+
+            fs::path out_bat = dist_dir / "build.bat";
+            std::ofstream bat_f(out_bat);
+            bat_f << "@echo off\r\n"
+                  << "echo [Viss] Compiling " << stem << " on Windows...\r\n"
+                  << "g++ -std=c++20 -O3 -pipe -static -static-libgcc -static-libstdc++ -s " << stem << ".cpp -o " << stem << ".exe -lwinmm -lws2_32 -lwininet -lgdi32 -lgdiplus -lcomdlg32 -lole32 -loleaut32 -luuid -lshell32\r\n"
+                  << "echo [Viss] Build completed: " << stem << ".exe\r\n";
+            bat_f.close();
+
+            std::cout << "[Viss Create] Windows distribution package generated: " << dist_dir.string() << "/\n"
+                      << "  -> Source: " << out_src.filename().string() << "\n"
+                      << "  -> build.bat included for native 1-command build on Windows.\n";
+            return 0;
+        }
 #endif
 
         fs::path err_log = cache_dir / "build_err.log";
@@ -3673,7 +3699,15 @@ int handleCreateCommand(int argc, char* argv[]) {
                               + "-I\"" + file_dir.string() + "\" "
                               + "-I. ";
 
-        std::string cmd = "g++ -std=c++20 -O3 -pipe -static -static-libgcc -static-libstdc++ -s "
+#ifdef _WIN32
+        std::string win_cxx = "g++";
+        std::string win_rc = "windres";
+#else
+        std::string win_cxx = "x86_64-w64-mingw32-g++";
+        std::string win_rc = "x86_64-w64-mingw32-windres";
+#endif
+
+        std::string cmd = win_cxx + " -std=c++20 -O3 -pipe -static -static-libgcc -static-libstdc++ -s "
                         + inc_paths
                         + "\"" + cpp_file.string() + "\" "
                         + "-o \"" + out_path + "\"";
@@ -3693,7 +3727,7 @@ int handleCreateCommand(int argc, char* argv[]) {
             std::ofstream rcf(rc_path);
             rcf << "1 ICON \"" << ico_fwd << "\"\n";
             rcf.close();
-            std::string wr_cmd = "windres -i \"" + rc_path.string() + "\" -o \"" + res_obj.string() + "\" -O coff";
+            std::string wr_cmd = win_rc + " -i \"" + rc_path.string() + "\" -o \"" + res_obj.string() + "\" -O coff";
             if (std::system(wr_cmd.c_str()) == 0 && fs::exists(res_obj)) {
                 cmd += " \"" + res_obj.string() + "\"";
             }
@@ -4353,7 +4387,7 @@ int main(int argc, char* argv[]) {
             std::cout << "Running " << tf.filename().string() << "... " << std::flush;
             auto t0 = std::chrono::steady_clock::now();
 
-            std::string self_exe = fs::absolute(argv[0]).string();
+            std::string self_exe = getExecutablePath();
 #ifdef _WIN32
             std::string run_cmd = "\"\"" + self_exe + "\" run \"" + tpath + "\"\"";
 #else

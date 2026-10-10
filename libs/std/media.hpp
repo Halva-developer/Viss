@@ -20,6 +20,10 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+inline uint32_t get_current_pid() { return (uint32_t)GetCurrentProcessId(); }
+#else
+#include <unistd.h>
+inline uint32_t get_current_pid() { return (uint32_t)getpid(); }
 #endif
 
 namespace viss {
@@ -1006,7 +1010,7 @@ inline bool render_video(const std::string& audio_path, const std::string& cover
     std::string cmd = "";
 
     if (use_blur_bg && fs::exists(actual_cover)) {
-        temp_blur_bg = fs::temp_directory_path() / ("viss_bg_blur_" + std::to_string(GetCurrentProcessId()) + "_" + std::to_string(rand()) + ".jpg");
+        temp_blur_bg = fs::temp_directory_path() / ("viss_bg_blur_" + std::to_string(get_current_pid()) + "_" + std::to_string(rand()) + ".jpg");
         std::string pre_blur_cmd = "\"" + ffmpeg + "\" -y -i \"" + actual_cover + "\" -vf \"scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=25:20\" -frames:v 1 \"" + temp_blur_bg.string() + "\"";
         run_process_silent(pre_blur_cmd);
     }
@@ -1176,11 +1180,7 @@ inline bool start_render_video(const std::string& audio_path, const std::string&
 
         fs::path temp_dir = fs::temp_directory_path();
         static std::atomic<uint64_t> s_counter{1};
-#ifdef _WIN32
-        DWORD pid = GetCurrentProcessId();
-#else
-        uint32_t pid = 1;
-#endif
+        uint32_t pid = get_current_pid();
         state.progress_file = (temp_dir / ("viss_prog_" + std::to_string(pid) + "_" + std::to_string(s_counter++) + ".txt")).string();
         if (fs::exists(state.progress_file)) {
             std::error_code ec;
@@ -1222,7 +1222,7 @@ inline bool start_render_video(const std::string& audio_path, const std::string&
         std::string cmd = "";
 
         if (use_blur_bg && fs::exists(actual_cover)) {
-            temp_blur_bg = fs::temp_directory_path() / ("viss_bg_blur_" + std::to_string(GetCurrentProcessId()) + "_" + std::to_string(rand()) + ".jpg");
+            temp_blur_bg = fs::temp_directory_path() / ("viss_bg_blur_" + std::to_string(get_current_pid()) + "_" + std::to_string(rand()) + ".jpg");
             std::string pre_blur_cmd = "\"" + ffmpeg + "\" -y -i \"" + actual_cover + "\" -vf \"scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=25:20\" -frames:v 1 \"" + temp_blur_bg.string() + "\"";
             run_process_silent(pre_blur_cmd);
         }
