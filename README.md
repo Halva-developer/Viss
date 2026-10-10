@@ -328,6 +328,13 @@ viss pkg list                              # List installed packages
 viss pkg server <url|none>                 # Configure package registry endpoint
 viss pkg init [name]                       # Initialize new package manifest
 
+# Self-Updater:
+viss update                                 # Automatically update Viss compiler & stdlib from GitHub
+viss update --check                         # Check if newer version is available without installing
+viss update --force                         # Force reinstall / upgrade
+viss update --source                        # Build and install directly from Git source
+viss update dev                             # Update directly from development branch
+
 # Toolchain, Diagnostics & Bundling:
 viss check app.viss                        # Fast syntax validator and linter
 viss fmt [--check] app.viss                # Format source code to canonical style

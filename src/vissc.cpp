@@ -99,6 +99,8 @@ std::string getExecutableDir() {
     return (pos != std::string::npos) ? p.substr(0, pos) : ".";
 }
 
+#include "viss_update.hpp"
+
 std::string findCompiler() {
     std::string candidate = "C:\\AGY\\TOOLS\\w64devkit\\bin\\g++.exe";
     if (fs::exists(candidate)) return candidate;
@@ -3978,6 +3980,7 @@ void printHelp() {
               << "  transpile <file.viss>     Emit clean C++17 source code\n"
               << "  check <file.viss>         Fast syntax validator and linter\n"
               << "  fmt [--check] <file.viss> Format Viss source code to canonical style\n"
+              << "  update [options]          Self-update Viss compiler & stdlib from GitHub\n"
               << "  pkg <action>              Package manager (install, purge, update, upgrade, list, server, init)\n"
               << "  lsp                       Start Language Server Protocol (LSP) daemon for IDEs\n"
               << "  repl                      Start interactive Viss shell (or run 'viss' with no args)\n"
@@ -3987,6 +3990,11 @@ void printHelp() {
               << "  exe, windows, win         Standalone Windows executable (.exe)\n"
               << "  bin, linux, elf           Standalone Linux ELF binary or distribution package\n"
               << "  apple, macos, mac         Standalone Apple macOS application bundle (.app)\n\n"
+              << "Options for 'viss update':\n"
+              << "  --check, -c               Check for updates without installing\n"
+              << "  --force, -f               Reinstall / update even if already up-to-date\n"
+              << "  --source, -s              Build and install directly from Git source\n"
+              << "  --branch <branch>         Update from specific Git branch (e.g. dev)\n\n"
               << "Options:\n"
               << "  -o <output>               Specify output binary / bundle path\n"
               << "  --gui, --windowed, -w     Build GUI/windowed application (no console window)\n"
@@ -4009,6 +4017,10 @@ int main(int argc, char* argv[]) {
     if (cmd == "version" || cmd == "-v" || cmd == "--version") {
         std::cout << "Viss v" << VERSION << " \"" << CODENAME << "\" (Native Toolchain & VM)\n";
         return 0;
+    }
+
+    if (cmd == "update" || cmd == "self-update" || cmd == "upgrade") {
+        return viss::updater::runUpdateCommand(argc, argv);
     }
 
     if (cmd == "create") {

@@ -278,7 +278,9 @@ namespace viss {
             InternetCloseHandle(hInternet);
             return true;
 #else
-            return false;
+            std::string cmd = "curl -s -L -A \"Viss-Net/2.0\" -o \"" + destinationPath + "\" \"" + url + "\"";
+            int ret = std::system(cmd.c_str());
+            return (ret == 0 && std::filesystem::exists(destinationPath) && std::filesystem::file_size(destinationPath) > 0);
 #endif
         }
 
