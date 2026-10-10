@@ -362,5 +362,54 @@
       "}"
     ],
     "description": "Render high-resolution MP4 video from audio and cover art"
+  },
+  "Embedded SQLite Database": {
+    "prefix": "dbapp",
+    "body": [
+      "$import lib \"db\" as db",
+      "",
+      "!main {",
+      "    @conn = db.open(\"${1:app.db}\");",
+      "    db.exec(@conn, \"CREATE TABLE IF NOT EXISTS users (id INT PRIMARY KEY, name STR, email STR);\");",
+      "    db.exec(@conn, \"INSERT INTO users (id, name, email) VALUES (1, 'Alice', 'alice@viss.lang');\");",
+      "    @rows = db.query(@conn, \"SELECT * FROM users;\");",
+      "    io.println(db.to_json(@rows));",
+      "    db.close(@conn);",
+      "}"
+    ],
+    "description": "Embedded SQL Database boilerplate (SQLite-compatible)"
+  },
+  "HTTP Web Server": {
+    "prefix": "netserver",
+    "body": [
+      "$import lib \"net\" as net",
+      "",
+      "!main {",
+      "    @srv = net.create_server();",
+      "    @srv.get(\"/\", !func(@req, @res) {",
+      "        @res.send(\"<h1>Hello from Viss v0.3.0!</h1>\");",
+      "    });",
+      "    @srv.get(\"/api/status\", !func(@req, @res) {",
+      "        @res.json(\"{\\\"status\\\": \\\"ok\\\", \\\"lang\\\": \\\"viss\\\"}\");",
+      "    });",
+      "    io.println(\"Server running on http://127.0.0.1:${1:8080}\");",
+      "    @srv.listen(${1:8080});",
+      "}"
+    ],
+    "description": "High-performance embedded HTTP Web Server"
+  },
+  "Channel Concurrency": {
+    "prefix": "chanapp",
+    "body": [
+      "$import lib \"chan\" as chan",
+      "",
+      "!main {",
+      "    @ch = chan.create<str>(${1:10});",
+      "    chan.send(@ch, \"Message from thread\");",
+      "    @msg = chan.recv(@ch);",
+      "    io.println(@msg);",
+      "}"
+    ],
+    "description": "Thread-safe message passing channel"
   }
 }

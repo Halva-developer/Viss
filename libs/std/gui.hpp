@@ -1166,6 +1166,181 @@ public:
         return text;
     }
 };
+#else // POSIX / Linux / macOS Portable WindowApp Implementation
+
+class WindowApp {
+private:
+    int win_width = 800;
+    int win_height = 600;
+    int design_width = 800;
+    int design_height = 600;
+    bool autoscale = true;
+    std::string win_title = "Viss Window (POSIX)";
+    bool running = false;
+
+    int m_x = 0;
+    int m_y = 0;
+    bool m_down = false;
+    bool m_clicked = false;
+    bool keys[256] = {false};
+    bool keys_pressed[256] = {false};
+    std::string active_input_id = "";
+    std::string dropped_file_path = "";
+    std::chrono::steady_clock::time_point last_frame_time;
+
+    // Portable offscreen buffer (RGBA)
+    std::vector<uint32_t> framebuffer;
+
+public:
+    WindowApp() : last_frame_time(std::chrono::steady_clock::now()) {}
+
+    bool create(const std::string& title, int w = 800, int h = 600) {
+        win_title = title;
+        win_width = w;
+        win_height = h;
+        design_width = w;
+        design_height = h;
+        framebuffer.assign(w * h, 0xFF0F172A);
+        running = true;
+        std::cout << "[Viss GUI Engine] Initialized window: '" << win_title << "' (" << w << "x" << h << ")\n";
+        return true;
+    }
+
+    bool is_open() const { return running; }
+    void close() { running = false; }
+
+    bool poll_events() {
+        if (!running) return false;
+        // Throttle frame to ~60 FPS
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_frame_time).count();
+        if (elapsed < 16) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(16 - elapsed));
+        }
+        last_frame_time = std::chrono::steady_clock::now();
+        m_clicked = false;
+        std::fill(std::begin(keys_pressed), std::end(keys_pressed), false);
+        return running;
+    }
+
+    void clear(Color c = Colors::DarkBg) {
+        uint32_t val = (c.a << 24) | (c.r << 16) | (c.g << 8) | c.b;
+        std::fill(framebuffer.begin(), framebuffer.end(), val);
+    }
+
+    void update() {
+        // Frame present logic
+    }
+
+    int width() const { return autoscale ? design_width : win_width; }
+    int height() const { return autoscale ? design_height : win_height; }
+    int actual_width() const { return win_width; }
+    int actual_height() const { return win_height; }
+    void set_design_size(int w, int h) { design_width = w; design_height = h; }
+    void set_autoscale(bool s) { autoscale = s; }
+    void set_icon(const std::string& ico) {}
+
+    int mouse_x() const { return m_x; }
+    int mouse_y() const { return m_y; }
+    bool mouse_down() const { return m_down; }
+    bool mouse_clicked() const { return m_clicked; }
+    bool key_down(int vk) const { return (vk >= 0 && vk < 256) ? keys[vk] : false; }
+    bool key_pressed(int vk) const { return (vk >= 0 && vk < 256) ? keys_pressed[vk] : false; }
+
+    void draw_rect(int x, int y, int w, int h, Color c, bool fill = true) {}
+    void draw_round_rect(int x, int y, int w, int h, int r, Color c, bool fill = true, Color border = Colors::PanelBorder, int border_w = 0) {}
+    void draw_circle(int cx, int cy, int r, Color c, bool fill = true) {}
+    void draw_line(int x1, int y1, int x2, int y2, Color c, int w = 1) {}
+    void draw_triangle(int x1, int y1, int x2, int y2, int x3, int y3, Color c, bool fill = true, Color border = Color(0,0,0,0), int border_w = 0) {}
+    void draw_quad(int x1, int y1, int x2, int y2, int x3, int y3, int x4, int y4, Color c, bool fill = true, Color border = Color(0,0,0,0), int border_w = 0) {}
+    void draw_text(int x, int y, const std::string& text, int size) {}
+    void draw_text(int x, int y, const std::string& text, Color c = Colors::TextLight, int size = 14) {}
+    void draw_text(int x, int y, const std::string& text, Color c, int size, const std::string& font_name, bool bold = false) {}
+    void draw_image(int x, int y, int w, int h, const std::string& path) {}
+
+    bool button(int x, int y, int w, int h, const std::string& label, Color bg = Colors::PanelBg, Color text = Colors::TextLight, int radius = 4, int font_size = 12, bool bold = true) {
+        return false;
+    }
+
+    void label(int x, int y, const std::string& text, int size) {}
+    void label(int x, int y, const std::string& text, Color c = Colors::TextLight, int size = 14, bool bold = false) {}
+    void card(int x, int y, int w, int h, Color bg = Colors::PanelBg, Color border = Colors::PanelBorder, int radius = 6) {}
+    void card_group(int x, int y, int w, int h, const std::string& title, Color bg = Colors::PanelBg, Color border = Colors::PanelBorder) {}
+
+    std::string open_file(const std::string& title = "Select File") {
+        #ifdef __APPLE__
+        FILE* fp = popen("osascript -e 'POSIX path of (choose file with prompt \"Select File\")' 2>/dev/null", "r");
+        #else
+        FILE* fp = popen("zenity --file-selection 2>/dev/null || kdialog --getopenfilename . 2>/dev/null", "r");
+        #endif
+        if (!fp) return "";
+        char buf[1024];
+        std::string res;
+        if (fgets(buf, sizeof(buf), fp)) res = buf;
+        pclose(fp);
+        while (!res.empty() && (res.back() == '\n' || res.back() == '\r')) res.pop_back();
+        return res;
+    }
+
+    std::string browse_folder(const std::string& title = "Select Folder:") {
+        #ifdef __APPLE__
+        FILE* fp = popen("osascript -e 'POSIX path of (choose folder with prompt \"Select Folder\")' 2>/dev/null", "r");
+        #else
+        FILE* fp = popen("zenity --file-selection --directory 2>/dev/null || kdialog --getexistingdirectory . 2>/dev/null", "r");
+        #endif
+        if (!fp) return "";
+        char buf[1024];
+        std::string res;
+        if (fgets(buf, sizeof(buf), fp)) res = buf;
+        pclose(fp);
+        while (!res.empty() && (res.back() == '\n' || res.back() == '\r')) res.pop_back();
+        return res;
+    }
+
+    std::string get_dropped_file() { return dropped_file_path; }
+    bool checkbox(int x, int y, const std::string& text, bool& checked) { return false; }
+    void progress_bar(int x, int y, int w, int h, double percent, Color fill = Colors::AccentCyan) {}
+
+    template<typename T>
+    T slider(int x, int y, int w, int h, T& val, T min_v, T max_v, const std::string& title = "") {
+        return val;
+    }
+
+    std::string text_input(int x, int y, int w, int h, const std::string& id, std::string& text, const std::string& placeholder = "") {
+        return text;
+    }
+
+    std::string textarea(int x, int y, int w, int h, const std::string& id, std::string& text, const std::string& placeholder = "") {
+        return text;
+    }
+
+    std::string get_clipboard_text() {
+        #ifdef __APPLE__
+        FILE* fp = popen("pbpaste 2>/dev/null", "r");
+        #else
+        FILE* fp = popen("xclip -selection clipboard -o 2>/dev/null || wl-paste 2>/dev/null", "r");
+        #endif
+        if (!fp) return "";
+        char buf[1024];
+        std::string res;
+        while (fgets(buf, sizeof(buf), fp)) res += buf;
+        pclose(fp);
+        return res;
+    }
+
+    void set_clipboard_text(const std::string& text) {
+        #ifdef __APPLE__
+        FILE* fp = popen("pbcopy 2>/dev/null", "w");
+        #else
+        FILE* fp = popen("xclip -selection clipboard 2>/dev/null || wl-copy 2>/dev/null", "w");
+        #endif
+        if (fp) {
+            fputs(text.c_str(), fp);
+            pclose(fp);
+        }
+    }
+};
+#endif // _WIN32
 
 inline WindowApp& getApp() {
     static WindowApp app;
@@ -1269,8 +1444,6 @@ inline std::string get_clipboard() {
 inline void set_clipboard(const std::string& text) {
     getApp().set_clipboard_text(text);
 }
-
-#endif
 
 } // namespace gui
 } // namespace viss

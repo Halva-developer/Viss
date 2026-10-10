@@ -105,6 +105,17 @@ namespace viss {
                 return obj_val.find(key) != obj_val.end();
             }
 
+            inline Bool contains(const Str& key) const { return has(key); }
+            inline Bool contains(const char* key) const { return has(Str(key)); }
+
+            inline Str to_str() const { return as_str(); }
+            inline Int to_int() const { return as_int(); }
+            inline Dec to_dec() const { return as_dec(); }
+            inline Bool to_bool() const { return as_bool(); }
+            static JsonValue object() { JsonValue v; v.type = JsonType::Object; return v; }
+            static JsonValue array() { JsonValue v; v.type = JsonType::Array; return v; }
+            inline Str stringify(int indent = 0) const;
+
             inline List<Str> keys() const {
                 List<Str> kList;
                 if (type == JsonType::Object) {
@@ -121,7 +132,6 @@ namespace viss {
             }
 
             inline JsonValue& operator[](const Str& key) {
-
                 if (type != JsonType::Object) {
                     type = JsonType::Object;
                     arr_val.clear();
@@ -135,6 +145,14 @@ namespace viss {
                 auto it = obj_val.find(key);
                 if (it != obj_val.end()) return it->second;
                 return nullVal;
+            }
+
+            inline JsonValue& operator[](const char* key) {
+                return (*this)[Str(key)];
+            }
+
+            inline const JsonValue& operator[](const char* key) const {
+                return (*this)[Str(key)];
             }
 
             inline JsonValue& operator[](Int index) {
@@ -212,6 +230,10 @@ namespace viss {
 
         inline Str pretty(const JsonValue& v) {
             return stringify(v, true, 0);
+        }
+
+        inline Str JsonValue::stringify(int indent) const {
+            return json::stringify(*this, indent > 0, indent);
         }
 
         // --- Parser ---
@@ -368,6 +390,25 @@ namespace viss {
             }
             ss << "]";
             return ss.str();
+        }
+
+        inline Str escape(const Str& s) {
+            std::ostringstream o;
+            for (char c : s) {
+                if (c == '"') o << "\\\"";
+                else if (c == '\\') o << "\\\\";
+                else if (c == '\b') o << "\\b";
+                else if (c == '\f') o << "\\f";
+                else if (c == '\n') o << "\\n";
+                else if (c == '\r') o << "\\r";
+                else if (c == '\t') o << "\\t";
+                else if ((unsigned char)c < ' ') {
+                    o << "\\u" << std::hex << std::setw(4) << std::setfill('0') << (int)(unsigned char)c;
+                } else {
+                    o << c;
+                }
+            }
+            return o.str();
         }
 
         inline Str toStr(const JsonValue& v) {

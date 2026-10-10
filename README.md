@@ -5,7 +5,7 @@
 # Viss Programming Language
 ### The High-Performance, Visually Structured Language for Everyday Development & Systems
 
-[![Version](https://img.shields.io/badge/version-v0.2.2%20%22Prismo%20%26%20Cosmic%20Owl%22-blue.svg)](https://github.com/Halva-developer/Viss)
+[![Version](https://img.shields.io/badge/version-v0.3.0%20%22Peppermint%20Butler%22-blue.svg)](https://github.com/Halva-developer/Viss)
 [![License](https://img.shields.io/badge/license-UniLicense-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-orange.svg)](https://github.com/Halva-developer/Viss)
 [![Standard](https://img.shields.io/badge/standard-Viss%202.0-purple.svg)](https://github.com/Halva-developer/Viss)
@@ -39,7 +39,8 @@ Following the beloved Debian tradition with *Toy Story*, Viss codenames each off
 | `v0.1.2` | **"BMO"** | BMO | Retro-tech audio synthesizer, pixel screen buffer, and sound chip. |
 | `v0.2.0` | **"Marceline"** | Marceline the Vampire Queen | Struct member methods, enums, `Vec2`/`Vec3` vector math, pipelines (`\|>`), Elvis (`?:`), `!defer`, and complete handbook specs. |
 | `v0.2.1` | **"Hambo"** | Hambo | Dynamic auto-lists, Map/Dict literals (`{}`), range slicing (`..`), `in`/`!in` membership operators, tuple unpacking, native `!async`/`!await`, string kinds (`r""`, `b""`, `""""""`), `fs.glob`, `json.loads`/`dumps`, pure native C++ runtime. |
-| `v0.2.2` | **"Prismo & Cosmic Owl"** | Prismo & Cosmic Owl | **Current Release:** Flexible typed function parameters (`@name: str`, `name as str`), single-quoted string literals (`'...'`), clean compiler diagnostics, cross-platform Linux & macOS `Makefile`, universal `install.sh`, Debian (`.deb`), portable `.tar.gz`, AppImage builder, autonomous Windows installer (`Setup_Viss.exe`), and VS Code extension v0.3.2. |
+| `v0.2.2` | **"Prismo & Cosmic Owl"** | Prismo & Cosmic Owl | Flexible typed function parameters, single-quoted string literals (`'...'`), human compiler diagnostics, Linux & macOS toolchain (`Makefile`, `.deb`, `.tar.gz`, `install.sh`, AppImage), autonomous Windows installer (`Setup_Viss.exe`). |
+| `v0.3.0` | **"Peppermint Butler"** | Peppermint Butler | **Current Release:** Official Package Manager (`viss pkg`), Cross-Platform GUI (`libs/std/gui.hpp`), Native Language Server Protocol (`viss lsp`), Embedded SQLite Relational Database (`libs/std/db.hpp`), Multi-Threaded HTTP Web Server (`libs/std/net.hpp`), Go-Style Concurrency Channels (`libs/std/chan.hpp`), Independent Native Execution Engine (`viss vm`), and VS Code Extension v0.4.0. |
 
 ---
 
@@ -301,7 +302,7 @@ $import lib "iostream" as io  // Import console I/O
 
 ## CLI Usage & Toolchain
 
-The Viss toolchain provides subcommands for compilation, instant execution, and syntax diagnostics:
+The Viss toolchain provides subcommands for compilation, instant execution, package management, language server, and syntax diagnostics:
 
 ```bash
 # Check syntax and diagnostics:
@@ -313,8 +314,26 @@ viss compile oldgame.viss
 # Compile and immediately run:
 viss run oldgame.viss
 
-# Initialize a new Viss project:
-viss init my_game
+# Run directly via native VissVM (no C++ compiler needed):
+viss vm script.viss
+
+# Package Manager (Peppermint Butler v0.3.0):
+viss pkg install <package-name|git-url> [-g|--global]
+viss pkg purge <package-name>
+viss pkg update
+viss pkg upgrade
+viss pkg list
+viss pkg server <start|status> [-port 8080]
+viss pkg init [project-name]
+
+# Language Server Protocol (LSP daemon for editors):
+viss lsp
+
+# Bundle standalone zero-dependency executable:
+viss bundle oldgame.viss -o MyGame.exe
+
+# Interactive Read-Eval-Print Loop:
+viss repl
 
 # Display toolchain version & architecture:
 viss version
@@ -325,6 +344,11 @@ viss version
 ## Standard Library Modules (`libs/std`)
 
 * **`iostream` (`io`)**: Formatted variadic console I/O, truecolor ANSI, cursor control, interactive single-key input (`io.read_char()`), file I/O.
+* **`db`**: Embedded SQLite-compatible relational database with transactional ACID guarantees, persistence, and JSON serialization (`db.open`, `db.exec`, `db.query`, `db.to_json`, `db.close`).
+* **`net`**: High-performance multi-threaded HTTP Web Server and client (`net.create_server`, `@srv.get`, `@srv.post`, `@srv.listen`, `net.http_get`, `net.http_post`).
+* **`chan`**: Go-style thread-safe buffered and unbuffered concurrency channels (`chan.create<T>`, `chan.send`, `chan.recv`, `chan.try_recv`, `chan.close`).
+* **`gui`**: Cross-platform hardware-accelerated GUI and software rasterizer with identical API across Windows (GDI+), Linux, and macOS.
+* **`audio` / `media`**: SFX sound effects, synth waveforms, background music playback, and ID3/Vorbis/FLAC metadata tagging.
 * **`retrotech` (`rt`)**: Virtual retro graphics display engine (`DrawRawPixels`, `ColorScreen`, `UpdateScreen`), palette modulation, system sound (`Beep`).
 * **`system` (`sys`)**: Process spawning (`sys.command`, `sys.exec`), environment variables (`sys.env`), CPU core detection (`sys.cpu_count`), OS detection (`sys.os`).
 * **`fs`**: File system manipulation (`read_bytes`, `write_bytes`, `exists`, `mkdir`, `list_dir`, `size`, `remove`).
@@ -337,13 +361,14 @@ viss version
 
 ## VS Code Extension (`viss-vscode`)
 
-Viss features a complete Visual Studio Code extension located in `.vscode/extensions/viss-vscode`:
-* **Syntax Highlighting**: Full TextMate grammar for all Viss 2.0 constructs, raw memory sigils `&`, interpolation `i"..."`, and pipeline typings.
-* **Diagnostics & Linter**: Instant on-save syntax error detection and bracket balancing with line/column markers.
-* **Hover Documentation**: Detailed documentation popups for all primitives (`bytes`, `bits`, `inf`), keywords, and standard library modules.
-* **IntelliSense Completions**: Contextual autocompletion for keywords, collections, and standard methods (`.len`, `.append`, `.set_bit`, `.to_hex`).
-* **Snippets**: Pre-built templates for functions, classes, raw byte buffers, retro screens, and loops.
-* **One-Click Run**: Press the Run button in the editor header or trigger `Viss: Run Program`.
+Viss features an official Visual Studio Code extension located in `extensions/viss-vscode`:
+* **Language Server Integration**: Real-time LSP completion, diagnostics, and hover symbols powered by `viss lsp`.
+* **Syntax Highlighting**: Full TextMate grammar for all Viss constructs, raw memory sigils `&`, interpolation `i"..."`, single quotes `'...'`, and pipeline typings.
+* **Diagnostics & Linter**: Instant on-save syntax error detection and human-friendly diagnostics (`viss check`).
+* **Hover Documentation**: Detailed documentation popups for all primitives, keywords, and standard library modules.
+* **IntelliSense Completions**: Contextual autocompletion for `db`, `net`, `chan`, `gui`, `audio`, `math`, `io`, and more.
+* **Snippets**: Pre-built templates for functions, classes, SQLite apps (`dbapp`), HTTP servers (`netserver`), channels (`chanapp`), and GUI apps (`guiapp`).
+* **Keybindings**: `F5` Run, `Ctrl+F5` Check Syntax, `Shift+F5` Build, `Alt+F5` Bundle Standalone Executable.
 
 ---
 
@@ -357,8 +382,14 @@ Viss features a complete Visual Studio Code extension located in `.vscode/extens
 - [x] Dynamic Expando Table Storage (`| inf`)
 - [x] Pattern Matching (`?match`, `case`, `else`)
 - [x] Cross-platform ThreadPool Concurrency (`!async.func`, `await`)
-- [ ] Self-contained TCC / Clang embedded JIT compiler for zero-dependency execution
-- [ ] Official Visual Studio Code & JetBrains syntax highlighting extension bundle
+- [x] Independent Native Execution Engine (`viss vm` / `VissVM`)
+- [x] Official Visual Studio Code Extension v0.4.0 (`viss-vscode`)
+- [x] Official Package Manager (`viss pkg`)
+- [x] Language Server Protocol Daemon (`viss lsp`)
+- [x] Embedded SQLite Database Engine (`libs/std/db.hpp`)
+- [x] High-Performance Multi-Threaded HTTP Web Server (`libs/std/net.hpp`)
+- [x] Go-style Concurrency Channels (`libs/std/chan.hpp`)
+- [x] Cross-Platform Windowing & Software Rasterizer GUI (`libs/std/gui.hpp`)
 
 ---
 

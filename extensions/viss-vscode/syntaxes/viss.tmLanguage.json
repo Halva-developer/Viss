@@ -224,7 +224,7 @@
       "patterns": [
         {
           "name": "support.class.standard.viss",
-          "match": "\\b(io|sys|fs|math|time|str|retrotech|rt|async|json|crypto|collections|env|net|media|audio|gui|gl|vk|mask|bytemask|colormask)\\b"
+          "match": "\\b(io|sys|fs|math|time|str|retrotech|rt|async|json|crypto|collections|env|net|media|audio|gui|gl|vk|mask|bytemask|colormask|db|chan)\\b"
         }
       ]
     },

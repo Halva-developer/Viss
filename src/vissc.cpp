@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <chrono>
 #include "viss_vm.hpp"
+#include "viss_pkg.hpp"
+#include "viss_lsp.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -26,8 +28,8 @@
 
 namespace fs = std::filesystem;
 
-const std::string VERSION = "0.2.2";
-const std::string CODENAME = "Prismo & Cosmic Owl";
+const std::string VERSION = "0.3.0";
+const std::string CODENAME = "Peppermint Butler";
 
 // =============================================================================
 // 1. UTILITY FUNCTIONS
@@ -1335,7 +1337,7 @@ public:
 
     ScopeTracker() {
         scopes.emplace_back(); // global scope
-        known_modules = {"io", "rt", "sys", "time", "math", "str", "draw", "screen", "fs", "async", "json", "crypto", "collections", "env", "net", "mask", "bytemask", "colormask", "audio", "snd", "sound", "media", "tag", "gui", "ui", "window", "win", "lic", "license"};
+        known_modules = {"io", "rt", "sys", "time", "math", "str", "draw", "screen", "fs", "async", "json", "crypto", "collections", "env", "net", "db", "chan", "pkg", "mask", "bytemask", "colormask", "audio", "snd", "sound", "media", "tag", "gui", "ui", "window", "win", "lic", "license"};
     }
 
     void enter_function() {
@@ -1575,7 +1577,7 @@ std::string transformLambdas(const std::string& expr, ScopeTracker& ctx) {
                             // Build C++ lambda
                             std::string lambda_cpp = "[&](";
                             for (size_t pi = 0; pi < param_names.size(); ++pi) {
-                                lambda_cpp += "auto " + param_names[pi] + (pi + 1 < param_names.size() ? ", " : "");
+                                lambda_cpp += "auto&& " + param_names[pi] + (pi + 1 < param_names.size() ? ", " : "");
                             }
                             lambda_cpp += ") { ";
                             if (raw_body.find("return ") == std::string::npos && raw_body.find("return\t") == std::string::npos && !startsWith(raw_body, "return")) {
@@ -1615,6 +1617,10 @@ std::string transformExpression(
     raw_expr = transformSlices(raw_expr);
     raw_expr = transformListLiterals(raw_expr);
     raw_expr = transformInOperator(raw_expr);
+    raw_expr = replaceAll(raw_expr, "<str>", "<viss::Str>");
+    raw_expr = replaceAll(raw_expr, "<int>", "<viss::Int>");
+    raw_expr = replaceAll(raw_expr, "<dec>", "<viss::Dec>");
+    raw_expr = replaceAll(raw_expr, "<bool>", "<viss::Bool>");
     while (raw_expr.find("!await") != std::string::npos || std::regex_search(raw_expr, std::regex(R"(\bawait\s+)"))) {
         std::string replaced = std::regex_replace(
             raw_expr,
@@ -2074,13 +2080,18 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
     aliases_section.push_back("namespace ui = viss::gui;");
     aliases_section.push_back("namespace window = viss::gui;");
     aliases_section.push_back("namespace win = viss::gui;");
+    aliases_section.push_back("namespace db = viss::db;");
+    aliases_section.push_back("namespace chan = viss::chan;");
+    includes_section.push_back("#include \"libs/std/net.hpp\"");
+    includes_section.push_back("#include \"libs/std/db.hpp\"");
+    includes_section.push_back("#include \"libs/std/chan.hpp\"");
     includes_section.push_back("#include \"libs/std/audio.hpp\"");
     includes_section.push_back("#include \"libs/std/media.hpp\"");
     includes_section.push_back("#include \"libs/std/gui.hpp\"");
 
     std::vector<std::string> imported_aliases = {
         "io", "sys", "fs", "math", "str", "rt", "async", "json",
-        "crypto", "collections", "env", "net", "mask", "bytemask", "colormask",
+        "crypto", "collections", "env", "net", "db", "chan", "pkg", "mask", "bytemask", "colormask",
         "audio", "snd", "sound", "media", "tag", "gui", "ui", "window", "win", "lic", "license"
     };
 
@@ -3565,6 +3576,8 @@ void printHelp() {
               << "  transpile <file.viss>     Emit clean C++17 source code\n"
               << "  check <file.viss>         Fast syntax validator and linter\n"
               << "  fmt [--check] <file.viss> Format Viss source code to canonical style\n"
+              << "  pkg <action>              Package manager (install, purge, update, upgrade, list, server, init)\n"
+              << "  lsp                       Start Language Server Protocol (LSP) daemon for IDEs\n"
               << "  repl                      Start interactive Viss shell (or run 'viss' with no args)\n"
               << "  clean                     Remove cached binaries (.viss_cache/)\n"
               << "  version                   Print Viss version\n\n"
@@ -3581,6 +3594,26 @@ int main(int argc, char* argv[]) {
     }
 
     std::string cmd = argv[1];
+
+    if (cmd == "help" || cmd == "--help" || cmd == "-h") {
+        printHelp();
+        return 0;
+    }
+
+    if (cmd == "version" || cmd == "-v" || cmd == "--version") {
+        std::cout << "Viss v" << VERSION << " \"" << CODENAME << "\" (Native Toolchain & VM)\n";
+        return 0;
+    }
+
+    if (cmd == "pkg") {
+        std::vector<std::string> pkg_args;
+        for (int ai = 2; ai < argc; ++ai) pkg_args.push_back(argv[ai]);
+        return viss::pkg::dispatch(pkg_args);
+    }
+
+    if (cmd == "lsp" || cmd == "--lsp") {
+        return viss::lsp::runServer();
+    }
 
     if (cmd == "repl") {
         runRepl();

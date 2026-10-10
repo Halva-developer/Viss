@@ -18,6 +18,8 @@
 #include "../libs/std/audio.hpp"
 #include "../libs/std/media.hpp"
 #include "../libs/std/gui.hpp"
+#include "../libs/std/net.hpp"
+#include "../libs/std/db.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -543,8 +545,8 @@ public:
             std::string obj_expr = trim(expr.substr(0, dot_pos));
             std::string member_expr = trim(expr.substr(dot_pos + 1));
 
-            // Module Calls: io.println, math.sqrt, audio.sfx, sys.sleep, media, gui
-            if (obj_expr == "io" || obj_expr == "rt" || obj_expr == "sys" || obj_expr == "math" || obj_expr == "audio" || obj_expr == "snd" || obj_expr == "sound" || obj_expr == "str" || obj_expr == "time" || obj_expr == "media" || obj_expr == "tag" || obj_expr == "gui" || obj_expr == "ui" || obj_expr == "window" || obj_expr == "win") {
+            // Module Calls: io.println, math.sqrt, audio.sfx, sys.sleep, media, gui, net, db, chan, fs
+            if (obj_expr == "io" || obj_expr == "rt" || obj_expr == "sys" || obj_expr == "math" || obj_expr == "audio" || obj_expr == "snd" || obj_expr == "sound" || obj_expr == "str" || obj_expr == "time" || obj_expr == "media" || obj_expr == "tag" || obj_expr == "gui" || obj_expr == "ui" || obj_expr == "window" || obj_expr == "win" || obj_expr == "net" || obj_expr == "db" || obj_expr == "chan" || obj_expr == "fs") {
                 return callModule(obj_expr, member_expr, ctx);
             }
 
@@ -954,6 +956,80 @@ public:
             if (fname == "draw_text" && args.size() >= 3) {
                 viss::gui::draw_text((int)args[0].to_int(), (int)args[1].to_int(), args[2].to_string());
                 return VMVal();
+            }
+        }
+
+        // FS Module
+        if (mod == "fs") {
+            if (fname == "exists" && !args.empty()) return VMVal(fs::exists(args[0].to_string()));
+            if (fname == "read" && !args.empty()) {
+                std::ifstream in(args[0].to_string());
+                if (!in.is_open()) return VMVal("");
+                std::stringstream ss; ss << in.rdbuf();
+                return VMVal(ss.str());
+            }
+            if (fname == "write" && args.size() >= 2) {
+                std::ofstream out(args[0].to_string());
+                out << args[1].to_string();
+                return VMVal(true);
+            }
+        }
+
+        // NET Module
+        if (mod == "net") {
+            if (fname == "http_get" && !args.empty()) return VMVal(viss::net::http_get(args[0].to_string()));
+            if (fname == "http_post" && args.size() >= 2) return VMVal(viss::net::http_post(args[0].to_string(), args[1].to_string()));
+            if (fname == "download" && args.size() >= 2) return VMVal(viss::net::download_file(args[0].to_string(), args[1].to_string()));
+            if (fname == "url_encode" && !args.empty()) return VMVal(viss::net::url_encode(args[0].to_string()));
+            if (fname == "url_decode" && !args.empty()) return VMVal(viss::net::url_decode(args[0].to_string()));
+        }
+
+        // DB Module
+        if (mod == "db") {
+            if (fname == "open") {
+                std::string path = !args.empty() ? args[0].to_string() : ":memory:";
+                return VMVal(path);
+            }
+            if (fname == "exec" && args.size() >= 2) {
+                auto db_h = viss::db::open(args[0].to_string());
+                int res = viss::db::exec(db_h, args[1].to_string());
+                return VMVal((int64_t)res);
+            }
+            if (fname == "query_json" && args.size() >= 2) {
+                auto db_h = viss::db::open(args[0].to_string());
+                std::string j = viss::db::query_json(db_h, args[1].to_string());
+                return VMVal(j);
+            }
+            if (fname == "count" && args.size() >= 2) {
+                auto db_h = viss::db::open(args[0].to_string());
+                return VMVal((int64_t)viss::db::count(db_h, args[1].to_string()));
+            }
+            if (fname == "close") {
+                return VMVal();
+            }
+        }
+
+        // CHAN Module
+        if (mod == "chan") {
+            size_t t_pos = fname.find('<');
+            std::string base_fn = (t_pos != std::string::npos) ? fname.substr(0, t_pos) : fname;
+            if (base_fn == "create") {
+                return VMVal("chan_handle");
+            }
+            if (base_fn == "send") {
+                return VMVal();
+            }
+            if (base_fn == "recv") {
+                return VMVal("chan_msg");
+            }
+            if (base_fn == "len") {
+                return VMVal((int64_t)0);
+            }
+            if (base_fn == "close") {
+                return VMVal();
+            }
+            if (base_fn == "is_closed") {
+                return VMVal(true);
             }
         }
 

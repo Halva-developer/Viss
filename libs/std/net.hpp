@@ -305,5 +305,315 @@ namespace viss {
         };
 
         using TcpClient = Socket;
-    }
-}
+
+        // --- HTTP Request & Response models ---
+        struct HttpRequest {
+            Str method = "GET";
+            Str path = "/";
+            Str body = "";
+            Map<Str, Str> query;
+            Map<Str, Str> headers;
+            Str client_ip = "127.0.0.1";
+        };
+
+        struct HttpResponse {
+            Int status = 200;
+            Str content_type = "text/html; charset=utf-8";
+            Str body = "";
+            Map<Str, Str> headers;
+
+            void send(const Str& text) {
+                body = text;
+            }
+
+            void json(const Str& json_data) {
+                content_type = "application/json; charset=utf-8";
+                body = json_data;
+            }
+
+            void status_code(Int code) {
+                status = code;
+            }
+
+            void set_header(const Str& k, const Str& v) {
+                headers.set(k, v);
+            }
+        };
+
+        using HttpHandler = std::function<void(const HttpRequest&, HttpResponse&)>;
+
+        // --- Embedded Multi-threaded HTTP Server Implementation ---
+        class HttpServerInternal {
+        private:
+            SOCKET server_sock = INVALID_SOCKET;
+            std::atomic<bool> is_running{false};
+            std::thread accept_thread;
+            std::map<Str, HttpHandler> routes_get;
+            std::map<Str, HttpHandler> routes_post;
+            std::map<Str, HttpHandler> routes_any;
+            HttpHandler not_found_handler = nullptr;
+            Int server_port = 8080;
+
+            static Str status_message(Int code) {
+                switch (code) {
+                    case 200: return "OK";
+                    case 201: return "Created";
+                    case 204: return "No Content";
+                    case 301: return "Moved Permanently";
+                    case 302: return "Found";
+                    case 400: return "Bad Request";
+                    case 401: return "Unauthorized";
+                    case 403: return "Forbidden";
+                    case 404: return "Not Found";
+                    case 500: return "Internal Server Error";
+                    default: return "OK";
+                }
+            }
+
+            void handle_client(SOCKET client_fd, Str client_ip) {
+                std::vector<char> buffer(8192, 0);
+                int bytes = ::recv(client_fd, buffer.data(), (int)(buffer.size() - 1), 0);
+                if (bytes <= 0) {
+                    closesocket(client_fd);
+                    return;
+                }
+
+                Str raw(buffer.data(), bytes);
+                std::istringstream req_stream(raw);
+                Str req_line;
+                std::getline(req_stream, req_line);
+                if (!req_line.empty() && req_line.back() == '\r') req_line.pop_back();
+
+                HttpRequest req;
+                req.client_ip = client_ip;
+
+                std::istringstream line_parts(req_line);
+                line_parts >> req.method >> req.path;
+
+                // Parse query params if any
+                size_t q_pos = req.path.find('?');
+                if (q_pos != Str::npos) {
+                    Str qs = req.path.substr(q_pos + 1);
+                    req.path = req.path.substr(0, q_pos);
+                    std::istringstream q_stream(qs);
+                    Str pair;
+                    while (std::getline(q_stream, pair, '&')) {
+                        size_t eq = pair.find('=');
+                        if (eq != Str::npos) {
+                            req.query.set(url_decode(pair.substr(0, eq)), url_decode(pair.substr(eq + 1)));
+                        } else {
+                            req.query.set(url_decode(pair), "");
+                        }
+                    }
+                }
+
+                // Headers
+                Str header_line;
+                size_t content_length = 0;
+                while (std::getline(req_stream, header_line) && header_line != "\r" && !header_line.empty()) {
+                    if (header_line.back() == '\r') header_line.pop_back();
+                    size_t colon = header_line.find(':');
+                    if (colon != Str::npos) {
+                        Str hk = str::lower(str::trim(header_line.substr(0, colon)));
+                        Str hv = str::trim(header_line.substr(colon + 1));
+                        req.headers.set(hk, hv);
+                        if (hk == "content-length") {
+                            try { content_length = std::stoull(hv); } catch (...) {}
+                        }
+                    }
+                }
+
+                // Body
+                size_t header_end = raw.find("\r\n\r\n");
+                if (header_end != Str::npos) {
+                    req.body = raw.substr(header_end + 4);
+                }
+
+                HttpResponse res;
+                HttpHandler matched = nullptr;
+
+                if (req.method == "GET" && routes_get.count(req.path)) {
+                    matched = routes_get[req.path];
+                } else if (req.method == "POST" && routes_post.count(req.path)) {
+                    matched = routes_post[req.path];
+                } else if (routes_any.count(req.path)) {
+                    matched = routes_any[req.path];
+                }
+
+                if (matched) {
+                    try {
+                        matched(req, res);
+                    } catch (const std::exception& e) {
+                        res.status = 500;
+                        res.body = "500 Internal Server Error: " + Str(e.what());
+                    } catch (...) {
+                        res.status = 500;
+                        res.body = "500 Internal Server Error";
+                    }
+                } else if (not_found_handler) {
+                    not_found_handler(req, res);
+                } else {
+                    res.status = 404;
+                    res.body = "404 Not Found: " + req.path;
+                }
+
+                // Build HTTP response
+                std::ostringstream resp_stream;
+                resp_stream << "HTTP/1.1 " << res.status << " " << status_message(res.status) << "\r\n";
+                resp_stream << "Content-Type: " << res.content_type << "\r\n";
+                resp_stream << "Content-Length: " << res.body.size() << "\r\n";
+                resp_stream << "Connection: close\r\n";
+                resp_stream << "Server: Viss-HTTP/0.3\r\n";
+
+                auto hkeys = res.headers.keys();
+                for (size_t i = 0; i < (size_t)hkeys.len(); ++i) {
+                    resp_stream << hkeys[i] << ": " << res.headers[hkeys[i]] << "\r\n";
+                }
+                resp_stream << "\r\n";
+                resp_stream << res.body;
+
+                Str resp_bytes = resp_stream.str();
+                ::send(client_fd, resp_bytes.data(), (int)resp_bytes.size(), 0);
+                closesocket(client_fd);
+            }
+
+        public:
+            HttpServerInternal() {
+                initWinSock();
+            }
+
+            ~HttpServerInternal() {
+                stop();
+            }
+
+            void on(const Str& method, const Str& path, HttpHandler handler) {
+                if (method == "GET") routes_get[path] = handler;
+                else if (method == "POST") routes_post[path] = handler;
+                else routes_any[path] = handler;
+            }
+
+            void get(const Str& path, HttpHandler handler) {
+                routes_get[path] = handler;
+            }
+
+            void post(const Str& path, HttpHandler handler) {
+                routes_post[path] = handler;
+            }
+
+            void not_found(HttpHandler handler) {
+                not_found_handler = handler;
+            }
+
+            Bool listen(Int port, Bool background = false) {
+                server_port = port;
+                server_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+                if (server_sock == INVALID_SOCKET) return false;
+
+                int opt = 1;
+                setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
+
+                struct sockaddr_in addr = {};
+                addr.sin_family = AF_INET;
+                addr.sin_port = htons((u_short)port);
+                addr.sin_addr.s_addr = INADDR_ANY;
+
+                if (::bind(server_sock, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+                    closesocket(server_sock);
+                    server_sock = INVALID_SOCKET;
+                    return false;
+                }
+
+                if (::listen(server_sock, SOMAXCONN) != 0) {
+                    closesocket(server_sock);
+                    server_sock = INVALID_SOCKET;
+                    return false;
+                }
+
+                is_running = true;
+
+                auto accept_loop = [this]() {
+                    while (is_running) {
+                        struct sockaddr_in client_addr = {};
+                        #ifdef _WIN32
+                        int c_len = sizeof(client_addr);
+                        #else
+                        socklen_t c_len = sizeof(client_addr);
+                        #endif
+                        SOCKET client_fd = ::accept(server_sock, (struct sockaddr*)&client_addr, &c_len);
+                        if (client_fd == INVALID_SOCKET) {
+                            if (!is_running) break;
+                            continue;
+                        }
+
+                        char ip_buf[64] = "127.0.0.1";
+                        #ifdef _WIN32
+                        char* cip = inet_ntoa(client_addr.sin_addr);
+                        if (cip) strncpy_s(ip_buf, cip, sizeof(ip_buf));
+                        #else
+                        inet_ntop(AF_INET, &client_addr.sin_addr, ip_buf, sizeof(ip_buf));
+                        #endif
+
+                        std::thread worker(&HttpServerInternal::handle_client, this, client_fd, Str(ip_buf));
+                        worker.detach();
+                    }
+                };
+
+                if (background) {
+                    accept_thread = std::thread(accept_loop);
+                    return true;
+                } else {
+                    accept_loop();
+                    return true;
+                }
+            }
+
+            void stop() {
+                if (is_running) {
+                    is_running = false;
+                    if (server_sock != INVALID_SOCKET) {
+                        closesocket(server_sock);
+                        server_sock = INVALID_SOCKET;
+                    }
+                    if (accept_thread.joinable()) {
+                        accept_thread.join();
+                    }
+                }
+            }
+
+            Bool running() const {
+                return is_running.load();
+            }
+        };
+
+        // Value-type copyable HttpServer handle
+        class HttpServer {
+        private:
+            std::shared_ptr<HttpServerInternal> impl;
+        public:
+            HttpServer() : impl(std::make_shared<HttpServerInternal>()) {}
+
+            void on(const Str& method, const Str& path, HttpHandler handler) { if (impl) impl->on(method, path, handler); }
+            void get(const Str& path, HttpHandler handler) { if (impl) impl->get(path, handler); }
+            void post(const Str& path, HttpHandler handler) { if (impl) impl->post(path, handler); }
+            void not_found(HttpHandler handler) { if (impl) impl->not_found(handler); }
+            Bool listen(Int port, Bool background = false) { return impl ? impl->listen(port, background) : false; }
+            void stop() { if (impl) impl->stop(); }
+            Bool running() const { return impl ? impl->running() : false; }
+        };
+
+        // Convenience factory
+        inline HttpServer create_server() {
+            return HttpServer();
+        }
+
+        // Quick 1-liner server
+        inline Bool server_listen(Int port, std::function<Str(const Str& path, const Str& method)> handler) {
+            HttpServer srv;
+            srv.not_found([handler](const HttpRequest& req, HttpResponse& res) {
+                res.send(handler(req.path, req.method));
+            });
+            return srv.listen(port, false);
+        }
+
+    } // namespace net
+} // namespace viss

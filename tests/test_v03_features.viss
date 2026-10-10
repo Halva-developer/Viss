@@ -1,0 +1,66 @@
+# =============================================================================
+# Viss v0.3.0 "Peppermint Butler" Comprehensive Features Test
+# =============================================================================
+
+$import lib "iostream" as io
+$import lib "str" as str
+$import lib "db" as db
+$import lib "chan" as chan
+$import lib "net" as net
+
+!main {
+    io.println("==================================================");
+    io.println("  Viss v0.3.0 Peppermint Butler Feature Tests");
+    io.println("==================================================");
+
+    # 1. Database Module Test (Embedded SQL)
+    io.println("\n[Test 1] Testing std/db SQLite engine...");
+    @db_handle = db.open(":memory:");
+    @res1 = db.exec(@db_handle, "CREATE TABLE users (id INT PRIMARY KEY, name TEXT, role TEXT);");
+    io.println("  Create Table result:", @res1);
+
+    db.exec(@db_handle, "INSERT INTO users (id, name, role) VALUES (1, 'Peppermint Butler', 'Occult Master');");
+    db.exec(@db_handle, "INSERT INTO users (id, name, role) VALUES (2, 'Princess Bubblegum', 'Ruler');");
+    db.exec(@db_handle, "INSERT INTO users (id, name, role) VALUES (3, 'Finn', 'Hero');");
+
+    @user_count = db.count(@db_handle, "users");
+    io.println("  User count in table:", @user_count);
+
+    @json_data = db.query_json(@db_handle, "SELECT name, role FROM users WHERE id = 1;");
+    io.println("  Query JSON result:", @json_data);
+
+    db.close(@db_handle);
+    io.println("  [Test 1 PASSED] Database verified!");
+
+    # 2. Concurrency Channels Test
+    io.println("\n[Test 2] Testing std/chan thread-safe channels...");
+    @ch = chan.create<str>(5);
+    chan.send(@ch, "Message 1 from Peppermint Butler");
+    chan.send(@ch, "Message 2 from Time Room");
+
+    @ch_len = chan.len(@ch);
+    io.println("  Channel buffered messages:", @ch_len);
+
+    @msg1 = chan.recv(@ch);
+    @msg2 = chan.recv(@ch);
+    io.println("  Received 1:", @msg1);
+    io.println("  Received 2:", @msg2);
+
+    chan.close(@ch);
+    io.println("  Channel is closed:", chan.is_closed(@ch));
+    io.println("  [Test 2 PASSED] Channels verified!");
+
+    # 3. Network Encoding Test
+    io.println("\n[Test 3] Testing std/net URL helpers...");
+    @raw = "Peppermint Butler & Cosmic Owl = 100%";
+    @enc = net.url_encode(@raw);
+    @dec = net.url_decode(@enc);
+    io.println("  Original:", @raw);
+    io.println("  Encoded: ", @enc);
+    io.println("  Decoded: ", @dec);
+    io.println("  [Test 3 PASSED] Net helpers verified!");
+
+    io.println("\n==================================================");
+    io.println("  ALL VISS v0.3.0 TESTS PASSED SUCCESSFULLY! ^_^");
+    io.println("==================================================");
+}

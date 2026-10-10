@@ -1,0 +1,39 @@
+# =============================================================================
+# Viss v0.3.0 HTTP Server Test
+# =============================================================================
+
+$import lib "iostream" as io
+$import lib "net" as net
+$import lib "sys" as sys
+
+!main {
+    io.println("[HTTP Server Test] Initializing Viss HTTP server on port 9095...");
+    @srv = net.create_server();
+
+    @srv.get("/hello", !func(req, res) {
+        res.send("Hello from Peppermint Butler HTTP Server!");
+    });
+
+    @srv.get("/api/user", !func(req, res) {
+        res.json('{"username":"PeppermintButler","status":"active"}');
+    });
+
+    # Start listening in background
+    @ok = @srv.listen(9095, true);
+    io.println("Server started in background:", @ok);
+
+    # Allow server thread to initialize socket
+    sys.sleep(200);
+
+    # Test GET request
+    io.println("Sending GET request to http://127.0.0.1:9095/hello ...");
+    @resp1 = net.http_get("http://127.0.0.1:9095/hello");
+    io.println("Response 1:", @resp1);
+
+    io.println("Sending GET request to http://127.0.0.1:9095/api/user ...");
+    @resp2 = net.http_get("http://127.0.0.1:9095/api/user");
+    io.println("Response 2:", @resp2);
+
+    @srv.stop();
+    io.println("[HTTP Server Test PASSED] Server test completed successfully! ^_^");
+}

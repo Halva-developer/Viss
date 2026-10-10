@@ -315,6 +315,9 @@ namespace viss {
         inline void append(const T& item) {
             add(item);
         }
+        inline void push(const T& item) {
+            add(item);
+        }
         inline T pop() {
             std::lock_guard<std::mutex> lock(*mtx);
             if (!data->empty()) {
@@ -401,6 +404,9 @@ namespace viss {
             return (Int)data->size();
         }
         inline Int get_len() const {
+            return size();
+        }
+        inline Int len() const {
             return size();
         }
 

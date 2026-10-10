@@ -1,6 +1,6 @@
 # =============================================================================
 # Viss Language Toolchain Makefile
-# Version: 0.2.2 "Prismo & Cosmic Owl"
+# Version: 0.3.0 "Peppermint Butler"
 # Supported Platforms: Linux, macOS, FreeBSD, MinGW/Windows
 # =============================================================================
 
@@ -19,7 +19,7 @@ ICONSDIR ?= $(PREFIX)/share/icons/hicolor/256x256/apps
 UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)
 ifeq ($(OS),Windows_NT)
     TARGET = viss.exe
-    WINFLAGS = -lgdiplus -lgdi32 -luser32 -lcomdlg32 -lshell32 -lole32 -lwinmm -lws2_32
+    WINFLAGS = -lgdiplus -lgdi32 -luser32 -lcomdlg32 -lshell32 -lole32 -lwinmm -lws2_32 -lwininet
 else ifeq ($(UNAME_S),Darwin)
     TARGET = viss
     LDFLAGS = -pthread
