@@ -100,6 +100,8 @@ namespace viss {
                 return 0;
             }
 
+            inline Int len() const { return size(); }
+
             inline Bool has(const Str& key) const {
                 if (type != JsonType::Object) return false;
                 return obj_val.find(key) != obj_val.end();

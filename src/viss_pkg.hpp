@@ -159,6 +159,153 @@ namespace pkg {
         return 0;
     }
 
+    struct RegistryPackageInfo {
+        std::string name;
+        std::string version;
+        std::string description;
+        std::string url;
+        std::string author;
+    };
+
+    inline std::map<std::string, RegistryPackageInfo> fetchRegistryPackages() {
+        std::map<std::string, RegistryPackageInfo> pkgs;
+        std::string reg_url = getRegistryUrl();
+        std::string raw_json = "";
+
+        if (reg_url.find("http://") == 0 || reg_url.find("https://") == 0) {
+            raw_json = net::http_get(reg_url);
+        }
+        if (raw_json.empty()) {
+            std::vector<std::string> candidates = {
+                "index.json",
+                "../index.json",
+                "C:/Users/halva/Desktop/viss-packages/index.json"
+            };
+            for (const auto& c : candidates) {
+                if (sfs::exists(c)) {
+                    std::ifstream f(c);
+                    if (f.is_open()) {
+                        std::stringstream ss;
+                        ss << f.rdbuf();
+                        raw_json = ss.str();
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (raw_json.empty()) return pkgs;
+
+        try {
+            auto j = json::parse(raw_json);
+            if (j.contains("packages")) {
+                auto p_val = j["packages"];
+                if (p_val.is_object()) {
+                    auto keys = p_val.keys();
+                    for (Int ki = 0; ki < keys.len(); ++ki) {
+                        std::string k = keys[ki];
+                        auto item = p_val[k];
+                        RegistryPackageInfo info;
+                        info.name = k;
+                        if (item.contains("version")) info.version = item["version"].to_str();
+                        if (item.contains("description")) info.description = item["description"].to_str();
+                        if (item.contains("url")) info.url = item["url"].to_str();
+                        if (item.contains("author")) info.author = item["author"].to_str();
+                        pkgs[k] = info;
+                    }
+                } else if (p_val.is_array()) {
+                    for (Int ai = 0; ai < p_val.len(); ++ai) {
+                        std::string k = p_val[ai].to_str();
+                        RegistryPackageInfo info;
+                        info.name = k;
+                        info.version = "1.0.0";
+                        info.description = "Official Viss package " + k;
+                        pkgs[k] = info;
+                    }
+                }
+            }
+        } catch (...) {}
+
+        return pkgs;
+    }
+
+    inline int listAvailablePackages() {
+        auto pkgs = fetchRegistryPackages();
+        std::cout << "\n=================================================================\n";
+        std::cout << "  Viss Package Registry - Available Packages\n";
+        std::cout << "  Registry: " << getRegistryUrl() << "\n";
+        std::cout << "=================================================================\n\n";
+
+        if (pkgs.empty()) {
+            std::cout << "  (no packages found in registry or server unreachable)\n";
+            std::cout << "  Tip: check server status with: viss pkg server status\n\n";
+            return 0;
+        }
+
+        for (const auto& kv : pkgs) {
+            const auto& p = kv.second;
+            std::cout << "  * \033[36m" << p.name << "\033[0m"
+                      << (!p.version.empty() ? " (v" + p.version + ")" : "") << "\n";
+            if (!p.description.empty()) {
+                std::cout << "    " << p.description << "\n";
+            }
+            if (!p.author.empty()) {
+                std::cout << "    Author: " << p.author << "\n";
+            }
+            std::cout << "\n";
+        }
+
+        std::cout << "  Total: " << pkgs.size() << " package(s) available for download.\n";
+        std::cout << "  Install using: viss pkg install <name>\n\n";
+        return 0;
+    }
+
+    inline int searchPackages(const std::string& query) {
+        if (query.empty()) {
+            std::cerr << "Usage: viss pkg search <keyword>\n";
+            return 1;
+        }
+
+        std::string q_lower = query;
+        for (char& c : q_lower) c = (char)std::tolower(c);
+
+        auto pkgs = fetchRegistryPackages();
+        std::vector<RegistryPackageInfo> matches;
+
+        for (const auto& kv : pkgs) {
+            const auto& p = kv.second;
+            std::string n_lower = p.name;
+            for (char& c : n_lower) c = (char)std::tolower(c);
+            std::string d_lower = p.description;
+            for (char& c : d_lower) c = (char)std::tolower(c);
+
+            if (n_lower.find(q_lower) != std::string::npos || d_lower.find(q_lower) != std::string::npos) {
+                matches.push_back(p);
+            }
+        }
+
+        std::cout << "\n=================================================================\n";
+        std::cout << "  Viss Package Search: '" << query << "'\n";
+        std::cout << "=================================================================\n\n";
+
+        if (matches.empty()) {
+            std::cout << "  No packages found matching '" << query << "' in registry.\n\n";
+            return 0;
+        }
+
+        for (const auto& p : matches) {
+            std::cout << "  * \033[32m" << p.name << "\033[0m"
+                      << (!p.version.empty() ? " (v" + p.version + ")" : "") << "\n";
+            if (!p.description.empty()) {
+                std::cout << "    " << p.description << "\n";
+            }
+            std::cout << "    Command: viss pkg install " << p.name << "\n\n";
+        }
+
+        std::cout << "  Found " << matches.size() << " matching package(s).\n\n";
+        return 0;
+    }
+
     inline int installPackage(const std::string& pkg_target, bool global, const std::string& version_req = "") {
         if (pkg_target.empty()) {
             std::string manifest_path = getLocalManifestPath();
@@ -228,24 +375,48 @@ namespace pkg {
             }
         } else {
             std::cout << "[Viss PKG] Querying registry (" << getRegistryUrl() << ") for '" << pkg_name << "'...\n";
-            sfs::create_directories(dest);
-            std::string pkg_viss = dest + "/" + pkg_name + ".viss";
-            if (!sfs::exists(pkg_viss)) {
-                std::ofstream out(pkg_viss);
-                out << "# Package: " << pkg_name << "\n"
-                    << "!func info() {\n"
-                    << "    io.println(\"[" << pkg_name << "] Active!\");\n"
-                    << "}\n";
+            auto pkgs = fetchRegistryPackages();
+            bool copied = false;
+            if (pkgs.count(pkg_name)) {
+                std::vector<std::string> local_srcs = {
+                    "packages/" + pkg_name,
+                    "../packages/" + pkg_name,
+                    "C:/Users/halva/Desktop/viss-packages/packages/" + pkg_name
+                };
+                for (const auto& src : local_srcs) {
+                    if (sfs::exists(src) && sfs::is_directory(src)) {
+                        sfs::create_directories(dest);
+                        for (const auto& e : sfs::directory_iterator(src)) {
+                            std::string fname = e.path().filename().string();
+                            if (fname == "test.viss" || fname == ".viss_cache" || fname == "test.exe") continue;
+                            std::error_code ec;
+                            sfs::copy(e.path(), sfs::path(dest) / fname, sfs::copy_options::overwrite_existing | sfs::copy_options::recursive, ec);
+                        }
+                        copied = true;
+                        break;
+                    }
+                }
             }
-            std::string sub_manifest = dest + "/viss.json";
-            if (!sfs::exists(sub_manifest)) {
-                std::ofstream m_out(sub_manifest);
-                m_out << "{\n"
-                      << "  \"name\": \"" << pkg_name << "\",\n"
-                      << "  \"version\": \"" << (version_req.empty() ? "1.0.0" : version_req) << "\",\n"
-                      << "  \"description\": \"Viss module " << pkg_name << "\",\n"
-                      << "  \"main\": \"" << pkg_name << ".viss\"\n"
-                      << "}\n";
+            if (!copied) {
+                sfs::create_directories(dest);
+                std::string pkg_viss = dest + "/" + pkg_name + ".viss";
+                if (!sfs::exists(pkg_viss)) {
+                    std::ofstream out(pkg_viss);
+                    out << "# Package: " << pkg_name << "\n"
+                        << "!func info() {\n"
+                        << "    io.println(\"[" << pkg_name << "] Active!\");\n"
+                        << "}\n";
+                }
+                std::string sub_manifest = dest + "/viss.json";
+                if (!sfs::exists(sub_manifest)) {
+                    std::ofstream m_out(sub_manifest);
+                    m_out << "{\n"
+                          << "  \"name\": \"" << pkg_name << "\",\n"
+                          << "  \"version\": \"" << (version_req.empty() ? "1.0.0" : version_req) << "\",\n"
+                          << "  \"description\": \"Viss module " << pkg_name << "\",\n"
+                          << "  \"main\": \"" << pkg_name << ".viss\"\n"
+                          << "}\n";
+                }
             }
         }
 
@@ -437,6 +608,8 @@ namespace pkg {
                       << "  viss pkg update [name]                                Update package index\n"
                       << "  viss pkg upgrade [name] [-g|--global]                 Upgrade installed packages\n"
                       << "  viss pkg list [-g|--global]                           List installed packages\n"
+                      << "  viss pkg avaible (or available)                       Browse packages in registry\n"
+                      << "  viss pkg search <keyword>                             Search packages in registry\n"
                       << "  viss pkg server <url|start|status> [-port <p>]        Manage registry server\n"
                       << "  viss pkg init [name]                                  Initialize viss.json\n\n";
             return 0;
@@ -470,6 +643,10 @@ namespace pkg {
             return upgradePackages(target, global);
         } else if (cmd == "list" || cmd == "ls") {
             return listPackages(global);
+        } else if (cmd == "avaible" || cmd == "available" || cmd == "catalog") {
+            return listAvailablePackages();
+        } else if (cmd == "search" || cmd == "find") {
+            return searchPackages(target);
         } else if (cmd == "init") {
             return initManifest(target) ? 0 : 1;
         } else if (cmd == "server") {
