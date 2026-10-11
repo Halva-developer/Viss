@@ -668,10 +668,14 @@ namespace viss {
         return map.has(key);
     }
     inline bool contains(const Str& str, const Str& sub) {
-        return str.find(sub) != std::string::npos;
+        if (str.find(sub) != std::string::npos) return true;
+        std::string s1 = str, s2 = sub;
+        for (char& c : s1) c = (char)std::tolower((unsigned char)c);
+        for (char& c : s2) c = (char)std::tolower((unsigned char)c);
+        return s1.find(s2) != std::string::npos;
     }
     inline bool contains(const Str& str, const char* sub) {
-        return str.find(sub ? sub : "") != std::string::npos;
+        return contains(str, Str(sub ? sub : ""));
     }
     inline bool contains(const Str& str, char c) {
         return str.find(c) != std::string::npos;

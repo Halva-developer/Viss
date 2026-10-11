@@ -19,22 +19,26 @@ ICONSDIR ?= $(PREFIX)/share/icons/hicolor/256x256/apps
 UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)
 ifeq ($(OS),Windows_NT)
     TARGET = viss.exe
+    SSI_TARGET = ssi.exe
     WINFLAGS = -lgdiplus -lgdi32 -luser32 -lcomdlg32 -lshell32 -lole32 -lwinmm -lws2_32 -lwininet
 else ifeq ($(UNAME_S),Darwin)
     TARGET = viss
+    SSI_TARGET = ssi
     LDFLAGS = -pthread
 else
     TARGET = viss
+    SSI_TARGET = ssi
     LDFLAGS = -pthread -ldl
 endif
 
 SRC = src/vissc.cpp
-HDRS = src/viss_vm.hpp
+SSI_SRC = src/ssi_cli.cpp
+HDRS = src/viss_vm.hpp src/ssi.hpp
 INCLUDES = -I. -Ilibs -Isrc
 
 all: build
 
-build: $(TARGET)
+build: $(TARGET) $(SSI_TARGET)
 
 $(TARGET): $(SRC) $(HDRS)
 ifeq ($(OS),Windows_NT)
@@ -44,16 +48,25 @@ else
 endif
 	@echo "Build complete: $(TARGET)"
 
+$(SSI_TARGET): $(SSI_SRC) $(HDRS)
+ifeq ($(OS),Windows_NT)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(SSI_SRC) -o $(SSI_TARGET) $(WINFLAGS)
+else
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(SSI_SRC) -o $(SSI_TARGET) $(LDFLAGS)
+endif
+	@echo "Build complete: $(SSI_TARGET)"
+
 clean:
-	rm -rf bin $(TARGET) .viss_cache test_*.exe *.tmp.*
+	rm -rf bin $(TARGET) $(SSI_TARGET) .viss_cache test_*.exe *.tmp.*
 
 install: build
-	@echo "Installing Viss to $(PREFIX)..."
+	@echo "Installing Viss & SSI to $(PREFIX)..."
 	install -d $(DESTDIR)$(BINDIR)
 	install -d $(DESTDIR)$(DATADIR)/libs
 	install -d $(DESTDIR)$(INCDIR)
 	install -d $(DESTDIR)$(INCDIR)/libs
 	install -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/$(TARGET)
+	install -m 755 $(SSI_TARGET) $(DESTDIR)$(BINDIR)/$(SSI_TARGET)
 	cp -r libs/* $(DESTDIR)$(DATADIR)/libs/
 	cp -r libs/* $(DESTDIR)$(INCDIR)/
 	cp -r libs/* $(DESTDIR)$(INCDIR)/libs/

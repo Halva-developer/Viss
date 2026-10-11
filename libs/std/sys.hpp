@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <thread>
 #include <sstream>
+#include <fstream>
 #include <array>
 #include <memory>
 
@@ -224,11 +225,20 @@ namespace viss {
         }
         inline Str os() {
             #ifdef _WIN32
-            return "windows";
-            #elif __APPLE__
-            return "darwin";
+            return "Windows";
+            #elif defined(__APPLE__)
+            return "macOS";
             #else
-            return "linux";
+            std::ifstream f("/etc/os-release");
+            if (f.is_open()) {
+                std::string line;
+                while (std::getline(f, line)) {
+                    if (line.find("Ubuntu") != std::string::npos) return "Ubuntu";
+                    if (line.find("Debian") != std::string::npos) return "Debian";
+                    if (line.find("Raspbian") != std::string::npos) return "Raspbian";
+                }
+            }
+            return "Linux";
             #endif
         }
         inline Int cpu_count() {

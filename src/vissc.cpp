@@ -19,6 +19,7 @@
 #include "viss_vm.hpp"
 #include "viss_pkg.hpp"
 #include "viss_lsp.hpp"
+#include "ssi.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -1282,7 +1283,7 @@ inline std::string transformSlices(const std::string& expr) {
 }
 
 inline std::string transformInOperator(const std::string& expr) {
-    if (expr.find("in") == std::string::npos) return expr;
+    if (expr.find("in") == std::string::npos && expr.find("contains") == std::string::npos && expr.find("conatins") == std::string::npos) return expr;
     std::string s = expr;
     bool in_str = false;
     for (size_t i = 0; i < s.size(); ++i) {
@@ -1293,9 +1294,13 @@ inline std::string transformInOperator(const std::string& expr) {
         }
         if (in_str) continue;
 
-        if (s.compare(i, 2, "in") == 0) {
+        bool is_in = (s.compare(i, 2, "in") == 0);
+        bool is_contains = (s.compare(i, 8, "contains") == 0 || s.compare(i, 8, "conatins") == 0);
+        size_t op_len = is_contains ? 8 : (is_in ? 2 : 0);
+
+        if (op_len > 0) {
             bool left_ok = (i == 0 || (!isalnum((unsigned char)s[i-1]) && s[i-1] != '_'));
-            bool right_ok = (i + 2 >= s.size() || (!isalnum((unsigned char)s[i+2]) && s[i+2] != '_'));
+            bool right_ok = (i + op_len >= s.size() || (!isalnum((unsigned char)s[i+op_len]) && s[i+op_len] != '_'));
             if (left_ok && right_ok) {
                 size_t p = i;
                 while (p > 0 && (s[p-1] == ' ' || s[p-1] == '\t')) p--;
@@ -1335,7 +1340,7 @@ inline std::string transformInOperator(const std::string& expr) {
                 }
                 std::string lhs = trim(s.substr(lhs_start, lhs_end - lhs_start));
 
-                size_t rhs_start = i + 2;
+                size_t rhs_start = i + op_len;
                 while (rhs_start < s.size() && (s[rhs_start] == ' ' || s[rhs_start] == '\t')) rhs_start++;
                 if (rhs_start >= s.size()) continue;
 
@@ -1362,10 +1367,18 @@ inline std::string transformInOperator(const std::string& expr) {
                 std::string rhs = trim(s.substr(rhs_start, rhs_end - rhs_start));
 
                 std::string replacement;
-                if (is_neg) {
-                    replacement = "(!viss::contains(" + rhs + ", " + lhs + "))";
+                if (is_contains) {
+                    if (is_neg) {
+                        replacement = "(!viss::contains(" + lhs + ", " + rhs + "))";
+                    } else {
+                        replacement = "(viss::contains(" + lhs + ", " + rhs + "))";
+                    }
                 } else {
-                    replacement = "(viss::contains(" + rhs + ", " + lhs + "))";
+                    if (is_neg) {
+                        replacement = "(!viss::contains(" + rhs + ", " + lhs + "))";
+                    } else {
+                        replacement = "(viss::contains(" + rhs + ", " + lhs + "))";
+                    }
                 }
 
                 s.replace(lhs_start, rhs_end - lhs_start, replacement);
@@ -4111,6 +4124,29 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
+    if (cmd == "ssi") {
+        if (argc < 3) {
+            ssi::runRepl();
+            return 0;
+        }
+        std::string ssi_arg = argv[2];
+        if (ssi_arg == "-c" && argc > 3) {
+            std::vector<std::string> pass_args;
+            for (int i = 4; i < argc; ++i) pass_args.push_back(argv[i]);
+            return ssi::execute(argv[3], pass_args);
+        }
+        if (ssi_arg == "-e" && argc > 3) {
+            return ssi::evaluateExpression(argv[3]);
+        }
+        if (ssi_arg == "repl") {
+            ssi::runRepl();
+            return 0;
+        }
+        std::vector<std::string> pass_args;
+        for (int i = 3; i < argc; ++i) pass_args.push_back(argv[i]);
+        return ssi::executeFile(ssi_arg, pass_args);
+    }
+
     std::string viss_file = "";
     bool run_after = false;
 
@@ -4494,6 +4530,12 @@ int main(int argc, char* argv[]) {
     if (!fs::exists(viss_file)) {
         std::cerr << "Error: File '" << viss_file << "' not found.\n";
         return 1;
+    }
+
+    if (endsWith(viss_file, ".ssi")) {
+        std::vector<std::string> pass_args;
+        for (int ai = (cmd == "run" ? 3 : 2); ai < argc; ++ai) pass_args.push_back(argv[ai]);
+        return ssi::executeFile(viss_file, pass_args);
     }
 
     fs::path p(viss_file);
