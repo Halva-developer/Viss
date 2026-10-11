@@ -1,0 +1,24 @@
+id ICON "viss.ico"
+1 VERSIONINFO
+FILEVERSION     0,3,0,0
+PRODUCTVERSION  0,3,0,0
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904E4"
+    BEGIN
+      VALUE "CompanyName", "Viss Lang"
+      VALUE "FileDescription", "Viss Programming Language Compiler & Toolchain"
+      VALUE "FileVersion", "0.3.0.0"
+      VALUE "InternalName", "viss"
+      VALUE "LegalCopyright", "Unlicense / Halva <halva@horni.cc>"
+      VALUE "OriginalFilename", "viss.exe"
+      VALUE "ProductName", "Viss"
+      VALUE "ProductVersion", "0.3.0.0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1252
+  END
+END

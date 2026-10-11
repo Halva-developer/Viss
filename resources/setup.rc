@@ -1,0 +1,24 @@
+id ICON "setup.ico"
+1 VERSIONINFO
+FILEVERSION     0,3,0,0
+PRODUCTVERSION  0,3,0,0
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904E4"
+    BEGIN
+      VALUE "CompanyName", "Viss Lang"
+      VALUE "FileDescription", "Viss Language Autonomous Windows Installer"
+      VALUE "FileVersion", "0.3.0.0"
+      VALUE "InternalName", "Setup_Viss"
+      VALUE "LegalCopyright", "Unlicense / Halva <halva@horni.cc>"
+      VALUE "OriginalFilename", "Setup_Viss.exe"
+      VALUE "ProductName", "Viss Language Setup"
+      VALUE "ProductVersion", "0.3.0.0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1252
+  END
+END

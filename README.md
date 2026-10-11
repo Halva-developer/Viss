@@ -39,8 +39,7 @@ Following the beloved Debian tradition with *Toy Story*, Viss codenames each off
 | `v0.1.2` | **"BMO"** | BMO | Retro-tech audio synthesizer, pixel screen buffer, and sound chip. |
 | `v0.2.0` | **"Marceline"** | Marceline the Vampire Queen | Struct member methods, enums, `Vec2`/`Vec3` vector math, pipelines (`\|>`), Elvis (`?:`), `!defer`, and complete handbook specs. |
 | `v0.2.1` | **"Hambo"** | Hambo | Dynamic auto-lists, Map/Dict literals (`{}`), range slicing (`..`), `in`/`!in` membership operators, tuple unpacking, native `!async`/`!await`, string kinds (`r""`, `b""`, `""""""`), `fs.glob`, `json.loads`/`dumps`, pure native C++ runtime. |
-| `v0.2.2` | **"Prismo & Cosmic Owl"** | Prismo & Cosmic Owl | Flexible typed function parameters, single-quoted string literals (`'...'`), human compiler diagnostics, Linux & macOS toolchain (`Makefile`, `.deb`, `.tar.gz`, `install.sh`, AppImage), autonomous Windows installer (`Setup_Viss.exe`). |
-| `v0.3.0` | **"Peppermint Butler"** | Peppermint Butler | **Current Release:** Official Package Manager (`viss pkg`), Cross-Platform GUI (`libs/std/gui.hpp`), Native Language Server Protocol (`viss lsp`), Embedded SQLite Relational Database (`libs/std/db.hpp`), Multi-Threaded HTTP Web Server (`libs/std/net.hpp`), Go-Style Concurrency Channels (`libs/std/chan.hpp`), Independent Native Execution Engine (`viss vm`), and VS Code Extension v0.4.0. |
+| `v0.3.0` | **"Peppermint Butler"** | Peppermint Butler | **Current Release:** VSC - Viss Script Core & CLI runner (`vsc` / `ssi`), Official Package Manager (`viss pkg`), Cross-Platform GUI (`libs/std/gui.hpp`), Native Language Server Protocol (`viss lsp`), Embedded SQLite Relational Database (`libs/std/db.hpp`), Multi-Threaded HTTP Web Server (`libs/std/net.hpp`), Go-Style Concurrency Channels (`libs/std/chan.hpp`), Independent Native Execution Engine (`viss vm`), Native Embedded Windows Icons, and VS Code Extension v0.4.0. |
 
 ---
 
@@ -310,10 +309,14 @@ viss create exe app.viss [-o app.exe] [--gui] [--icon icon.ico]  # Windows stand
 viss create bin app.viss [-o app]                                # Linux ELF binary / distribution pkg
 viss create apple app.viss [-o app.app]                          # macOS Application Bundle (.app)
 
-# Fast Execution & REPL:
+# Fast Execution, VSC & REPL:
 viss repl                                  # Real-time in-memory Pythonic REPL (or just run 'viss')
 viss vm script.viss                        # Native VissVM execution (0ms compile overhead)
 viss exec script.viss                      # Alias for 'viss vm'
+viss run script.vsc                        # Run VSC script directly via Viss compiler
+vsc script.vsc                             # VSC - Viss Script Core standalone runner (0ms overhead)
+vsc -c "RUN- println('Hi'); END;"          # Run inline VSC code block
+vsc -e "a(i)-return(i+10);END;println(a(1));" # Evaluate expression or snippet directly
 viss -e "math.sqrt(16.0)"                  # Evaluate inline Viss expression directly
 viss run app.viss [--fast]                 # Transpile, compile, and run (with caching)
 

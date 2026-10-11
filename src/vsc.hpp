@@ -222,12 +222,11 @@ inline std::string transpileVSCtoViss(const std::string& source, bool is_repl = 
         if (!rem.empty()) statements.push_back(rem);
     }
 
-    // Check if script explicitly has $RUN: or !main
+    // Check if script explicitly has $RUN or !main
     bool has_main_block = false;
     for (const auto& s : statements) {
         std::string ts = trim(s);
-        if (startsWith(ts, "$RUN:") || startsWith(ts, "$RUN") ||
-            startsWith(ts, "RUN:") || startsWith(ts, "RUN") ||
+        if (startsWith(ts, "$RUN") || startsWith(ts, "RUN") ||
             startsWith(ts, "!main") || startsWith(ts, "main()")) {
             has_main_block = true;
             break;
@@ -268,13 +267,26 @@ inline std::string transpileVSCtoViss(const std::string& source, bool is_repl = 
             continue;
         }
 
-        // 2. $RUN: main block header
-        if (startsWith(clean, "$RUN:") || clean == "$RUN" || startsWith(clean, "RUN:") || clean == "RUN" || startsWith(clean, "!main") || clean == "main()") {
+        // 2. $RUN block header: RUN:, RUN->, RUN-, $RUN:, $RUN->, $RUN-
+        bool is_run_header = false;
+        size_t run_del_len = 0;
+        for (const std::string& rprefix : {"$RUN->", "RUN->", "$RUN:", "RUN:", "$RUN-", "RUN-"}) {
+            if (startsWith(clean, rprefix)) {
+                is_run_header = true;
+                run_del_len = rprefix.size();
+                break;
+            }
+        }
+        if (!is_run_header && (clean == "$RUN" || clean == "RUN" || startsWith(clean, "!main") || clean == "main()")) {
+            is_run_header = true;
+            run_del_len = clean.size();
+        }
+
+        if (is_run_header) {
             in_run = true;
             main_body.push_back("!main {");
-            size_t cpos = clean.find(':');
-            if (cpos != std::string::npos && cpos + 1 < clean.size()) {
-                std::string rest = trim(clean.substr(cpos + 1));
+            if (run_del_len > 0 && run_del_len < clean.size()) {
+                std::string rest = trim(clean.substr(run_del_len));
                 if (!rest.empty()) {
                     statements.insert(statements.begin() + si + 1, rest + ";");
                 }
@@ -370,20 +382,23 @@ inline std::string transpileVSCtoViss(const std::string& source, bool is_repl = 
         }
 
         // 6. Pipeline unrolling: @var expr |> f() or expr |> f()
-        if (clean.find("|>") != std::string::npos) {
-            // Check assignment without '=': e.g. @boba k() |> ...
+        if (clean.find("|>") != std::string::npos && !startsWith(clean, "println(") && !startsWith(clean, "print(") && !startsWith(clean, "io.println(") && !startsWith(clean, "iostream.println(")) {
+            // Check assignment: e.g. @boba = expr |> ... or @boba k() |> ...
             if (clean.front() == '@' || clean.front() == '&') {
-                size_t sp = clean.find_first_of(" \t");
-                if (sp != std::string::npos) {
-                    std::string vname = clean.substr(0, sp);
-                    std::string rest = trim(clean.substr(sp + 1));
-                    if (!rest.empty() && rest.front() != '=') {
+                size_t eq_pos = clean.find('=');
+                if (eq_pos != std::string::npos && (eq_pos == 0 || clean[eq_pos - 1] != '!') && (eq_pos + 1 >= clean.size() || clean[eq_pos + 1] != '=')) {
+                    std::string vname = trim(clean.substr(0, eq_pos));
+                    std::string rest = trim(clean.substr(eq_pos + 1));
+                    clean = vname + " = " + unrollPipeline(rest);
+                } else {
+                    size_t sp = clean.find_first_of(" \t");
+                    if (sp != std::string::npos) {
+                        std::string vname = clean.substr(0, sp);
+                        std::string rest = trim(clean.substr(sp + 1));
                         clean = vname + " = " + unrollPipeline(rest);
                     } else {
-                        clean = vname + " " + unrollPipeline(rest);
+                        clean = unrollPipeline(clean);
                     }
-                } else {
-                    clean = unrollPipeline(clean);
                 }
             } else {
                 clean = unrollPipeline(clean);
@@ -452,6 +467,20 @@ inline std::string transpileVSCtoViss(const std::string& source, bool is_repl = 
         }
     }
 
+    auto isInsideQuotes = [](const std::string& line, size_t target_pos) -> bool {
+        bool in_s = false;
+        char qc = 0;
+        for (size_t i = 0; i < target_pos && i < line.size(); ++i) {
+            char c = line[i];
+            if (in_s) {
+                if (c == qc && (i == 0 || line[i - 1] != '\\')) in_s = false;
+            } else {
+                if (c == '"' || c == '\'') { in_s = true; qc = c; }
+            }
+        }
+        return in_s;
+    };
+
     // Normalize function call cases in funcs and main_body
     auto normalizeFnCases = [&](std::string& line) {
         for (const auto& kv : fn_cases) {
@@ -460,6 +489,10 @@ inline std::string transpileVSCtoViss(const std::string& source, bool is_repl = 
             if (kv.first != kv.second) {
                 size_t pos = 0;
                 while ((pos = line.find(pat, pos)) != std::string::npos) {
+                    if (isInsideQuotes(line, pos)) {
+                        pos += pat.size();
+                        continue;
+                    }
                     bool l_ok = (pos == 0 || (!std::isalnum((unsigned char)line[pos - 1]) && line[pos - 1] != '_' && line[pos - 1] != '@'));
                     if (l_ok) {
                         line.replace(pos, pat.size(), rep);
@@ -482,6 +515,10 @@ inline std::string transpileVSCtoViss(const std::string& source, bool is_repl = 
             std::string pat = sig.name + "(";
             size_t pos = 0;
             while ((pos = line.find(pat, pos)) != std::string::npos) {
+                if (isInsideQuotes(line, pos)) {
+                    pos += pat.size();
+                    continue;
+                }
                 bool l_ok = (pos == 0 || (!std::isalnum((unsigned char)line[pos - 1]) && line[pos - 1] != '_' && line[pos - 1] != '@'));
                 if (!l_ok) {
                     pos += pat.size();
@@ -572,15 +609,15 @@ inline int executeFile(const std::string& filepath, const std::vector<std::strin
 // Expression evaluation
 inline int evaluateExpression(const std::string& expr_str) {
     viss::vm::VMContext ctx;
-    std::string unrolled = unrollPipeline(trim(expr_str));
+    std::string viss_code = transpileVSCtoViss(expr_str, /*is_repl=*/true);
     bool is_expr = false;
     std::string err_m;
-    auto res = viss::vm::VissVM::executeReplSnippet(unrolled, ctx, is_expr, err_m);
+    auto res = viss::vm::VissVM::executeReplSnippet(viss_code, ctx, is_expr, err_m);
     if (!err_m.empty()) {
         std::cerr << "[VSC Error] " << err_m << "\n";
         return 1;
     }
-    if (res.type != viss::vm::VMType::Null) {
+    if (res.type != viss::vm::VMType::Null && is_expr) {
         std::cout << res.to_string() << "\n";
     }
     return 0;

@@ -21,7 +21,7 @@
     "languages": [{
       "id": "viss",
       "aliases": ["Viss", "viss"],
-      "extensions": [".viss"],
+      "extensions": [".viss", ".vsc", ".ssi"],
       "configuration": "./language-configuration.json"
     }],
     "grammars": [{

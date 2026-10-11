@@ -5,7 +5,7 @@
 
 set -e
 
-VERSION="0.2.2"
+VERSION="0.3.0"
 ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
 PACKAGE_NAME="viss_${VERSION}_${ARCH}"
 BUILD_ROOT="/tmp/${PACKAGE_NAME}"
@@ -26,16 +26,22 @@ mkdir -p "$BUILD_ROOT/usr/share/mime/packages"
 mkdir -p "$BUILD_ROOT/usr/share/applications"
 mkdir -p "$BUILD_ROOT/usr/share/icons/hicolor/256x256/apps"
 
-# 1. Compile binary
-if [ ! -f "bin/viss" ]; then
-    echo "Compiling bin/viss..."
+# 1. Compile binaries
+if [ ! -f "bin/viss" ] || [ ! -f "bin/vsc" ]; then
+    echo "Compiling binaries..."
     mkdir -p bin
     g++ -std=c++20 -O3 -pipe -I. -Ilibs -Isrc src/vissc.cpp -o bin/viss -pthread -ldl
+    g++ -std=c++17 -O3 -pipe -I. -Ilibs -Isrc src/vsc_cli.cpp -o bin/vsc -pthread -ldl
 fi
 
 # 2. Copy payload
 cp bin/viss "$BUILD_ROOT/usr/bin/viss"
 chmod 755 "$BUILD_ROOT/usr/bin/viss"
+if [ -f "bin/vsc" ]; then
+    cp bin/vsc "$BUILD_ROOT/usr/bin/vsc"
+    chmod 755 "$BUILD_ROOT/usr/bin/vsc"
+    ln -sf vsc "$BUILD_ROOT/usr/bin/ssi"
+fi
 
 cp -r libs/* "$BUILD_ROOT/usr/share/viss/libs/"
 cp -r libs/* "$BUILD_ROOT/usr/include/viss/"
@@ -51,7 +57,7 @@ fi
 # 3. Create DEBIAN/control
 cat << 'EOF' > "$BUILD_ROOT/DEBIAN/control"
 Package: viss
-Version: 0.2.2
+Version: 0.3.0
 Section: devel
 Priority: optional
 Architecture: amd64

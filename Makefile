@@ -22,16 +22,22 @@ ifeq ($(OS),Windows_NT)
     VSC_TARGET = vsc.exe
     SSI_TARGET = ssi.exe
     WINFLAGS = -lgdiplus -lgdi32 -luser32 -lcomdlg32 -lshell32 -lole32 -lwinmm -lws2_32 -lwininet
+    VISS_RES = resources/viss.res.o
+    VSC_RES = resources/vsc.res.o
 else ifeq ($(UNAME_S),Darwin)
     TARGET = viss
     VSC_TARGET = vsc
     SSI_TARGET = ssi
     LDFLAGS = -pthread
+    VISS_RES =
+    VSC_RES =
 else
     TARGET = viss
     VSC_TARGET = vsc
     SSI_TARGET = ssi
     LDFLAGS = -pthread -ldl
+    VISS_RES =
+    VSC_RES =
 endif
 
 SRC = src/vissc.cpp
@@ -44,17 +50,23 @@ all: build
 
 build: $(TARGET) $(VSC_TARGET) $(SSI_TARGET)
 
-$(TARGET): $(SRC) $(HDRS)
+resources/viss.res.o: resources/viss.rc resources/viss.ico
+	windres -I resources resources/viss.rc -O coff -o resources/viss.res.o
+
+resources/vsc.res.o: resources/vsc.rc resources/vsc.ico
+	windres -I resources resources/vsc.rc -O coff -o resources/vsc.res.o
+
+$(TARGET): $(SRC) $(HDRS) $(VISS_RES)
 ifeq ($(OS),Windows_NT)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(SRC) -o $(TARGET) $(WINFLAGS)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(SRC) $(VISS_RES) -o $(TARGET) $(WINFLAGS)
 else
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(SRC) -o $(TARGET) $(LDFLAGS)
 endif
 	@echo "Build complete: $(TARGET)"
 
-$(VSC_TARGET): $(VSC_SRC) $(HDRS)
+$(VSC_TARGET): $(VSC_SRC) $(HDRS) $(VSC_RES)
 ifeq ($(OS),Windows_NT)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(VSC_SRC) -o $(VSC_TARGET) $(WINFLAGS)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(VSC_SRC) $(VSC_RES) -o $(VSC_TARGET) $(WINFLAGS)
 else
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(VSC_SRC) -o $(VSC_TARGET) $(LDFLAGS)
 endif

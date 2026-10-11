@@ -67,7 +67,7 @@ bool addPathToUserEnvironment(const std::string& new_dir) {
     return true;
 }
 
-bool registerFileAssociations(const std::string& viss_exe) {
+bool registerFileAssociations(const std::string& viss_exe, const std::string& vsc_exe) {
     HKEY hKey;
     // .viss extension
     if (RegCreateKeyExA(HKEY_CURRENT_USER, "Software\\Classes\\.viss", 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
@@ -84,22 +84,42 @@ bool registerFileAssociations(const std::string& viss_exe) {
     }
 
     // Command: open with viss run
-    std::string cmd_str = "\"" + viss_exe + "\" run \"%1\"";
+    std::string viss_cmd = "\"" + viss_exe + "\" run \"%1\"";
     if (RegCreateKeyExA(HKEY_CURRENT_USER, "Software\\Classes\\VissSourceFile\\shell\\open\\command", 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        RegSetValueExA(hKey, NULL, 0, REG_SZ, (const BYTE*)cmd_str.c_str(), (DWORD)(cmd_str.size() + 1));
+        RegSetValueExA(hKey, NULL, 0, REG_SZ, (const BYTE*)viss_cmd.c_str(), (DWORD)(viss_cmd.size() + 1));
         RegCloseKey(hKey);
     }
 
     // Context menu: "Run with Viss"
-    if (RegCreateKeyExA(HKEY_CURRENT_USER, "Software\\Classes\\VissSourceFile\\shell\\Run with Viss", 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        RegCloseKey(hKey);
-    }
     if (RegCreateKeyExA(HKEY_CURRENT_USER, "Software\\Classes\\VissSourceFile\\shell\\Run with Viss\\command", 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        RegSetValueExA(hKey, NULL, 0, REG_SZ, (const BYTE*)cmd_str.c_str(), (DWORD)(cmd_str.size() + 1));
+        RegSetValueExA(hKey, NULL, 0, REG_SZ, (const BYTE*)viss_cmd.c_str(), (DWORD)(viss_cmd.size() + 1));
         RegCloseKey(hKey);
     }
 
-    std::cout << "\033[32m[+] Registered .viss file association & 'Run with Viss' context menu.\033[0m\n";
+    // .vsc and .ssi extensions
+    std::string vsc_cmd = "\"" + vsc_exe + "\" \"%1\"";
+    for (const char* ext : {".vsc", ".ssi"}) {
+        if (RegCreateKeyExA(HKEY_CURRENT_USER, (std::string("Software\\Classes\\") + ext).c_str(), 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+            const char* progId = "VSCSourceFile";
+            RegSetValueExA(hKey, NULL, 0, REG_SZ, (const BYTE*)progId, (DWORD)(strlen(progId) + 1));
+            RegCloseKey(hKey);
+        }
+    }
+    if (RegCreateKeyExA(HKEY_CURRENT_USER, "Software\\Classes\\VSCSourceFile", 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        const char* desc = "VSC Script Core File";
+        RegSetValueExA(hKey, NULL, 0, REG_SZ, (const BYTE*)desc, (DWORD)(strlen(desc) + 1));
+        RegCloseKey(hKey);
+    }
+    if (RegCreateKeyExA(HKEY_CURRENT_USER, "Software\\Classes\\VSCSourceFile\\shell\\open\\command", 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        RegSetValueExA(hKey, NULL, 0, REG_SZ, (const BYTE*)vsc_cmd.c_str(), (DWORD)(vsc_cmd.size() + 1));
+        RegCloseKey(hKey);
+    }
+    if (RegCreateKeyExA(HKEY_CURRENT_USER, "Software\\Classes\\VSCSourceFile\\shell\\Run with VSC\\command", 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        RegSetValueExA(hKey, NULL, 0, REG_SZ, (const BYTE*)vsc_cmd.c_str(), (DWORD)(vsc_cmd.size() + 1));
+        RegCloseKey(hKey);
+    }
+
+    std::cout << "\033[32m[+] Registered .viss, .vsc, and .ssi file associations & context menus.\033[0m\n";
     return true;
 }
 
@@ -114,8 +134,8 @@ int main(int argc, char* argv[]) {
     std::cout << "     \\  /  | \\__ \\__ \\    \n";
     std::cout << "      \\/   |_|___/___/    \n";
     std::cout << "\033[0m\n";
-    std::cout << "\033[33m\033[1mViss Language Toolchain v0.2.2 \"Prismo & Cosmic Owl\"\033[0m\n";
-    std::cout << "\033[37mAutonomous Windows Standalone Setup\033[0m\n\n";
+    std::cout << "\033[33m\033[1mViss Language Toolchain v0.3.0 \"Peppermint Butler\"\033[0m\n";
+    std::cout << "\033[37mAutonomous Windows Standalone Setup (with VSC - Viss Script Core)\033[0m\n\n";
 
     fs::path install_dir = fs::path(getLocalAppData()) / "Programs" / "Viss";
 
@@ -149,6 +169,8 @@ int main(int argc, char* argv[]) {
         }
 
         fs::path src_viss = src_root / "viss.exe";
+        fs::path src_vsc = src_root / "vsc.exe";
+        fs::path src_ssi = src_root / "ssi.exe";
         fs::path src_libs = src_root / "libs";
 
         if (!fs::exists(src_viss)) {
@@ -164,8 +186,11 @@ int main(int argc, char* argv[]) {
             return CopyFileW(src.wstring().c_str(), dst.wstring().c_str(), FALSE) != 0;
         };
 
-        std::cout << "[*] Copying compiler binary...\n";
+        std::cout << "[*] Copying compiler & runner binaries...\n";
         robustCopy(src_viss, install_dir / "viss.exe");
+        if (fs::exists(src_vsc)) robustCopy(src_vsc, install_dir / "vsc.exe");
+        if (fs::exists(src_ssi)) robustCopy(src_ssi, install_dir / "ssi.exe");
+        else if (fs::exists(src_vsc)) robustCopy(src_vsc, install_dir / "ssi.exe");
 
         if (fs::exists(src_root / "viss.cmd")) {
             robustCopy(src_root / "viss.cmd", install_dir / "viss.cmd");
@@ -188,7 +213,7 @@ int main(int argc, char* argv[]) {
         addPathToUserEnvironment(install_dir.string());
 
         // Register file associations
-        registerFileAssociations((install_dir / "viss.exe").string());
+        registerFileAssociations((install_dir / "viss.exe").string(), (install_dir / "vsc.exe").string());
 
         // Check if VS Code CLI is present and install .vsix extension
         fs::path vsix_path = src_root / "extensions" / "viss-vscode" / "viss-vscode-0.3.2.vsix";

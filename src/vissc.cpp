@@ -4054,7 +4054,8 @@ void printHelp() {
               << "  create <target> <file>    Unified binary builder (targets: exe, bin, apple)\n"
               << "  exec <file.viss>          Direct native VM execution (instant 0ms, zero C++/g++ needed!)\n"
               << "  vm <file.viss>            Alias for 'exec'\n"
-              << "  run <file.viss>           Transpile, compile, and execute with zero-overhead\n"
+              << "  vsc, script <file.vsc>    Execute VSC script directly (0ms compile overhead)\n"
+              << "  run <file.viss|file.vsc>  Transpile, compile, and execute with zero-overhead\n"
               << "  -e \"<code>\"              Evaluate inline Viss expression directly\n"
               << "  eval \"<code>\"            Alias for '-e'\n"
               << "  build <file.viss>         Transpile and compile to standard executable\n"
@@ -4284,11 +4285,15 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (cmd == "exec" || cmd == "vm") {
-        if (argc < 3) { std::cerr << "Usage: viss " << cmd << " <file.viss>\n"; return 1; }
+    if (cmd == "exec" || cmd == "vm" || cmd == "script" || cmd == "vsc") {
+        if (argc < 3) { std::cerr << "Usage: viss " << cmd << " <file.viss|file.vsc>\n"; return 1; }
         std::vector<std::string> pass_args;
         for (int ai = 3; ai < argc; ++ai) pass_args.push_back(argv[ai]);
-        return viss::vm::VissVM::executeFile(argv[2], pass_args);
+        std::string target = argv[2];
+        if (target.size() >= 4 && (target.substr(target.size() - 4) == ".vsc" || target.substr(target.size() - 4) == ".ssi")) {
+            return vsc::executeFile(target, pass_args);
+        }
+        return viss::vm::VissVM::executeFile(target, pass_args);
     }
 
     if (cmd == "bundle") {

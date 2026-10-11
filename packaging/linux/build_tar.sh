@@ -5,7 +5,7 @@
 
 set -e
 
-VERSION="0.2.2"
+VERSION="0.3.0"
 ARCH="$(uname -m 2>/dev/null || echo x86_64)"
 DIST_NAME="viss-${VERSION}-linux-${ARCH}"
 STAGING_DIR="/tmp/${DIST_NAME}"
@@ -20,14 +20,19 @@ mkdir -p "$STAGING_DIR/bin"
 mkdir -p "$STAGING_DIR/libs"
 mkdir -p dist
 
-# 1. Ensure binary exists
-if [ ! -f "bin/viss" ]; then
+# 1. Ensure binaries exist
+if [ ! -f "bin/viss" ] || [ ! -f "bin/vsc" ]; then
     mkdir -p bin
     g++ -std=c++20 -O3 -pipe -I. -Ilibs -Isrc src/vissc.cpp -o bin/viss -pthread -ldl
+    g++ -std=c++17 -O3 -pipe -I. -Ilibs -Isrc src/vsc_cli.cpp -o bin/vsc -pthread -ldl
 fi
 
 # 2. Populate staging
 cp bin/viss "$STAGING_DIR/bin/"
+if [ -f "bin/vsc" ]; then
+    cp bin/vsc "$STAGING_DIR/bin/"
+    ln -sf vsc "$STAGING_DIR/bin/ssi"
+fi
 cp -r libs/* "$STAGING_DIR/libs/"
 cp README.md "$STAGING_DIR/"
 cp LICENSE "$STAGING_DIR/"

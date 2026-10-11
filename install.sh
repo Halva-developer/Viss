@@ -78,7 +78,11 @@ echo -e "${CYAN}[*] Compiling Viss compiler with $COMPILER (-std=c++20 -O3)...${
 $COMPILER -std=c++20 -O3 -pipe -Wall -Wextra -Wno-unused-parameter -Wno-deprecated-declarations \
     -I. -Ilibs -Isrc src/vissc.cpp -o bin/viss -pthread -ldl
 
-echo -e "${GREEN}[*] Compiler built successfully!${NC}"
+echo -e "${CYAN}[*] Compiling VSC (Viss Script Core) with $COMPILER (-std=c++17 -O3)...${NC}"
+$COMPILER -std=c++17 -O3 -pipe -Wall -Wextra -Wno-unused-parameter -Wno-deprecated-declarations \
+    -I. -Ilibs -Isrc src/vsc_cli.cpp -o bin/vsc -pthread -ldl
+
+echo -e "${GREEN}[*] Binaries built successfully!${NC}"
 
 # 4. Install files
 echo -e "${CYAN}[*] Installing binaries and standard libraries...${NC}"
@@ -89,6 +93,10 @@ $SUDO_CMD mkdir -p "$INC_DIR/libs"
 
 $SUDO_CMD cp bin/viss "$BIN_DIR/viss"
 $SUDO_CMD chmod 755 "$BIN_DIR/viss"
+
+$SUDO_CMD cp bin/vsc "$BIN_DIR/vsc"
+$SUDO_CMD chmod 755 "$BIN_DIR/vsc"
+$SUDO_CMD ln -sf vsc "$BIN_DIR/ssi" 2>/dev/null || $SUDO_CMD cp bin/vsc "$BIN_DIR/ssi"
 
 $SUDO_CMD cp -r libs/* "$LIB_DIR/"
 $SUDO_CMD cp -r libs/* "$INC_DIR/"

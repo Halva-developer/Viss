@@ -1,0 +1,47 @@
+#!/usr/bin/env vsc
+// =============================================================================
+// VSC Example 08: Viss Script Core (Son of Viss)
+// Zero-overhead scripting, top-level execution, and pipeline transformations.
+//
+// Run directly:   vsc examples/08_script_core.vsc
+// Or with viss:   viss examples/08_script_core.vsc
+// Or compile:     vsc build examples/08_script_core.vsc -o script_app
+// =============================================================================
+
+%import system as sys;
+%import iostream as io;
+%import math as math;
+
+println("=== VSC (Viss Script Core) v0.3.0 Demo ===");
+
+// 1. System inspection
+@os = sys.os();
+println("Current Operating System: " + @os);
+
+?if (@os contains "Windows") -> println("Detected Windows platform! :3");
+?elif (@os contains "Linux") -> println("Detected Linux / Unix platform! ^_^");
+?else -> println("Running on generic POSIX platform.");
+
+// 2. Single-line function definitions
+$double(x)->return(x * 2);END
+$add_ten(x)->return(x + 10);END
+
+@val = 5;
+@res = @val |> double() |> add_ten();
+println("Pipeline calculation: 5 |> double() |> add_ten() = " + @res);
+
+// 3. Multiline function definition
+calc_hypot(a, b):
+    @sum_sq = (a * a) + (b * b);
+    return(math.sqrt(@sum_sq));
+END
+
+@h = calc_hypot(3, 4);
+println("Hypotenuse of (3, 4) = " + @h);
+
+// 4. One-liner loop and inline prints
+println("Counting down...");
+!for (@i in 3..1) {
+    println("  T-minus " + @i);
+}
+println("Liftoff with VSC! Zero-overhead scripting ready!");
