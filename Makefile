@@ -29,13 +29,14 @@ else
 endif
 
 SRC = src/vissc.cpp
+HDRS = src/viss_vm.hpp
 INCLUDES = -I. -Ilibs -Isrc
 
 all: build
 
 build: $(TARGET)
 
-$(TARGET): $(SRC)
+$(TARGET): $(SRC) $(HDRS)
 ifeq ($(OS),Windows_NT)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(SRC) -o $(TARGET) $(WINFLAGS)
 else

@@ -2144,12 +2144,15 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
     includes_section.push_back("#endif");
     aliases_section.push_back("using namespace viss;");
     aliases_section.push_back("namespace io = viss::io;");
+    aliases_section.push_back("namespace iostream = viss::io;");
     aliases_section.push_back("namespace sys = viss::sys;");
     aliases_section.push_back("namespace fs = viss::fs;");
     aliases_section.push_back("namespace math = viss::math;");
     aliases_section.push_back("namespace str = viss::str;");
     aliases_section.push_back("namespace rt = viss::retrotech;");
+    aliases_section.push_back("namespace retrotech = viss::retrotech;");
     aliases_section.push_back("namespace async = viss::async;");
+    aliases_section.push_back("namespace asyncIO = viss::async;");
     aliases_section.push_back("namespace json = viss::json;");
     aliases_section.push_back("namespace crypto = viss::crypto;");
     aliases_section.push_back("namespace collections = viss::collections;");
@@ -2171,7 +2174,7 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
     aliases_section.push_back("namespace chan = viss::chan;");
 
     std::vector<std::string> imported_aliases = {
-        "io", "sys", "fs", "math", "str", "rt", "async", "json",
+        "io", "iostream", "sys", "fs", "math", "str", "rt", "retrotech", "async", "asyncIO", "json",
         "crypto", "collections", "env", "net", "db", "chan", "pkg", "mask", "bytemask", "colormask",
         "audio", "snd", "sound", "media", "tag", "gui", "ui", "window", "win", "lic", "license"
     };
@@ -2200,12 +2203,15 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
         int line_num = item.second;
         if (stripped.empty()) continue;
 
-        // 1.0 Relative/Local Viss file import: $import file "module.viss" as alias or $import "module.viss" as alias
+        // 1.0 Relative/Local Viss file import: $import file "module.viss" [as alias] or $import "module.viss" [as alias]
         std::smatch m_vimp;
-        if (std::regex_match(stripped, m_vimp, std::regex(R"(^\$import(?:\s+file)?\s+([^\s]+)\s+as\s+([a-zA-Z0-9_]+);?$)"))) {
+        if (std::regex_match(stripped, m_vimp, std::regex(R"(^\$import(?:\s+file)?\s+([^\s]+)(?:\s+as\s+([a-zA-Z0-9_]+))?;?$)"))) {
             std::string file_token = resolveStringLiteralToken(m_vimp[1].str(), string_literals);
-            std::string alias = m_vimp[2].str();
+            std::string alias = (m_vimp.size() > 2 && m_vimp[2].matched) ? m_vimp[2].str() : "";
             if (endsWith(file_token, ".viss")) {
+                if (alias.empty()) {
+                    alias = fs::path(file_token).stem().string();
+                }
                 fs::path target_file = fs::path(current_dir) / file_token;
                 if (!fs::exists(target_file)) {
                     target_file = fs::current_path() / file_token;
@@ -2226,10 +2232,11 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             }
         }
 
-        // 1. Directives: $import lib from "system" ... as ...
+        // 1. Directives: $import lib from "system" ... [as ...]
         std::smatch m_imp;
-        if (std::regex_match(stripped, m_imp, std::regex(R"(^\$import\s+lib\s+from\s+([^\s\[]+)(?:\s*\[[^\]]*\])?\s+as\s+([a-zA-Z0-9_]+);?$)"))) {
-            std::string alias = m_imp[2].str();
+        if (std::regex_match(stripped, m_imp, std::regex(R"(^\$import\s+lib\s+from\s+([^\s\[]+)(?:\s*\[[^\]]*\])?(?:\s+as\s+([a-zA-Z0-9_]+))?;?$)"))) {
+            std::string mod_src = resolveStringLiteralToken(m_imp[1].str(), string_literals);
+            std::string alias = (m_imp.size() > 2 && m_imp[2].matched) ? m_imp[2].str() : mod_src;
             imported_aliases.push_back(alias);
             includes_section.push_back("#include \"libs/std/sys.hpp\"");
             aliases_section.push_back("namespace " + alias + " = viss::sys;");
@@ -2239,20 +2246,7 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
         // $import lib "..." [as ...] or $impoer lib "..." [as ...]
         if (std::regex_match(stripped, m_imp, std::regex(R"(^\$impo(?:rt|er)\s+lib\s+([^\s]+)(?:\s+as\s+([a-zA-Z0-9_]+))?;?$)"))) {
             std::string lib_name = resolveStringLiteralToken(m_imp[1].str(), string_literals);
-            std::string alias = (m_imp.size() > 2 && m_imp[2].matched) ? m_imp[2].str() : "";
-            if (alias.empty()) {
-                if (lib_name == "iostream" || lib_name == "io") alias = "io";
-                else if (lib_name == "asyncIO" || lib_name == "async") alias = "async";
-                else if (lib_name == "retrotech" || lib_name == "rt") alias = "rt";
-                else if (lib_name == "bytemask" || lib_name == "colormask" || lib_name == "mask") alias = "mask";
-                else if (lib_name == "crypto") alias = "crypto";
-                else if (lib_name == "json") alias = "json";
-                else if (lib_name == "time") alias = "time";
-                else if (lib_name == "sound" || lib_name == "snd" || lib_name == "audio") alias = "audio";
-                else if (lib_name == "gui" || lib_name == "ui" || lib_name == "window" || lib_name == "win") alias = "gui";
-                else if (lib_name == "media" || lib_name == "tag") alias = "media";
-                else alias = lib_name;
-            }
+            std::string alias = (m_imp.size() > 2 && m_imp[2].matched) ? m_imp[2].str() : lib_name;
             imported_aliases.push_back(alias);
             if (lib_name == "asyncIO" || lib_name == "async") {
                 aliases_section.push_back("namespace " + alias + " = viss::async;");
@@ -2279,11 +2273,18 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
                 if (alias != "time") {
                     aliases_section.push_back("namespace " + alias + " = viss::time;");
                 }
+            } else if (lib_name == "audio" || lib_name == "sound" || lib_name == "snd") {
+                includes_section.push_back("#include \"libs/std/audio.hpp\"");
+                aliases_section.push_back("namespace " + alias + " = viss::audio;");
+            } else if (lib_name == "media" || lib_name == "tag") {
+                includes_section.push_back("#include \"libs/std/media.hpp\"");
+                aliases_section.push_back("namespace " + alias + " = viss::media;");
+            } else if (lib_name == "gui" || lib_name == "ui" || lib_name == "window" || lib_name == "win") {
+                includes_section.push_back("#include \"libs/std/gui.hpp\"");
+                aliases_section.push_back("namespace " + alias + " = viss::gui;");
             } else {
                 includes_section.push_back("#include \"libs/std/" + lib_name + ".hpp\"");
-                if (alias != "gui" && alias != "ui" && alias != "window" && alias != "win" && alias != "media" && alias != "tag" && alias != "audio" && alias != "snd" && alias != "sound") {
-                    aliases_section.push_back("namespace " + alias + " = viss::" + lib_name + ";");
-                }
+                aliases_section.push_back("namespace " + alias + " = viss::" + lib_name + ";");
             }
             continue;
         }
@@ -2444,12 +2445,12 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
         }
 
         std::smatch m_fn;
-        if (std::regex_match(stripped, m_fn, std::regex(R"(^!?(?:async[\.\s]+)?func\s+([a-zA-Z0-9_?!]+)\s*\(([^)]*)\)(?:\s+(?:to|as|->)\s+([a-zA-Z0-9_<>]+))?\s*\{$)"))) {
+        if (std::regex_match(stripped, m_fn, std::regex(R"(^!?(?:async[\.\s]+)?func\s+([a-zA-Z0-9_?!]+)(?:\s*\(([^)]*)\))?(?:\s+(?:to|as|->)\s+([a-zA-Z0-9_<>]+))?\s*\{$)"))) {
             bool is_async = (stripped.find("async.") != std::string::npos || stripped.find("async ") != std::string::npos);
             std::string raw_name = m_fn[1].str();
             std::string fname = replaceAll(replaceAll(raw_name, "?", "_q"), "!", "_bang");
-            std::string params_str = m_fn[2].str();
-            std::string ret_type = m_fn[3].str();
+            std::string params_str = (m_fn.size() > 2 && m_fn[2].matched) ? m_fn[2].str() : "";
+            std::string ret_type = (m_fn.size() > 3 && m_fn[3].matched) ? m_fn[3].str() : "";
             declared_vars.enter_function();
             if (!current_struct_name.empty()) {
                 for (const auto& f : struct_fields[current_struct_name]) {
@@ -4685,7 +4686,7 @@ void runRepl() {
     int brace_depth = 0;
 
     while (true) {
-        if (brace_depth > 0) {
+        if (brace_depth > 0 || !multiline_acc.empty()) {
             std::cout << "\033[33m... \033[0m" << std::flush;
         } else {
             std::cout << "\033[1;32m>>> \033[0m" << std::flush;
@@ -4694,9 +4695,12 @@ void runRepl() {
         std::string line;
         if (!std::getline(std::cin, line)) break;
         std::string trimmed = trim(line);
-        if (trimmed.empty() && brace_depth == 0) continue;
+        if (trimmed.empty() && brace_depth == 0) {
+            if (!multiline_acc.empty()) multiline_acc.clear();
+            continue;
+        }
 
-        if (brace_depth == 0) {
+        if (brace_depth == 0 && multiline_acc.empty()) {
             if (trimmed == "exit" || trimmed == "quit" || trimmed == "!exit" || trimmed == ":q") {
                 std::cout << "Exiting REPL.\n";
                 break;
@@ -4792,7 +4796,22 @@ void runRepl() {
         }
 
         multiline_acc += (multiline_acc.empty() ? "" : "\n") + line;
-        if (brace_depth > 0) {
+        std::string check_trimmed = trim(multiline_acc);
+        bool needs_open_brace = false;
+        if (brace_depth == 0) {
+            if (startsWith(check_trimmed, "!func") || startsWith(check_trimmed, "func") ||
+                startsWith(check_trimmed, "!if") || startsWith(check_trimmed, "?if") || startsWith(check_trimmed, "if ") ||
+                startsWith(check_trimmed, "!while") || startsWith(check_trimmed, "while ") ||
+                startsWith(check_trimmed, "!for") || startsWith(check_trimmed, "for ") ||
+                startsWith(check_trimmed, "!loop") || startsWith(check_trimmed, "!struct") ||
+                startsWith(check_trimmed, "struct ") || startsWith(check_trimmed, "!main")) {
+                if (check_trimmed.find('{') == std::string::npos) {
+                    needs_open_brace = true;
+                }
+            }
+        }
+
+        if (brace_depth > 0 || needs_open_brace) {
             continue; // Wait for multiline block to finish
         }
 

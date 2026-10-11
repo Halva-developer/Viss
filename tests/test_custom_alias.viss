@@ -1,0 +1,11 @@
+$import lib "iostream" as myio
+
+!func test_myio
+{
+    myio.println("Hello from custom myio alias!");
+}
+
+!main {
+    test_myio();
+    myio.println("Direct myio call!");
+}

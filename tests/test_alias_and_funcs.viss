@@ -1,0 +1,33 @@
+$import lib "iostream"
+
+!func mult(@a, @b)
+{
+    !return @a * @b;
+}
+
+!func greet
+{
+    iostream.println("Greetings from greet!");
+}
+
+!func check_scope(@val)
+{
+    @global_test = 999;
+    !return @val + @global_test;
+}
+
+!main {
+    iostream.println("Testing iostream alias...");
+    @prod = mult(6, 7);
+    iostream.println("Product is:", @prod);
+    greet();
+
+    @global_test = 42;
+    @res = check_scope(8);
+    iostream.println("check_scope result:", @res);
+    iostream.println("global_test after call:", @global_test);
+    
+    if (@global_test == 42 && @prod == 42) {
+        iostream.println("ALL_TESTS_PASSED");
+    }
+}

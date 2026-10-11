@@ -254,25 +254,61 @@ enum class FlowSignal {
 struct VMContext {
     std::vector<std::unordered_map<std::string, VMVal>> scopes;
     std::unordered_map<std::string, std::shared_ptr<struct UserFunction>> functions;
+    std::unordered_map<std::string, std::string> module_aliases;
     FlowSignal signal = FlowSignal::None;
     VMVal return_val;
 
     VMContext() {
         scopes.emplace_back(); // Global scope
+        init_aliases();
+    }
+
+    void init_aliases() {
+        module_aliases = {
+            {"io", "io"}, {"iostream", "io"},
+            {"math", "math"},
+            {"rt", "rt"}, {"retrotech", "rt"},
+            {"sys", "sys"},
+            {"str", "str"}, {"string", "str"},
+            {"time", "time"},
+            {"audio", "audio"}, {"snd", "audio"}, {"sound", "audio"},
+            {"media", "media"}, {"tag", "media"},
+            {"gui", "gui"}, {"ui", "gui"}, {"window", "gui"}, {"win", "gui"},
+            {"net", "net"},
+            {"db", "db"},
+            {"chan", "chan"},
+            {"fs", "fs"},
+            {"mask", "mask"}, {"bytemask", "mask"}, {"colormask", "mask"},
+            {"crypto", "crypto"},
+            {"json", "json"},
+            {"async", "async"}, {"asyncIO", "async"},
+            {"env", "env"},
+            {"collections", "collections"}
+        };
     }
 
     void push_scope() { scopes.emplace_back(); }
     void pop_scope() { if (scopes.size() > 1) scopes.pop_back(); }
 
     void set_var(const std::string& name, const VMVal& val) {
-        for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
-            auto fit = it->find(name);
-            if (fit != it->end()) {
-                fit->second = val;
+        if (scopes.empty()) scopes.emplace_back();
+        if (scopes.size() > 1) {
+            for (size_t s = scopes.size(); s > 1; --s) {
+                auto fit = scopes[s - 1].find(name);
+                if (fit != scopes[s - 1].end()) {
+                    fit->second = val;
+                    return;
+                }
+            }
+            auto git = scopes.front().find(name);
+            if (git != scopes.front().end()) {
+                git->second = val;
                 return;
             }
+            scopes.back()[name] = val;
+            return;
         }
-        scopes.back()[name] = val;
+        scopes.front()[name] = val;
     }
 
     VMVal get_var(const std::string& name) {
@@ -483,9 +519,16 @@ public:
             }
         }
 
-        // Unary NOT: !expr
+        // Unary NOT or Action Call: !expr
         if (expr.front() == '!' && expr.size() > 1 && expr[1] != '!') {
-            return VMVal(!evaluate(expr.substr(1), ctx).to_bool());
+            std::string sub = trim(expr.substr(1));
+            size_t p_o = sub.find('(');
+            std::string sub_fn = (p_o != std::string::npos && sub.back() == ')') ? trim(sub.substr(0, p_o)) : sub;
+            while (!sub_fn.empty() && (sub_fn.front() == '!' || sub_fn.front() == '@')) sub_fn = sub_fn.substr(1);
+            if (!sub_fn.empty() && ctx.functions.count(sub_fn)) {
+                return evaluate(sub, ctx);
+            }
+            return VMVal(!evaluate(sub, ctx).to_bool());
         }
         // Unary Negation: -expr
         if (expr.front() == '-' && expr.size() > 1) {
@@ -573,9 +616,10 @@ public:
             std::string obj_expr = trim(expr.substr(0, dot_pos));
             std::string member_expr = trim(expr.substr(dot_pos + 1));
 
-            // Module Calls: io.println, math.sqrt, audio.sfx, sys.sleep, media, gui, net, db, chan, fs
-            if (obj_expr == "io" || obj_expr == "rt" || obj_expr == "sys" || obj_expr == "math" || obj_expr == "audio" || obj_expr == "snd" || obj_expr == "sound" || obj_expr == "str" || obj_expr == "time" || obj_expr == "media" || obj_expr == "tag" || obj_expr == "gui" || obj_expr == "ui" || obj_expr == "window" || obj_expr == "win" || obj_expr == "net" || obj_expr == "db" || obj_expr == "chan" || obj_expr == "fs") {
-                return callModule(obj_expr, member_expr, ctx);
+            // Module Calls: lookup via registered module aliases
+            auto mod_it = ctx.module_aliases.find(obj_expr);
+            if (mod_it != ctx.module_aliases.end()) {
+                return callModule(mod_it->second, member_expr, ctx);
             }
 
             // Object Member / Method Evaluation
@@ -724,6 +768,7 @@ public:
         size_t p_open = expr.find('(');
         if (p_open != std::string::npos && expr.back() == ')') {
             std::string fname = trim(expr.substr(0, p_open));
+            while (!fname.empty() && (fname.front() == '!' || fname.front() == '@')) fname = fname.substr(1);
             std::string args_str = expr.substr(p_open + 1, expr.size() - p_open - 2);
             auto args_raw = splitArgs(args_str);
             std::vector<VMVal> args;
@@ -732,10 +777,14 @@ public:
             auto fit = ctx.functions.find(fname);
             if (fit != ctx.functions.end()) {
                 auto fn = fit->second;
-                ctx.push_scope();
+                auto saved_scopes = std::move(ctx.scopes);
+                ctx.scopes.clear();
+                ctx.scopes.push_back(saved_scopes.front()); // global scope
+                ctx.scopes.emplace_back(); // isolated local scope
+
                 for (size_t pi = 0; pi < fn->params.size(); ++pi) {
                     VMVal arg_v = (pi < args.size()) ? args[pi] : VMVal();
-                    ctx.set_var(fn->params[pi], arg_v);
+                    ctx.scopes.back()[fn->params[pi]] = arg_v;
                 }
                 VMVal ret_v;
                 for (const auto& node : fn->body) {
@@ -746,16 +795,39 @@ public:
                         break;
                     }
                 }
-                ctx.pop_scope();
+                auto updated_global = ctx.scopes.front();
+                ctx.scopes = std::move(saved_scopes);
+                ctx.scopes.front() = updated_global;
                 return ret_v;
             }
         }
 
-        // Variable Lookup: @var or var or &buf
+        // Variable Lookup: @var or var or &buf or 0-arg function call
         std::string vname = expr;
-        if (vname.front() == '@' || vname.front() == '&') vname = vname.substr(1);
+        while (!vname.empty() && (vname.front() == '@' || vname.front() == '&' || vname.front() == '!')) vname = vname.substr(1);
         if (ctx.has_var(vname)) {
             return ctx.get_var(vname);
+        }
+        auto fn_it = ctx.functions.find(vname);
+        if (fn_it != ctx.functions.end() && fn_it->second->params.empty()) {
+            auto fn = fn_it->second;
+            auto saved_scopes = std::move(ctx.scopes);
+            ctx.scopes.clear();
+            ctx.scopes.push_back(saved_scopes.front());
+            ctx.scopes.emplace_back();
+            VMVal ret_v;
+            for (const auto& node : fn->body) {
+                ret_v = node->execute(ctx);
+                if (ctx.signal == FlowSignal::Return) {
+                    ret_v = ctx.return_val;
+                    ctx.signal = FlowSignal::None;
+                    break;
+                }
+            }
+            auto updated_global = ctx.scopes.front();
+            ctx.scopes = std::move(saved_scopes);
+            ctx.scopes.front() = updated_global;
+            return ret_v;
         }
 
         return VMVal();
@@ -1606,13 +1678,80 @@ private:
             line = trim(line);
             if (line.empty()) continue;
 
-            // Directives: $import ... -> skip in VM (built-ins always available)
+            // Directives: $import lib ... or $import file ... or $import "..."
             if (startsWith(line, "$import") || startsWith(line, "$impoer") || startsWith(line, "@use")) {
+                std::smatch m_lib;
+                if (std::regex_match(line, m_lib, std::regex(R"(^\$impo(?:rt|er)\s+lib\s+([^\s]+)(?:\s+as\s+([a-zA-Z0-9_]+))?;?$)"))) {
+                    std::string lib_name = m_lib[1].str();
+                    while (!lib_name.empty() && (lib_name.front() == '"' || lib_name.front() == '\'')) lib_name = lib_name.substr(1);
+                    while (!lib_name.empty() && (lib_name.back() == '"' || lib_name.back() == '\'')) lib_name.pop_back();
+                    std::string alias = (m_lib.size() > 2 && m_lib[2].matched) ? m_lib[2].str() : lib_name;
+                    std::string canonical = lib_name;
+                    if (lib_name == "iostream" || lib_name == "io") canonical = "io";
+                    else if (lib_name == "retrotech" || lib_name == "rt") canonical = "rt";
+                    else if (lib_name == "bytemask" || lib_name == "colormask" || lib_name == "mask") canonical = "mask";
+                    else if (lib_name == "asyncIO" || lib_name == "async") canonical = "async";
+                    else if (lib_name == "sound" || lib_name == "snd" || lib_name == "audio") canonical = "audio";
+                    else if (lib_name == "media" || lib_name == "tag") canonical = "media";
+                    else if (lib_name == "gui" || lib_name == "ui" || lib_name == "window" || lib_name == "win") canonical = "gui";
+                    
+                    ctx.module_aliases[alias] = canonical;
+                    ctx.module_aliases[lib_name] = canonical;
+                    continue;
+                }
+                if (std::regex_match(line, m_lib, std::regex(R"(^\$import\s+lib\s+from\s+([^\s\[]+)(?:\s*\[[^\]]*\])?(?:\s+as\s+([a-zA-Z0-9_]+))?;?$)"))) {
+                    std::string mod_src = m_lib[1].str();
+                    while (!mod_src.empty() && (mod_src.front() == '"' || mod_src.front() == '\'')) mod_src = mod_src.substr(1);
+                    while (!mod_src.empty() && (mod_src.back() == '"' || mod_src.back() == '\'')) mod_src.pop_back();
+                    std::string alias = (m_lib.size() > 2 && m_lib[2].matched) ? m_lib[2].str() : mod_src;
+                    ctx.module_aliases[alias] = "sys";
+                    continue;
+                }
+                std::smatch m_fimp;
+                if (std::regex_match(line, m_fimp, std::regex(R"(^\$import(?:\s+file)?\s+([^\s]+)(?:\s+as\s+([a-zA-Z0-9_]+))?;?$)"))) {
+                    std::string ftoken = m_fimp[1].str();
+                    while (!ftoken.empty() && (ftoken.front() == '"' || ftoken.front() == '\'')) ftoken = ftoken.substr(1);
+                    while (!ftoken.empty() && (ftoken.back() == '"' || ftoken.back() == '\'')) ftoken.pop_back();
+                    std::string alias = (m_fimp.size() > 2 && m_fimp[2].matched) ? m_fimp[2].str() : "";
+                    if (endsWith(ftoken, ".viss")) {
+                        std::filesystem::path target_file = ftoken;
+                        if (!std::filesystem::exists(target_file)) {
+                            target_file = std::filesystem::current_path() / ftoken;
+                        }
+                        if (std::filesystem::exists(target_file)) {
+                            std::ifstream inf(target_file);
+                            std::stringstream ss; ss << inf.rdbuf();
+                            auto file_lines = tokenizeLines(ss.str());
+                            size_t fi = 0;
+                            std::vector<NodePtr> file_nodes;
+                            parseBlock(file_lines, fi, file_nodes, ctx);
+                            for (const auto& fn_node : file_nodes) fn_node->execute(ctx);
+                            if (!alias.empty()) {
+                                std::vector<std::string> new_fnames;
+                                for (const auto& kv : ctx.functions) {
+                                    if (kv.first.find('.') == std::string::npos) {
+                                        new_fnames.push_back(kv.first);
+                                    }
+                                }
+                                for (const auto& fn_n : new_fnames) {
+                                    ctx.functions[alias + "." + fn_n] = ctx.functions[fn_n];
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
                 continue;
             }
 
-            // Function Definition: !main { or !func name(params) {
-            if (line == "!main {" || startsWith(line, "!func main")) {
+            // Function Definition: !main { or !func main or !func name(params) { or func name ...
+            bool is_main_decl = (line == "!main {" || line == "!main" || startsWith(line, "!func main") || startsWith(line, "func main"));
+            if (is_main_decl) {
+                if (endsWith(line, "{")) {
+                    // ok
+                } else if (idx < lines.size() && trim(lines[idx]) == "{") {
+                    idx++;
+                }
                 auto fn = std::make_shared<UserFunction>();
                 fn->name = "main";
                 parseBlock(lines, idx, fn->body, ctx);
@@ -1620,27 +1759,45 @@ private:
                 continue;
             }
 
-            if ((startsWith(line, "!func ") || startsWith(line, "func ")) && endsWith(line, "{")) {
-                size_t prefix_len = startsWith(line, "!func ") ? 6 : 5;
-                std::string decl = trim(line.substr(prefix_len, line.size() - prefix_len - 1));
+            bool is_func_decl = startsWith(line, "!func") || startsWith(line, "func");
+            if (is_func_decl) {
+                std::string decl_line = line;
+                if (endsWith(decl_line, "{")) {
+                    decl_line = trim(decl_line.substr(0, decl_line.size() - 1));
+                } else if (idx < lines.size() && trim(lines[idx]) == "{") {
+                    idx++;
+                }
+                size_t prefix_len = startsWith(decl_line, "!func") ? 5 : 4;
+                std::string decl = trim(decl_line.substr(prefix_len));
                 size_t p_open = decl.find('(');
-                size_t p_close = decl.find(')');
-                if (p_open != std::string::npos && p_close != std::string::npos) {
-                    std::string fname = trim(decl.substr(0, p_open));
-                    std::string p_str = decl.substr(p_open + 1, p_close - p_open - 1);
+                size_t p_close = decl.rfind(')');
+                std::string fname;
+                std::string p_str = "";
+                if (p_open != std::string::npos && p_close != std::string::npos && p_close > p_open) {
+                    fname = trim(decl.substr(0, p_open));
+                    p_str = decl.substr(p_open + 1, p_close - p_open - 1);
+                } else {
+                    fname = trim(decl);
+                }
+                while (!fname.empty() && (fname.front() == '!' || fname.front() == '@')) fname = fname.substr(1);
+                if (!fname.empty()) {
                     auto fn = std::make_shared<UserFunction>();
                     fn->name = fname;
-                    std::stringstream p_ss(p_str);
-                    std::string p_item;
-                    while (std::getline(p_ss, p_item, ',')) {
-                        p_item = trim(p_item);
-                        size_t as_pos = p_item.find(" as ");
-                        if (as_pos != std::string::npos) p_item = trim(p_item.substr(0, as_pos));
-                        size_t colon_pos = p_item.find(':');
-                        if (colon_pos != std::string::npos) p_item = trim(p_item.substr(0, colon_pos));
-                        if (p_item.front() == '@') p_item = p_item.substr(1);
-                        p_item = trim(p_item);
-                        if (!p_item.empty()) fn->params.push_back(p_item);
+                    if (!p_str.empty()) {
+                        std::stringstream p_ss(p_str);
+                        std::string p_item;
+                        while (std::getline(p_ss, p_item, ',')) {
+                            p_item = trim(p_item);
+                            size_t as_pos = p_item.find(" as ");
+                            if (as_pos != std::string::npos) p_item = trim(p_item.substr(0, as_pos));
+                            size_t colon_pos = p_item.find(':');
+                            if (colon_pos != std::string::npos) p_item = trim(p_item.substr(0, colon_pos));
+                            size_t eq_pos = p_item.find('=');
+                            if (eq_pos != std::string::npos) p_item = trim(p_item.substr(0, eq_pos));
+                            if (!p_item.empty() && p_item.front() == '@') p_item = p_item.substr(1);
+                            p_item = trim(p_item);
+                            if (!p_item.empty()) fn->params.push_back(p_item);
+                        }
                     }
                     parseBlock(lines, idx, fn->body, ctx);
                     ctx.functions[fname] = fn;
@@ -1648,8 +1805,14 @@ private:
                 }
             }
 
-            // If Statement: !if (cond) { or ?if (cond) {
-            if ((startsWith(line, "!if") || startsWith(line, "?if") || startsWith(line, "if")) && endsWith(line, "{")) {
+            // If Statement: !if (cond) { or ?if (cond) { or if (cond)
+            bool is_if_decl = startsWith(line, "!if") || startsWith(line, "?if") || startsWith(line, "if ") || startsWith(line, "if(");
+            if (is_if_decl) {
+                if (endsWith(line, "{")) {
+                    line = trim(line.substr(0, line.size() - 1));
+                } else if (idx < lines.size() && trim(lines[idx]) == "{") {
+                    idx++;
+                }
                 auto stmt = std::make_shared<StmtIf>();
                 size_t p1 = line.find('(');
                 size_t p2 = line.rfind(')');
@@ -1663,8 +1826,13 @@ private:
                 // Check for elif / else
                 while (idx < lines.size()) {
                     std::string next = trim(lines[idx]);
-                    if (startsWith(next, "!elif") || startsWith(next, "?elif") || startsWith(next, "else if")) {
+                    if (startsWith(next, "!elif") || startsWith(next, "?elif") || startsWith(next, "else if") || startsWith(next, "elif")) {
                         idx++;
+                        if (endsWith(next, "{")) {
+                            next = trim(next.substr(0, next.size() - 1));
+                        } else if (idx < lines.size() && trim(lines[idx]) == "{") {
+                            idx++;
+                        }
                         size_t ep1 = next.find('(');
                         size_t ep2 = next.rfind(')');
                         std::string econd = "true";
@@ -1674,8 +1842,11 @@ private:
                         std::vector<NodePtr> e_branch;
                         parseBlock(lines, idx, e_branch, ctx);
                         stmt->elif_branches.push_back({econd, e_branch});
-                    } else if (startsWith(next, "!else") || startsWith(next, "?else") || next == "else {") {
+                    } else if (startsWith(next, "!else") || startsWith(next, "?else") || next == "else {" || next == "else") {
                         idx++;
+                        if (next == "else" && idx < lines.size() && trim(lines[idx]) == "{") {
+                            idx++;
+                        }
                         parseBlock(lines, idx, stmt->else_branch, ctx);
                         break;
                     } else {
@@ -1686,8 +1857,14 @@ private:
                 continue;
             }
 
-            // While Loop: !while (cond) {
-            if ((startsWith(line, "!while") || startsWith(line, "while")) && endsWith(line, "{")) {
+            // While Loop: !while (cond) { or while (cond)
+            bool is_while_decl = startsWith(line, "!while") || startsWith(line, "while ") || startsWith(line, "while(");
+            if (is_while_decl) {
+                if (endsWith(line, "{")) {
+                    line = trim(line.substr(0, line.size() - 1));
+                } else if (idx < lines.size() && trim(lines[idx]) == "{") {
+                    idx++;
+                }
                 size_t p1 = line.find('(');
                 size_t p2 = line.rfind(')');
                 std::string cond = "true";
@@ -1700,9 +1877,16 @@ private:
                 continue;
             }
 
-            // For Range Loop: !for @i in 0..10 {
-            if ((startsWith(line, "!for") || startsWith(line, "for")) && line.find(" in ") != std::string::npos && endsWith(line, "{")) {
-                std::string decl = trim(line.substr(line.find(' ') + 1, line.size() - line.find(' ') - 2));
+            // For Range Loop: !for @i in 0..10 { or for @i in 0..10
+            bool is_for_decl = (startsWith(line, "!for") || startsWith(line, "for ") || startsWith(line, "for(")) && line.find(" in ") != std::string::npos;
+            if (is_for_decl) {
+                if (endsWith(line, "{")) {
+                    line = trim(line.substr(0, line.size() - 1));
+                } else if (idx < lines.size() && trim(lines[idx]) == "{") {
+                    idx++;
+                }
+                size_t sp_pos = line.find(' ');
+                std::string decl = trim(line.substr(sp_pos + 1));
                 size_t in_pos = decl.find(" in ");
                 std::string vname = trim(decl.substr(0, in_pos));
                 if (vname.front() == '@') vname = vname.substr(1);
@@ -1723,8 +1907,14 @@ private:
                 continue;
             }
 
-            // Loop Repeat: !loop (count) {
-            if (startsWith(line, "!loop") && endsWith(line, "{")) {
+            // Loop Repeat: !loop (count) { or loop (count)
+            bool is_loop_decl = startsWith(line, "!loop") || startsWith(line, "loop ") || startsWith(line, "loop(");
+            if (is_loop_decl) {
+                if (endsWith(line, "{")) {
+                    line = trim(line.substr(0, line.size() - 1));
+                } else if (idx < lines.size() && trim(lines[idx]) == "{") {
+                    idx++;
+                }
                 size_t p1 = line.find('(');
                 size_t p2 = line.rfind(')');
                 std::string cnt = "1";
