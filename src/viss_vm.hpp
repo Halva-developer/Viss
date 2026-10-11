@@ -943,7 +943,7 @@ public:
         for (const auto& a : raw_args) args.push_back(evaluate(a, ctx));
 
         // IO Module
-        if (mod == "io") {
+        if (mod == "io" || mod == "iostream") {
             if (fname == "println") {
                 if (args.empty()) std::cout << "\n";
                 else {
@@ -1840,7 +1840,9 @@ public:
                 single = trim(single);
 
                 // Ignore print statements from returning expressions
-                if (startsWith(single, "io.println") || startsWith(single, "io.print") || startsWith(single, "io.clear")) {
+                if (startsWith(single, "io.println") || startsWith(single, "io.print") || startsWith(single, "io.clear") ||
+                    startsWith(single, "iostream.println") || startsWith(single, "iostream.print") ||
+                    startsWith(single, "println") || startsWith(single, "print")) {
                     ExprEvaluator::evaluate(single, ctx);
                     is_expr = false;
                     return VMVal();
@@ -1884,10 +1886,12 @@ public:
                 }
 
                 // If not statement, evaluate as expression
-                if (!startsWith(single, "!func") && !startsWith(single, "func") &&
-                    !startsWith(single, "!if") && !startsWith(single, "?if") &&
-                    !startsWith(single, "!for") && !startsWith(single, "!while") &&
-                    !startsWith(single, "&")) {
+                bool is_stmt = startsWith(single, "!func") || startsWith(single, "func") || startsWith(single, "def ") ||
+                               startsWith(single, "!if") || startsWith(single, "?if") ||
+                               startsWith(single, "!for") || startsWith(single, "!while") ||
+                               startsWith(single, "&") || startsWith(single, "$") ||
+                               (single.find('(') != std::string::npos && (endsWith(single, ":") || endsWith(single, "->") || endsWith(single, "{")));
+                if (!is_stmt) {
                     VMVal v = ExprEvaluator::evaluate(single, ctx);
                     is_expr = true;
                     return v;
@@ -1905,6 +1909,17 @@ public:
                     ctx.signal = FlowSignal::None;
                     break;
                 }
+            }
+            if (nodes.empty() && ctx.functions.count("main")) {
+                auto main_fn = ctx.functions["main"];
+                ctx.functions.erase("main");
+                ctx.push_scope();
+                for (const auto& n : main_fn->body) {
+                    last_val = n->execute(ctx);
+                    if (ctx.signal == FlowSignal::Return) break;
+                }
+                ctx.pop_scope();
+                ctx.signal = FlowSignal::None;
             }
             is_expr = false;
             return last_val;
@@ -2002,7 +2017,7 @@ private:
             }
 
             // Function Definition: !main { or !func main or !func name(params) { or func name ...
-            bool is_main_decl = (line == "!main {" || line == "!main" || line == "$RUN:" || line == "$RUN" || startsWith(line, "!func main") || startsWith(line, "func main"));
+            bool is_main_decl = (line == "!main {" || line == "!main" || startsWith(line, "$RUN") || startsWith(line, "RUN:") || startsWith(line, "!func main") || startsWith(line, "func main"));
             if (is_main_decl) {
                 if (endsWith(line, "{") || endsWith(line, ":")) {
                     // ok
@@ -2016,17 +2031,25 @@ private:
                 continue;
             }
 
-            bool is_func_decl = startsWith(line, "!func") || startsWith(line, "func") || (startsWith(line, "$") && line.find('(') != std::string::npos);
+            bool is_func_decl = startsWith(line, "!func") || startsWith(line, "func") || startsWith(line, "def ") ||
+                                (startsWith(line, "$") && line.find('(') != std::string::npos) ||
+                                (line.find('(') != std::string::npos && (endsWith(line, ":") || endsWith(line, "->") || endsWith(line, "-") || endsWith(line, "{")));
             if (is_func_decl) {
                 std::string decl_line = line;
                 if (endsWith(decl_line, "{") || endsWith(decl_line, ":")) {
                     decl_line = trim(decl_line.substr(0, decl_line.size() - 1));
                 } else if (endsWith(decl_line, "->")) {
                     decl_line = trim(decl_line.substr(0, decl_line.size() - 2));
+                } else if (endsWith(decl_line, "-")) {
+                    decl_line = trim(decl_line.substr(0, decl_line.size() - 1));
                 } else if (idx < lines.size() && (trim(lines[idx]) == "{" || trim(lines[idx]) == ":" || trim(lines[idx]) == "->")) {
                     idx++;
                 }
-                size_t prefix_len = startsWith(decl_line, "!func") ? 5 : (startsWith(decl_line, "func") ? 4 : 1);
+                size_t prefix_len = 0;
+                if (startsWith(decl_line, "!func")) prefix_len = 5;
+                else if (startsWith(decl_line, "func")) prefix_len = 4;
+                else if (startsWith(decl_line, "def")) prefix_len = 3;
+                else if (!decl_line.empty() && decl_line.front() == '$') prefix_len = 1;
                 std::string decl = trim(decl_line.substr(prefix_len));
                 size_t p_open = decl.find('(');
                 size_t p_close = decl.rfind(')');

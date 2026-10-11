@@ -113,7 +113,7 @@ inline std::string unrollPipeline(const std::string& expr) {
 }
 
 // Preprocessor from VSC to standard Viss AST source
-inline std::string transpileVSCtoViss(const std::string& source) {
+inline std::string transpileVSCtoViss(const std::string& source, bool is_repl = false) {
     std::stringstream in_ss(source);
     std::string line;
     std::vector<std::string> raw_lines;
@@ -159,9 +159,30 @@ inline std::string transpileVSCtoViss(const std::string& source) {
         if (!clean.empty()) raw_lines.push_back(clean);
     }
 
+    std::vector<std::string> funcs;
+
+    // Extract single-line function definitions from raw_lines before splitting by ';'
+    // Matches e.g. a(i)->return(i+10);END or $a(i)->return(i+10);END or a(i)-return(i+10);END or a(i): return(i+10); END
+    std::regex single_fn_re(R"((?:\$|!func\s+|func\s+|def\s+)?([a-zA-Z0-9_]+)\s*\(([^)]*)\)\s*(?:->|:|-)\s*([\s\S]*?)\bEND(?:;|,)?(?:\s*|$))");
+
     // Split raw lines by statement delimiters outside quotes and braces
     std::vector<std::string> statements;
     for (auto& rline : raw_lines) {
+        std::smatch m_sfn;
+        while (std::regex_search(rline, m_sfn, single_fn_re)) {
+            std::string fname = m_sfn[1].str();
+            if (fname == "if" || fname == "while" || fname == "for" || fname == "elif" || fname == "switch" || fname == "println" || fname == "print") break;
+            std::string params = m_sfn[2].str();
+            std::string body = trim(m_sfn[3].str());
+            if (!body.empty() && !endsWith(body, ";")) body += ";";
+            if (startsWith(body, "return(") || startsWith(body, "return ")) {
+                body = "!" + body;
+            }
+            if (body.find("|>") != std::string::npos) body = unrollPipeline(body);
+            funcs.push_back("!func " + fname + "(" + params + ") {\n" + body + "\n}");
+            rline = rline.substr(0, m_sfn.position()) + " ; " + rline.substr(m_sfn.position() + m_sfn.length());
+        }
+
         // Handle chained 'END,' e.g. $jopa(i)->return(i+10);END,$joja(i)->return(i+2);END
         size_t end_comma = 0;
         while ((end_comma = rline.find("END,", end_comma)) != std::string::npos) {
@@ -172,7 +193,7 @@ inline std::string transpileVSCtoViss(const std::string& source) {
         std::string cur = "";
         bool in_str = false;
         char q = 0;
-        int paren = 0, bracket = 0;
+        int paren = 0, bracket = 0, brace = 0;
 
         for (size_t i = 0; i < rline.size(); ++i) {
             char c = rline[i];
@@ -186,7 +207,9 @@ inline std::string transpileVSCtoViss(const std::string& source) {
                 else if (c == ')') { if (paren > 0) paren--; cur += c; }
                 else if (c == '[') { bracket++; cur += c; }
                 else if (c == ']') { if (bracket > 0) bracket--; cur += c; }
-                else if (c == ';' && paren == 0 && bracket == 0) {
+                else if (c == '{') { brace++; cur += c; }
+                else if (c == '}') { if (brace > 0) brace--; cur += c; }
+                else if (c == ';' && paren == 0 && bracket == 0 && brace == 0) {
                     std::string t = trim(cur);
                     if (!t.empty()) statements.push_back(t + ";");
                     cur.clear();
@@ -202,15 +225,16 @@ inline std::string transpileVSCtoViss(const std::string& source) {
     // Check if script explicitly has $RUN: or !main
     bool has_main_block = false;
     for (const auto& s : statements) {
-        if (startsWith(s, "$RUN:") || startsWith(s, "$RUN") ||
-            startsWith(s, "!main") || startsWith(s, "main()")) {
+        std::string ts = trim(s);
+        if (startsWith(ts, "$RUN:") || startsWith(ts, "$RUN") ||
+            startsWith(ts, "RUN:") || startsWith(ts, "RUN") ||
+            startsWith(ts, "!main") || startsWith(ts, "main()")) {
             has_main_block = true;
             break;
         }
     }
 
     std::vector<std::string> imports;
-    std::vector<std::string> funcs;
     std::vector<std::string> main_body;
 
     bool in_func = false;
@@ -245,14 +269,23 @@ inline std::string transpileVSCtoViss(const std::string& source) {
         }
 
         // 2. $RUN: main block header
-        if (startsWith(clean, "$RUN:") || clean == "$RUN" || startsWith(clean, "!main")) {
+        if (startsWith(clean, "$RUN:") || clean == "$RUN" || startsWith(clean, "RUN:") || clean == "RUN" || startsWith(clean, "!main") || clean == "main()") {
             in_run = true;
             main_body.push_back("!main {");
+            size_t cpos = clean.find(':');
+            if (cpos != std::string::npos && cpos + 1 < clean.size()) {
+                std::string rest = trim(clean.substr(cpos + 1));
+                if (!rest.empty()) {
+                    statements.insert(statements.begin() + si + 1, rest + ";");
+                }
+            }
             continue;
         }
 
         // 3. Block close (END or })
-        if (clean == "END" || clean == "}") {
+        std::string clean_no_semi = clean;
+        while (!clean_no_semi.empty() && (clean_no_semi.back() == ';' || clean_no_semi.back() == ' ')) clean_no_semi.pop_back();
+        if (clean_no_semi == "END" || clean == "}") {
             if (in_run) {
                 main_body.push_back("}");
                 in_run = false;
@@ -265,30 +298,16 @@ inline std::string transpileVSCtoViss(const std::string& source) {
             continue;
         }
 
-        // 4. Function definitions: $func(args):, $func(args)->...END, $func(args) { ... }
-        if (clean.front() == '$' && clean.find('(') != std::string::npos) {
-            // Check if it's single line function: $f(args)->return(x);END
-            size_t arrow_pos = clean.find("->");
-            size_t end_pos = clean.rfind("END");
-            if (arrow_pos != std::string::npos && end_pos != std::string::npos && end_pos > arrow_pos) {
-                std::string header = trim(clean.substr(1, arrow_pos - 1));
-                std::string body = trim(clean.substr(arrow_pos + 2, end_pos - arrow_pos - 2));
-                if (!body.empty() && !endsWith(body, ";")) body += ";";
-                // Normalize pipeline inside body
-                if (body.find("|>") != std::string::npos) body = unrollPipeline(body);
-                funcs.push_back("!func " + header + " { " + body + " }");
+        // 4. Function definitions: $func(args):, func(args):, a(i):, a(i)->, !func name(...)
+        std::smatch m_fhead;
+        if (std::regex_match(clean, m_fhead, std::regex(R"(^(?:\$|!func\s+|func\s+|def\s+)?([a-zA-Z0-9_]+)\s*\(([^)]*)\)\s*(?::|->|-|\{)?$)"))) {
+            std::string fname = m_fhead[1].str();
+            if (fname != "if" && fname != "while" && fname != "for" && fname != "elif" && fname != "switch" && fname != "return" && fname != "println" && fname != "print") {
+                std::string params = m_fhead[2].str();
+                funcs.push_back("!func " + fname + "(" + params + ") {");
+                in_func = true;
                 continue;
             }
-
-            // Multiline function header
-            std::string header = clean.substr(1);
-            if (endsWith(header, ":")) header = trim(header.substr(0, header.size() - 1));
-            if (endsWith(header, "->")) header = trim(header.substr(0, header.size() - 2));
-            if (endsWith(header, "{")) header = trim(header.substr(0, header.size() - 1));
-
-            funcs.push_back("!func " + header + " {");
-            in_func = true;
-            continue;
         }
 
         // 5. Arrow conditionals: ?if (...) -> action; ?else -> ...
@@ -517,7 +536,9 @@ inline std::string transpileVSCtoViss(const std::string& source) {
     for (const auto& f : funcs) out += f + "\n";
     if (!funcs.empty()) out += "\n";
 
-    if (!has_main_block) {
+    if (is_repl && !has_main_block) {
+        for (const auto& m : main_body) out += m + "\n";
+    } else if (!has_main_block) {
         out += "!main {\n";
         for (const auto& m : main_body) out += "    " + m + "\n";
         out += "}\n";
@@ -611,6 +632,10 @@ inline void runRepl() {
                 std::cout << "[VSC] Session cleared.\n";
                 continue;
             }
+        } else if (trimmed.empty() || trimmed == "break" || trimmed == "breal" || trimmed == "cancel") {
+            // Cancel multiline continuation: clear buffer
+            acc.clear();
+            continue;
         }
 
         acc += (acc.empty() ? "" : "\n") + line;
@@ -618,7 +643,17 @@ inline void runRepl() {
         if (check.empty()) { acc.clear(); continue; }
 
         // Check if block continuation needed
-        if (startsWith(check, "$") && check.find("END") == std::string::npos && check.find('}') == std::string::npos) {
+        bool needs_continuation = false;
+        if (check.back() == ':' || endsWith(check, "->") || endsWith(check, "-") || check.back() == '{') {
+            needs_continuation = true;
+        } else if (startsWith(check, "$RUN") || startsWith(check, "RUN:") || startsWith(check, "RUN") || startsWith(check, "$") || startsWith(check, "!func") || startsWith(check, "def ")) {
+            if (check.find("END") == std::string::npos && check.find('}') == std::string::npos) {
+                needs_continuation = true;
+            }
+        }
+        std::string check_trimmed = trimmed;
+        while (!check_trimmed.empty() && (check_trimmed.back() == ';' || check_trimmed.back() == ' ')) check_trimmed.pop_back();
+        if (needs_continuation && check_trimmed != "END" && trimmed != "}") {
             continue;
         }
 
@@ -626,7 +661,7 @@ inline void runRepl() {
         acc.clear();
 
         // Translate and execute
-        std::string viss_code = transpileVSCtoViss(code);
+        std::string viss_code = transpileVSCtoViss(code, /*is_repl=*/true);
         bool is_expr = false;
         std::string err_m;
         auto res = viss::vm::VissVM::executeReplSnippet(viss_code, repl_ctx, is_expr, err_m);
