@@ -216,12 +216,15 @@ int main(int argc, char* argv[]) {
         registerFileAssociations((install_dir / "viss.exe").string(), (install_dir / "vsc.exe").string());
 
         // Check if VS Code CLI is present and install .vsix extension
-        fs::path vsix_path = src_root / "extensions" / "viss-vscode" / "viss-vscode-0.3.2.vsix";
+        fs::path vsix_path = src_root / "extensions" / "viss-vscode" / "viss-vscode-0.4.0.vsix";
+        if (!fs::exists(vsix_path)) {
+            vsix_path = src_root / "extensions" / "viss-vscode" / "viss-vscode-0.3.2.vsix";
+        }
         if (fs::exists(vsix_path)) {
             std::cout << "[*] Checking for Visual Studio Code...\n";
             int code_check = std::system("where code >nul 2>&1");
             if (code_check == 0) {
-                std::cout << "\033[32m[+] Installing official VS Code extension v0.3.2...\033[0m\n";
+                std::cout << "\033[32m[+] Installing official VS Code extension (" << vsix_path.filename().string() << ")...\033[0m\n";
                 std::string code_cmd = "code --install-extension \"" + vsix_path.string() + "\" --force >nul 2>&1";
                 std::system(code_cmd.c_str());
                 std::cout << "\033[32m[+] VS Code extension installed cleanly! ^_^\033[0m\n";
