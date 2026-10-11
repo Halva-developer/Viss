@@ -19,26 +19,30 @@ ICONSDIR ?= $(PREFIX)/share/icons/hicolor/256x256/apps
 UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)
 ifeq ($(OS),Windows_NT)
     TARGET = viss.exe
+    VSC_TARGET = vsc.exe
     SSI_TARGET = ssi.exe
     WINFLAGS = -lgdiplus -lgdi32 -luser32 -lcomdlg32 -lshell32 -lole32 -lwinmm -lws2_32 -lwininet
 else ifeq ($(UNAME_S),Darwin)
     TARGET = viss
+    VSC_TARGET = vsc
     SSI_TARGET = ssi
     LDFLAGS = -pthread
 else
     TARGET = viss
+    VSC_TARGET = vsc
     SSI_TARGET = ssi
     LDFLAGS = -pthread -ldl
 endif
 
 SRC = src/vissc.cpp
+VSC_SRC = src/vsc_cli.cpp
 SSI_SRC = src/ssi_cli.cpp
-HDRS = src/viss_vm.hpp src/ssi.hpp
+HDRS = src/viss_vm.hpp src/vsc.hpp src/ssi.hpp
 INCLUDES = -I. -Ilibs -Isrc
 
 all: build
 
-build: $(TARGET) $(SSI_TARGET)
+build: $(TARGET) $(VSC_TARGET) $(SSI_TARGET)
 
 $(TARGET): $(SRC) $(HDRS)
 ifeq ($(OS),Windows_NT)
@@ -48,25 +52,34 @@ else
 endif
 	@echo "Build complete: $(TARGET)"
 
-$(SSI_TARGET): $(SSI_SRC) $(HDRS)
+$(VSC_TARGET): $(VSC_SRC) $(HDRS)
 ifeq ($(OS),Windows_NT)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(SSI_SRC) -o $(SSI_TARGET) $(WINFLAGS)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(VSC_SRC) -o $(VSC_TARGET) $(WINFLAGS)
 else
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $(SSI_SRC) -o $(SSI_TARGET) $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(VSC_SRC) -o $(VSC_TARGET) $(LDFLAGS)
 endif
-	@echo "Build complete: $(SSI_TARGET)"
+	@echo "Build complete: $(VSC_TARGET)"
+
+$(SSI_TARGET): $(VSC_TARGET)
+ifeq ($(OS),Windows_NT)
+	cp $(VSC_TARGET) $(SSI_TARGET)
+else
+	ln -sf $(VSC_TARGET) $(SSI_TARGET)
+endif
+	@echo "Build complete: $(SSI_TARGET) (compat alias)"
 
 clean:
-	rm -rf bin $(TARGET) $(SSI_TARGET) .viss_cache test_*.exe *.tmp.*
+	rm -rf bin $(TARGET) $(VSC_TARGET) $(SSI_TARGET) .viss_cache test_*.exe *.tmp.*
 
 install: build
-	@echo "Installing Viss & SSI to $(PREFIX)..."
+	@echo "Installing Viss & VSC to $(PREFIX)..."
 	install -d $(DESTDIR)$(BINDIR)
 	install -d $(DESTDIR)$(DATADIR)/libs
 	install -d $(DESTDIR)$(INCDIR)
 	install -d $(DESTDIR)$(INCDIR)/libs
 	install -m 755 $(TARGET) $(DESTDIR)$(BINDIR)/$(TARGET)
-	install -m 755 $(SSI_TARGET) $(DESTDIR)$(BINDIR)/$(SSI_TARGET)
+	install -m 755 $(VSC_TARGET) $(DESTDIR)$(BINDIR)/$(VSC_TARGET)
+	ln -sf $(VSC_TARGET) $(DESTDIR)$(BINDIR)/$(SSI_TARGET) 2>/dev/null || install -m 755 $(SSI_TARGET) $(DESTDIR)$(BINDIR)/$(SSI_TARGET)
 	cp -r libs/* $(DESTDIR)$(DATADIR)/libs/
 	cp -r libs/* $(DESTDIR)$(INCDIR)/
 	cp -r libs/* $(DESTDIR)$(INCDIR)/libs/

@@ -19,6 +19,7 @@
 #include "viss_vm.hpp"
 #include "viss_pkg.hpp"
 #include "viss_lsp.hpp"
+#include "vsc.hpp"
 #include "ssi.hpp"
 
 #ifdef _WIN32
@@ -4124,27 +4125,27 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    if (cmd == "ssi") {
+    if (cmd == "vsc" || cmd == "ssi") {
         if (argc < 3) {
-            ssi::runRepl();
+            vsc::runRepl();
             return 0;
         }
-        std::string ssi_arg = argv[2];
-        if (ssi_arg == "-c" && argc > 3) {
+        std::string vsc_arg = argv[2];
+        if (vsc_arg == "-c" && argc > 3) {
             std::vector<std::string> pass_args;
             for (int i = 4; i < argc; ++i) pass_args.push_back(argv[i]);
-            return ssi::execute(argv[3], pass_args);
+            return vsc::execute(argv[3], pass_args);
         }
-        if (ssi_arg == "-e" && argc > 3) {
-            return ssi::evaluateExpression(argv[3]);
+        if (vsc_arg == "-e" && argc > 3) {
+            return vsc::evaluateExpression(argv[3]);
         }
-        if (ssi_arg == "repl") {
-            ssi::runRepl();
+        if (vsc_arg == "repl") {
+            vsc::runRepl();
             return 0;
         }
         std::vector<std::string> pass_args;
         for (int i = 3; i < argc; ++i) pass_args.push_back(argv[i]);
-        return ssi::executeFile(ssi_arg, pass_args);
+        return vsc::executeFile(vsc_arg, pass_args);
     }
 
     std::string viss_file = "";
@@ -4532,10 +4533,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    if (endsWith(viss_file, ".ssi")) {
+    if (endsWith(viss_file, ".vsc") || endsWith(viss_file, ".ssi")) {
         std::vector<std::string> pass_args;
         for (int ai = (cmd == "run" ? 3 : 2); ai < argc; ++ai) pass_args.push_back(argv[ai]);
-        return ssi::executeFile(viss_file, pass_args);
+        return vsc::executeFile(viss_file, pass_args);
     }
 
     fs::path p(viss_file);
