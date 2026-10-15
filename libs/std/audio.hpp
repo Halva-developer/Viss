@@ -489,12 +489,14 @@ namespace audio {
 
 #ifdef _WIN32
     inline std::string find_audio_ffmpeg() {
-        std::vector<std::string> candidates = {
-            "C:\\Users\\halva\\AppData\\Local\\Programs\\AudioCoverWatcher\\tools\\ffmpeg.exe",
-            "C:\\Users\\halva\\OggCoverWatcherViss\\tools\\ffmpeg.exe",
-            "tools\\ffmpeg.exe",
-            "ffmpeg.exe"
-        };
+        std::vector<std::string> candidates;
+        const char* lap = std::getenv("LOCALAPPDATA");
+        if (lap) {
+            candidates.push_back(std::string(lap) + "\\Programs\\AudioCoverWatcher\\tools\\ffmpeg.exe");
+        }
+        candidates.push_back("tools\\ffmpeg.exe");
+        candidates.push_back("bin\\ffmpeg.exe");
+        candidates.push_back("ffmpeg.exe");
         for (const auto& c : candidates) {
             DWORD attr = GetFileAttributesA(c.c_str());
             if (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY)) {

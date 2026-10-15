@@ -2474,10 +2474,12 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             block_stack.push_back({"class", cname});
             current_target = &classes_section;
             if (!pnames.empty()) {
-                current_target->push_back("struct _cls_" + cname + " : public " + pnames + " {");
+                std::string parent_cls = known_classes.count(pnames) ? ("_cls_" + pnames) : pnames;
+                current_target->push_back("struct _cls_" + cname + " : public " + parent_cls + " {");
             } else {
                 current_target->push_back("struct _cls_" + cname + " {");
             }
+            current_target->push_back("    _cls_" + cname + "() = default;");
             continue;
         }
 
@@ -2502,13 +2504,6 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
                 for (const auto& f : struct_fields[current_struct_name]) {
                     declared_vars.insert(f.name);
                 }
-            }
-
-            // Constructor inside class
-            if (!current_class_name.empty() && fname == "main") {
-                block_stack.push_back({"func", "ctor"});
-                current_target->push_back("    _cls_" + current_class_name + "(" + params_str + ") {");
-                continue;
             }
 
             // Parse parameters
@@ -2565,6 +2560,10 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
                 std::string async_ret = (!resolved_ret.empty()) ? ("viss::async::Task<" + resolved_ret + ">") : "auto";
                 std::string lambda_ret = (!resolved_ret.empty()) ? (" -> " + resolved_ret) : "";
                 current_target->push_back(tmpl_clause + "inline " + async_ret + " " + fname + "(" + joined_params + ") { return viss::async::spawn([=]()" + lambda_ret + " {");
+            } else if (!current_class_name.empty() && fname == "main") {
+                block_stack.push_back({"func", "ctor"});
+                current_target = &classes_section;
+                current_target->push_back("    _cls_" + current_class_name + "(" + joined_params + ") {");
             } else if (!current_struct_name.empty()) {
                 block_stack.push_back({"struct_func", fname});
                 current_target = &classes_section;
@@ -2572,7 +2571,7 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             } else {
                 block_stack.push_back({"func", fname});
                 current_target = current_class_name.empty() ? &functions_section : &classes_section;
-                std::string prefix = current_class_name.empty() ? "" : "    static ";
+                std::string prefix = current_class_name.empty() ? "" : "    ";
                 current_target->push_back(prefix + tmpl_clause + "inline " + cpp_ret + " " + fname + "(" + joined_params + ") {");
             }
             continue;
@@ -3265,6 +3264,22 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             continue;
         }
 
+        // 14.45 Explicitly typed variable or field declaration without value: @var as type; or @var: type;
+        std::smatch m_as_decl;
+        if (std::regex_match(stripped, m_as_decl, std::regex(R"(^@([a-zA-Z0-9_]+)(?:\s+as\s+|\s*:\s*)([a-zA-Z0-9_<>[\]]+);?$)"))) {
+            std::string vname = m_as_decl[1].str();
+            std::string ptype = trim(m_as_decl[2].str());
+            std::string cpp_t = resolveVissCppType(ptype);
+            declared_vars.insert(vname, parseVissType(ptype), line_num);
+            current_target->push_back("#line " + std::to_string(line_num) + " \"" + filename + "\"");
+            if (!current_class_name.empty() && !block_stack.empty() && block_stack.back().first == "class") {
+                current_target->push_back("    " + cpp_t + " " + vname + "{};");
+            } else {
+                current_target->push_back(cpp_t + " " + vname + "{};");
+            }
+            continue;
+        }
+
         // 14.5 Explicitly typed variable declaration: @var as type = val; or @var: type = val;
         std::smatch m_as_var;
         if (std::regex_match(stripped, m_as_var, std::regex(R"(^@([a-zA-Z0-9_]+)(?:\s+as\s+|\s*:\s*)([a-zA-Z0-9_<>[\]]+)\s*=\s*([\s\S]+?);?$)"))) {
@@ -3480,10 +3495,21 @@ bool validateSyntax(const std::string& code, const std::string& filename) {
     for (size_t i = 0; i < code.size(); ++i) {
         char c = code[i];
 
-        // Comments
+        // Comments: // ...
         if (!in_string && c == '/' && i + 1 < code.size() && code[i + 1] == '/') {
             while (i < code.size() && code[i] != '\n') { i++; col++; }
             if (i < code.size()) { line++; col = 1; }
+            continue;
+        }
+        // Comments: /* ... */
+        if (!in_string && c == '/' && i + 1 < code.size() && code[i + 1] == '*') {
+            i += 2; col += 2;
+            while (i + 1 < code.size() && !(code[i] == '*' && code[i + 1] == '/')) {
+                if (code[i] == '\n') { line++; col = 1; }
+                else col++;
+                i++;
+            }
+            if (i + 1 < code.size()) { i += 1; col += 2; }
             continue;
         }
 
@@ -3494,7 +3520,13 @@ bool validateSyntax(const std::string& code, const std::string& filename) {
             col++;
             continue;
         } else if (in_string && c == quote_char) {
-            if (i > 0 && code[i - 1] == '\\') {
+            size_t backslashes = 0;
+            size_t k = i;
+            while (k > 0 && code[k - 1] == '\\') {
+                backslashes++;
+                k--;
+            }
+            if (backslashes % 2 == 1) {
                 col++;
                 continue;
             }
@@ -4502,7 +4534,15 @@ int main(int argc, char* argv[]) {
         std::ifstream in(viss_file);
         if (!in.is_open()) { std::cerr << "Error: File '" << viss_file << "' not found.\n"; return 1; }
         std::stringstream buffer; buffer << in.rdbuf();
-        transpile(buffer.str(), fs::path(viss_file).filename().string(), fs::absolute(fs::path(viss_file)).parent_path().string());
+        std::string src_text = buffer.str();
+        if (!validateSyntax(src_text, viss_file)) {
+            return 1;
+        }
+        std::string cpp_code = transpile(src_text, fs::path(viss_file).filename().string(), fs::absolute(fs::path(viss_file)).parent_path().string());
+        if (cpp_code.empty()) {
+            std::cerr << "[Viss Checker] Verification failed for '" << viss_file << "'.\n";
+            return 1;
+        }
         std::cout << "[Viss Checker] File '" << viss_file << "' syntax verified cleanly.\n";
         return 0;
     } else if (cmd == "test") {
@@ -4672,15 +4712,15 @@ int main(int argc, char* argv[]) {
 
     fs::path err_log = cache_dir / "build_err.log";
     std::string inc_paths = getVissIncludeFlags(file_dir);
-    bool is_optimized = false;
+    bool is_debug = false;
     for (int ai = 2; ai < argc; ++ai) {
         std::string a = argv[ai];
-        if (a == "-O2" || a == "-O3" || a == "--release" || a == "-O") {
-            is_optimized = true;
+        if (a == "-O0" || a == "-g" || a == "--debug") {
+            is_debug = true;
             break;
         }
     }
-    std::string opt_flag = (is_optimized || !run_after) ? "-O2" : "-O0";
+    std::string opt_flag = is_debug ? "-O0" : "-O2";
     std::string compile_cmd = std::string("g++ -std=c++20 ") + opt_flag + " -pipe "
                             + inc_paths
                             + "\"" + cpp_file.string() + "\" "

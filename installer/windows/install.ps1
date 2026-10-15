@@ -13,7 +13,7 @@ Write-Host "    \ \/ / | / __/ __|    " -ForegroundColor Cyan
 Write-Host "     \  /  | \__ \__ \    " -ForegroundColor Cyan
 Write-Host "      \/   |_|___/___/    " -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Viss Language Engine v0.2.2 'Prismo & Cosmic Owl' Installer" -ForegroundColor Yellow
+Write-Host "Viss Language Engine v0.3.2 'Peppermint Butler' Installer" -ForegroundColor Yellow
 Write-Host ""
 
 $installDir = "$env:LOCALAPPDATA\Programs\Viss"
@@ -28,15 +28,33 @@ if (-not $repoRoot -or -not (Test-Path "$repoRoot\viss.exe")) {
 }
 
 if (Test-Path "$repoRoot\viss.exe") {
-    Write-Host "[*] Copying compiler binary..." -ForegroundColor Gray
+    Write-Host "[*] Copying compiler and runtime binaries..." -ForegroundColor Gray
     Copy-Item -Path "$repoRoot\viss.exe" -Destination "$installDir\viss.exe" -Force
+    if (Test-Path "$repoRoot\vsc.exe") {
+        Copy-Item -Path "$repoRoot\vsc.exe" -Destination "$installDir\vsc.exe" -Force
+    }
+    if (Test-Path "$repoRoot\ssi.exe") {
+        Copy-Item -Path "$repoRoot\ssi.exe" -Destination "$installDir\ssi.exe" -Force
+    }
     if (Test-Path "$repoRoot\viss.cmd") {
         Copy-Item -Path "$repoRoot\viss.cmd" -Destination "$installDir\viss.cmd" -Force
     }
     Write-Host "[*] Copying standard libraries..." -ForegroundColor Gray
     Copy-Item -Path "$repoRoot\libs\*" -Destination "$installDir\libs\" -Recurse -Force
 } else {
-    Write-Host "[*] Downloading latest Viss release payload..." -ForegroundColor Cyan
+    Write-Host "[*] Downloading latest Viss compiler and runtime binaries..." -ForegroundColor Cyan
+    $binUrl = "https://github.com/Halva-developer/Viss/releases/latest/download/viss.exe"
+    $vscUrl = "https://github.com/Halva-developer/Viss/releases/latest/download/vsc.exe"
+    try {
+        Invoke-WebRequest -Uri $binUrl -OutFile "$installDir\viss.exe"
+    } catch {
+        Write-Host "[!] Note: Could not download prebuilt viss.exe from releases: $_" -ForegroundColor Yellow
+    }
+    try {
+        Invoke-WebRequest -Uri $vscUrl -OutFile "$installDir\vsc.exe"
+    } catch {}
+
+    Write-Host "[*] Downloading latest Viss standard library..." -ForegroundColor Cyan
     $zipUrl = "https://github.com/Halva-developer/Viss/archive/refs/heads/main.zip"
     $zipPath = "$env:TEMP\viss_install.zip"
     Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath
@@ -44,6 +62,11 @@ if (Test-Path "$repoRoot\viss.exe") {
     Copy-Item -Path "$env:TEMP\viss_extract\Viss-main\libs\*" -Destination "$installDir\libs\" -Recurse -Force
     Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
     Remove-Item "$env:TEMP\viss_extract" -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+if (-not (Test-Path "$installDir\viss.exe")) {
+    Write-Host "[-] Error: viss.exe is missing in $installDir" -ForegroundColor Red
+    exit 1
 }
 
 # Add to User PATH

@@ -1,0 +1,17 @@
+$import lib "iostream" as io;
+$import lib "sys" as sys;
+
+!func main() {
+    @b = b"test";
+    io.println("Initial bytes len: " + @b.len);
+    ?if (@b.len != 4) {
+        io.println("FAIL: Initial length != 4");
+        sys.exit(1);
+    }
+    @val = @b.get(100);
+    ?if (@b.len != 4) {
+        io.println("FAIL: get(100) resized buffer to: " + @b.len);
+        sys.exit(1);
+    }
+    io.println("PASS: Bytes read does not expand buffer (remains 4)");
+}

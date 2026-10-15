@@ -201,6 +201,36 @@ namespace db {
         return 0;
     }
 
+    // Helper: split string respecting single/double quoted strings
+    inline std::vector<Str> split_quoted(const Str& s, char delim = ',') {
+        std::vector<Str> res;
+        Str cur;
+        bool in_single = false;
+        bool in_double = false;
+        for (size_t i = 0; i < s.size(); ++i) {
+            char c = s[i];
+            if (c == '\'' && !in_double) {
+                if (in_single && i + 1 < s.size() && s[i+1] == '\'') {
+                    cur += "''";
+                    i++;
+                    continue;
+                }
+                in_single = !in_single;
+                cur += c;
+            } else if (c == '"' && !in_single) {
+                in_double = !in_double;
+                cur += c;
+            } else if (c == delim && !in_single && !in_double) {
+                res.push_back(str::trim(cur));
+                cur.clear();
+            } else {
+                cur += c;
+            }
+        }
+        if (!cur.empty()) res.push_back(str::trim(cur));
+        return res;
+    }
+
     // Helper: evaluate simple condition expression against row fields (e.g. "id = 1", "age > 18 AND status = 'active'")
     inline bool eval_row_condition(const DbRow& row, const Str& where_clause) {
         Str cond = str::trim(where_clause);
@@ -217,18 +247,19 @@ namespace db {
             // Check comparison operators
             Str op = "";
             size_t op_pos = Str::npos;
-            if ((op_pos = p.find("!=")) != Str::npos) op = "!=";
-            else if ((op_pos = p.find("<=")) != Str::npos) op = "<=";
-            else if ((op_pos = p.find(">=")) != Str::npos) op = ">=";
-            else if ((op_pos = p.find("=")) != Str::npos) op = "=";
-            else if ((op_pos = p.find("<")) != Str::npos) op = "<";
-            else if ((op_pos = p.find(">")) != Str::npos) op = ">";
-            else if ((op_pos = str::lower(p).find(" like ")) != Str::npos) op = "LIKE";
+            size_t match_len = 0;
+            if ((op_pos = p.find("!=")) != Str::npos) { op = "!="; match_len = 2; }
+            else if ((op_pos = p.find("<=")) != Str::npos) { op = "<="; match_len = 2; }
+            else if ((op_pos = p.find(">=")) != Str::npos) { op = ">="; match_len = 2; }
+            else if ((op_pos = p.find("=")) != Str::npos) { op = "="; match_len = 1; }
+            else if ((op_pos = p.find("<")) != Str::npos) { op = "<"; match_len = 1; }
+            else if ((op_pos = p.find(">")) != Str::npos) { op = ">"; match_len = 1; }
+            else if ((op_pos = str::lower(p).find(" like ")) != Str::npos) { op = "LIKE"; match_len = 6; }
 
             if (op.empty() || op_pos == Str::npos) continue;
 
             Str left_col = str::trim(p.substr(0, op_pos));
-            Str right_val = str::trim(p.substr(op_pos + op.length()));
+            Str right_val = str::trim(p.substr(op_pos + match_len));
 
             // Strip quotes from right_val if present
             if ((right_val.front() == '\'' && right_val.back() == '\'') ||
@@ -273,8 +304,23 @@ namespace db {
                     if (row_val < right_val) return false;
                 }
             } else if (op == "LIKE") {
-                Str pat = str::replace(right_val, "%", ".*");
-                if (!std::regex_search(row_val, std::regex(pat, std::regex_constants::icase))) return false;
+                Str regex_pat = "^";
+                for (char ch : right_val) {
+                    if (ch == '%') regex_pat += ".*";
+                    else if (ch == '_') regex_pat += ".";
+                    else if (ch == '.' || ch == '^' || ch == '$' || ch == '*' || ch == '+' || ch == '?' || ch == '(' || ch == ')' || ch == '[' || ch == ']' || ch == '{' || ch == '}' || ch == '|' || ch == '\\') {
+                        regex_pat += '\\';
+                        regex_pat += ch;
+                    } else {
+                        regex_pat += ch;
+                    }
+                }
+                regex_pat += "$";
+                try {
+                    if (!std::regex_match(row_val, std::regex(regex_pat, std::regex_constants::icase))) return false;
+                } catch (...) {
+                    if (str::lower(row_val).find(str::lower(right_val)) == Str::npos) return false;
+                }
             }
         }
         return true;
@@ -364,24 +410,7 @@ namespace db {
             }
 
             // Split values safely respecting quotes
-            std::vector<Str> parsed_vals;
-            Str cur_val = "";
-            bool in_str = false;
-            char q_char = 0;
-            for (char c : vals_raw) {
-                if (!in_str && (c == '\'' || c == '"')) {
-                    in_str = true;
-                    q_char = c;
-                } else if (in_str && c == q_char) {
-                    in_str = false;
-                } else if (!in_str && c == ',') {
-                    parsed_vals.push_back(str::trim(cur_val));
-                    cur_val.clear();
-                    continue;
-                }
-                cur_val += c;
-            }
-            if (!cur_val.empty()) parsed_vals.push_back(str::trim(cur_val));
+            std::vector<Str> parsed_vals = split_quoted(vals_raw, ',');
 
             DbRow row;
             if (!explicit_cols.empty()) {
@@ -389,6 +418,7 @@ namespace db {
                     Str v = parsed_vals[i];
                     if ((v.front() == '\'' && v.back() == '\'') || (v.front() == '"' && v.back() == '"')) {
                         v = v.substr(1, v.length() - 2);
+                        v = str::replace(v, "''", "'");
                     }
                     row.fields[explicit_cols[i]] = v;
                 }
@@ -397,6 +427,7 @@ namespace db {
                     Str v = parsed_vals[i];
                     if ((v.front() == '\'' && v.back() == '\'') || (v.front() == '"' && v.back() == '"')) {
                         v = v.substr(1, v.length() - 2);
+                        v = str::replace(v, "''", "'");
                     }
                     row.fields[tbl.columns[i].name] = v;
                 }
@@ -438,7 +469,7 @@ namespace db {
 
             // Parse sets (e.g. "age = 20, name = 'Jake'")
             std::map<Str, Str> updates;
-            auto sets = str::split(set_clause, ",");
+            auto sets = split_quoted(set_clause, ',');
             for (const auto& s : sets) {
                 size_t eq = s.find('=');
                 if (eq != Str::npos) {
@@ -446,6 +477,7 @@ namespace db {
                     Str val = str::trim(s.substr(eq + 1));
                     if ((val.front() == '\'' && val.back() == '\'') || (val.front() == '"' && val.back() == '"')) {
                         val = val.substr(1, val.length() - 2);
+                        val = str::replace(val, "''", "'");
                     }
                     updates[col] = val;
                 }

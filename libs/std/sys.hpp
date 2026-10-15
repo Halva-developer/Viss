@@ -328,11 +328,26 @@ namespace viss {
         }
 
         inline void notify(const Str& title, const Str& msg) {
-            std::string t = title;
-            std::string m = msg;
-            for (char& c : t) if (c == '\'' || c == '"') c = ' ';
-            for (char& c : m) if (c == '\'' || c == '"') c = ' ';
-            std::string ps = "powershell -WindowStyle Hidden -Command \"[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); $audio = $template.CreateElement('audio'); $audio.SetAttribute('silent', 'true'); $template.DocumentElement.AppendChild($audio) > $null; $textNodes = $template.GetElementsByTagName('text'); $textNodes.Item(0).AppendChild($template.CreateTextNode('" + t + "')) > $null; $textNodes.Item(1).AppendChild($template.CreateTextNode('" + m + "')) > $null; $toast = [Windows.UI.Notifications.ToastNotification]::new($template); [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('AudioCoverWatcher').Show($toast)\"";
+            static const char b64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            auto to_b64 = [&](const std::string& in) -> std::string {
+                std::string out;
+                int val = 0, valb = -6;
+                for (unsigned char c : in) {
+                    val = (val << 8) + c;
+                    valb += 8;
+                    while (valb >= 0) {
+                        out.push_back(b64_chars[(val >> valb) & 0x3F]);
+                        valb -= 6;
+                    }
+                }
+                if (valb > -6) out.push_back(b64_chars[((val << 8) >> (valb + 8)) & 0x3F]);
+                while (out.size() % 4) out.push_back('=');
+                return out;
+            };
+
+            std::string t_b64 = to_b64(title);
+            std::string m_b64 = to_b64(msg);
+            std::string ps = "powershell -WindowStyle Hidden -Command \"[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); $audio = $template.CreateElement('audio'); $audio.SetAttribute('silent', 'true'); $template.DocumentElement.AppendChild($audio) > $null; $t = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('" + t_b64 + "')); $m = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('" + m_b64 + "')); $textNodes = $template.GetElementsByTagName('text'); $textNodes.Item(0).AppendChild($template.CreateTextNode($t)) > $null; $textNodes.Item(1).AppendChild($template.CreateTextNode($m)) > $null; $toast = [Windows.UI.Notifications.ToastNotification]::new($template); [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Viss').Show($toast)\"";
             
             int size_needed = MultiByteToWideChar(CP_UTF8, 0, ps.data(), (int)ps.size(), NULL, 0);
             std::wstring wcmd(size_needed, 0);

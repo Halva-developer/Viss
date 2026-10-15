@@ -532,6 +532,9 @@ namespace viss {
             std::lock_guard<std::mutex> lock(*mtx);
             Int idx = (Int)index;
             if (idx < 0) idx += (Int)data->size();
+            if (idx < 0 || (size_t)idx >= data->size()) {
+                throw std::out_of_range("List index out of range: " + std::to_string(index) + " (size: " + std::to_string(data->size()) + ")");
+            }
             return (*data)[(size_t)idx];
         }
 
@@ -540,6 +543,9 @@ namespace viss {
             std::lock_guard<std::mutex> lock(*mtx);
             Int idx = (Int)index;
             if (idx < 0) idx += (Int)data->size();
+            if (idx < 0 || (size_t)idx >= data->size()) {
+                throw std::out_of_range("List index out of range: " + std::to_string(index) + " (size: " + std::to_string(data->size()) + ")");
+            }
             return (*data)[(size_t)idx];
         }
 
@@ -1080,8 +1086,9 @@ namespace viss {
         inline uint8_t& operator[](IndexT index) {
             Int idx = (Int)index;
             if (idx < 0) idx += (Int)data->size();
-            if (idx < 0) idx = 0;
-            if ((size_t)idx >= data->size()) data->resize((size_t)idx + 1, 0);
+            if (idx < 0 || (size_t)idx >= data->size()) {
+                throw std::out_of_range("Bytes index out of range: " + std::to_string(index) + " (size: " + std::to_string(data->size()) + ")");
+            }
             return (*data)[(size_t)idx];
         }
         template<typename IndexT, typename = std::enable_if_t<std::is_integral_v<IndexT>>>
@@ -1089,8 +1096,7 @@ namespace viss {
             Int idx = (Int)index;
             if (idx < 0) idx += (Int)data->size();
             if (idx < 0 || (size_t)idx >= data->size()) {
-                static uint8_t dummy = 0;
-                return dummy;
+                throw std::out_of_range("Bytes index out of range: " + std::to_string(index) + " (size: " + std::to_string(data->size()) + ")");
             }
             return (*data)[(size_t)idx];
         }

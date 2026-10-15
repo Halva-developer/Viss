@@ -174,10 +174,8 @@ inline std::string find_ffmpeg() {
     }
 #endif
     candidates.push_back("tools\\ffmpeg.exe");
+    candidates.push_back("bin\\ffmpeg.exe");
     candidates.push_back("ffmpeg.exe");
-    candidates.push_back("C:\\Users\\halva\\AppData\\Local\\Programs\\AudioCoverWatcher\\tools\\ffmpeg.exe");
-    candidates.push_back("C:\\Users\\halva\\OggCoverWatcher\\tools\\ffmpeg.exe");
-    candidates.push_back("C:\\Users\\halva\\Desktop\\Viss\\tools\\ffmpeg.exe");
     candidates.push_back("ffmpeg");
 
     for (const auto& c : candidates) {
@@ -986,12 +984,13 @@ inline bool render_video(const std::string& audio_path, const std::string& cover
         if (extract_cover(audio_path, temp_cover.string()) && fs::exists(temp_cover)) {
             actual_cover = temp_cover.string();
         } else {
-            std::vector<std::string> def_covers = {
-                "C:\\Users\\halva\\AppData\\Local\\Programs\\AudioCoverWatcher\\default_cover.jpg",
-                "C:\\Users\\halva\\OggCoverWatcherViss\\default_cover.jpg",
-                "C:\\Users\\halva\\Pictures\\icon.jpg",
-                "default_cover.jpg"
-            };
+            std::vector<std::string> def_covers;
+            const char* lap = std::getenv("LOCALAPPDATA");
+            if (lap) {
+                def_covers.push_back(std::string(lap) + "\\Programs\\AudioCoverWatcher\\default_cover.jpg");
+            }
+            def_covers.push_back("default_cover.jpg");
+            def_covers.push_back("cover.jpg");
             for (const auto& dc : def_covers) {
                 if (fs::exists(dc)) { actual_cover = dc; break; }
             }
@@ -1198,12 +1197,13 @@ inline bool start_render_video(const std::string& audio_path, const std::string&
             if (extract_cover(audio_path, temp_cover.string()) && fs::exists(temp_cover)) {
                 actual_cover = temp_cover.string();
             } else {
-                std::vector<std::string> def_covers = {
-                    "C:\\Users\\halva\\AppData\\Local\\Programs\\AudioCoverWatcher\\default_cover.jpg",
-                    "C:\\Users\\halva\\OggCoverWatcherViss\\default_cover.jpg",
-                    "C:\\Users\\halva\\Pictures\\icon.jpg",
-                    "default_cover.jpg"
-                };
+                std::vector<std::string> def_covers;
+                const char* lap = std::getenv("LOCALAPPDATA");
+                if (lap) {
+                    def_covers.push_back(std::string(lap) + "\\Programs\\AudioCoverWatcher\\default_cover.jpg");
+                }
+                def_covers.push_back("default_cover.jpg");
+                def_covers.push_back("cover.jpg");
                 for (const auto& dc : def_covers) {
                     if (fs::exists(dc)) { actual_cover = dc; break; }
                 }

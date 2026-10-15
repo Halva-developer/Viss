@@ -1,0 +1,38 @@
+$import lib "iostream" as io;
+$import lib "sys" as sys;
+
+!class Entity {
+    @name as str;
+    !func main(name as str) {
+        @me.name = name;
+    }
+}
+
+!class Player :: Entity {
+    @score as int;
+    !func main(name as str, score as int) {
+        @me.name = name;
+        @me.score = score;
+    }
+    !func get_score() {
+        !return @me.score;
+    }
+    !func get_name() {
+        !return @me.name;
+    }
+}
+
+!func main() {
+    @p = Player("Alex", 100);
+    io.println("Player name: " + @p.get_name());
+    io.println("Player score: " + @p.get_score());
+    ?if (@p.get_score() != 100) {
+        io.println("FAIL: score != 100");
+        sys.exit(1);
+    }
+    ?if (@p.get_name() != "Alex") {
+        io.println("FAIL: name != Alex");
+        sys.exit(1);
+    }
+    io.println("PASS: Class inheritance, constructor and methods working!");
+}

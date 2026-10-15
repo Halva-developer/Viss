@@ -64,7 +64,7 @@ namespace viss {
 
             DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE;
             if (uc.nScheme == INTERNET_SCHEME_HTTPS) {
-                flags |= INTERNET_FLAG_SECURE | INTERNET_FLAG_IGNORE_CERT_CN_INVALID | INTERNET_FLAG_IGNORE_CERT_DATE_INVALID;
+                flags |= INTERNET_FLAG_SECURE;
             }
 
             const char* path_str = (path[0] != '\0') ? path : "/";
@@ -240,7 +240,7 @@ namespace viss {
 
             DWORD flags = INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE;
             if (uc.nScheme == INTERNET_SCHEME_HTTPS) {
-                flags |= INTERNET_FLAG_SECURE | INTERNET_FLAG_IGNORE_CERT_CN_INVALID | INTERNET_FLAG_IGNORE_CERT_DATE_INVALID;
+                flags |= INTERNET_FLAG_SECURE;
             }
 
             const char* path_str = (path[0] != '\0') ? path : "/";
@@ -425,7 +425,13 @@ namespace viss {
             }
 
             void set_header(const Str& k, const Str& v) {
-                headers.set(k, v);
+                Str clean_k = k;
+                Str clean_v = v;
+                clean_k.erase(std::remove(clean_k.begin(), clean_k.end(), '\r'), clean_k.end());
+                clean_k.erase(std::remove(clean_k.begin(), clean_k.end(), '\n'), clean_k.end());
+                clean_v.erase(std::remove(clean_v.begin(), clean_v.end(), '\r'), clean_v.end());
+                clean_v.erase(std::remove(clean_v.begin(), clean_v.end(), '\n'), clean_v.end());
+                headers.set(clean_k, clean_v);
             }
         };
 
@@ -460,6 +466,17 @@ namespace viss {
             }
 
             void handle_client(SOCKET client_fd, Str client_ip) {
+#ifdef _WIN32
+                DWORD tv = 10000;
+                setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
+                setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv));
+#else
+                struct timeval tv;
+                tv.tv_sec = 10;
+                tv.tv_usec = 0;
+                setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, (const void*)&tv, sizeof(tv));
+                setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, (const void*)&tv, sizeof(tv));
+#endif
                 std::vector<char> buffer(8192, 0);
                 int bytes = ::recv(client_fd, buffer.data(), (int)(buffer.size() - 1), 0);
                 if (bytes <= 0) {
@@ -517,6 +534,13 @@ namespace viss {
                 if (header_end != Str::npos) {
                     req.body = raw.substr(header_end + 4);
                 }
+                while (content_length > 0 && req.body.size() < content_length) {
+                    size_t needed = content_length - req.body.size();
+                    size_t chunk_size = std::min(needed, (size_t)8192);
+                    int b = ::recv(client_fd, buffer.data(), (int)chunk_size, 0);
+                    if (b <= 0) break;
+                    req.body.append(buffer.data(), b);
+                }
 
                 HttpResponse res;
                 HttpHandler matched = nullptr;
@@ -540,7 +564,15 @@ namespace viss {
                         res.body = "500 Internal Server Error";
                     }
                 } else if (not_found_handler) {
-                    not_found_handler(req, res);
+                    try {
+                        not_found_handler(req, res);
+                    } catch (const std::exception& e) {
+                        res.status = 500;
+                        res.body = "500 Internal Server Error: " + Str(e.what());
+                    } catch (...) {
+                        res.status = 500;
+                        res.body = "500 Internal Server Error";
+                    }
                 } else {
                     res.status = 404;
                     res.body = "404 Not Found: " + req.path;

@@ -183,7 +183,7 @@ namespace updater {
             std::transform(n.begin(), n.end(), n.begin(), ::tolower);
 
             if (plat.os == "windows") {
-                if (n.find("windows") != std::string::npos || n.find("win") != std::string::npos || n.find(".exe") != std::string::npos) {
+                if (n.find("darwin") == std::string::npos && (n.find("windows") != std::string::npos || n.find("win32") != std::string::npos || n.find("win64") != std::string::npos || n.find("-win-") != std::string::npos || n.find("_win_") != std::string::npos || n.find(".exe") != std::string::npos || n.find(".zip") != std::string::npos)) {
                     return &a;
                 }
             } else if (plat.os == "linux") {

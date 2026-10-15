@@ -1,0 +1,45 @@
+$import lib "iostream" as io;
+$import lib "sys" as sys;
+$import lib "db" as db;
+
+!func main() {
+    @h = db.open(":memory:");
+    db.exec(@h, "CREATE TABLE users (id INT PRIMARY KEY, name STR, bio STR);");
+    db.exec(@h, "INSERT INTO users (id, name, bio) VALUES (1, 'Alex', 'Initial bio');");
+
+    // Test 1: Literal comma in update
+    db.exec(@h, "UPDATE users SET bio = 'Programmer, musician, and coffee lover' WHERE id = 1;");
+    @res1 = db.query(@h, "SELECT bio FROM users WHERE id = 1;");
+    @bio1 = @res1[0]["bio"];
+    ?if (@bio1 != "Programmer, musician, and coffee lover") {
+        io.println("FAIL: bio comma split: " + @bio1);
+        sys.exit(1);
+    }
+    io.println("PASS: UPDATE with comma inside literal");
+
+    // Test 2: exec_params injection attempt
+    @injected_payload = ["clean, name = 'hacked'"];
+    db.exec_params(@h, "UPDATE users SET bio = ? WHERE id = 1;", @injected_payload);
+    @res2 = db.query(@h, "SELECT name, bio FROM users WHERE id = 1;");
+    @name2 = @res2[0]["name"];
+    @bio2 = @res2[0]["bio"];
+    ?if (@name2 != "Alex") {
+        io.println("FAIL: SQL injection succeeded! name became: " + @name2);
+        sys.exit(1);
+    }
+    ?if (@bio2 != "clean, name = 'hacked'") {
+        io.println("FAIL: bio is wrong: " + @bio2);
+        sys.exit(1);
+    }
+    io.println("PASS: SQL injection prevented in exec_params (name is still Alex)");
+
+    // Test 3: LIKE operator
+    @res3 = db.query(@h, "SELECT name FROM users WHERE name LIKE '%le%';");
+    ?if (@res3.len() != 1) {
+        io.println("FAIL: LIKE '%le%' failed to match Alex");
+        sys.exit(1);
+    }
+    io.println("PASS: LIKE '%le%' matched Alex properly");
+
+    io.println("ALL DB SECURITY & LIKE TESTS PASSED!");
+}
