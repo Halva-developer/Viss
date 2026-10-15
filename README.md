@@ -5,7 +5,7 @@
 # Viss Programming Language
 ### The High-Performance, Visually Structured Language for Everyday Development & Systems
 
-[![Version](https://img.shields.io/badge/version-v0.3.0%20%22Peppermint%20Butler%22-blue.svg)](https://github.com/Halva-developer/Viss)
+[![Version](https://img.shields.io/badge/version-v0.3.1%20%22Peppermint%20Butler%22-blue.svg)](https://github.com/Halva-developer/Viss)
 [![License](https://img.shields.io/badge/license-UniLicense-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-orange.svg)](https://github.com/Halva-developer/Viss)
 [![Standard](https://img.shields.io/badge/standard-Viss%202.0-purple.svg)](https://github.com/Halva-developer/Viss)
@@ -39,7 +39,8 @@ Following the beloved Debian tradition with *Toy Story*, Viss codenames each off
 | `v0.1.2` | **"BMO"** | BMO | Retro-tech audio synthesizer, pixel screen buffer, and sound chip. |
 | `v0.2.0` | **"Marceline"** | Marceline the Vampire Queen | Struct member methods, enums, `Vec2`/`Vec3` vector math, pipelines (`\|>`), Elvis (`?:`), `!defer`, and complete handbook specs. |
 | `v0.2.1` | **"Hambo"** | Hambo | Dynamic auto-lists, Map/Dict literals (`{}`), range slicing (`..`), `in`/`!in` membership operators, tuple unpacking, native `!async`/`!await`, string kinds (`r""`, `b""`, `""""""`), `fs.glob`, `json.loads`/`dumps`, pure native C++ runtime. |
-| `v0.3.0` | **"Peppermint Butler"** | Peppermint Butler | **Current Release:** VSC - Viss Script Core & CLI runner (`vsc` / `ssi`), Official Package Manager (`viss pkg`), Cross-Platform GUI (`libs/std/gui.hpp`), Native Language Server Protocol (`viss lsp`), Embedded SQLite Relational Database (`libs/std/db.hpp`), Multi-Threaded HTTP Web Server (`libs/std/net.hpp`), Go-Style Concurrency Channels (`libs/std/chan.hpp`), Independent Native Execution Engine (`viss vm`), Native Embedded Windows Icons, and VS Code Extension v0.4.0. |
+| `v0.3.0` | **"Peppermint Butler"** | Peppermint Butler | VSC - Viss Script Core & CLI runner (`vsc` / `ssi`), Official Package Manager (`viss pkg`), Cross-Platform GUI (`libs/std/gui.hpp`), Native Language Server Protocol (`viss lsp`), Embedded SQLite Relational Database (`libs/std/db.hpp`), Multi-Threaded HTTP Web Server (`libs/std/net.hpp`), Go-Style Concurrency Channels (`libs/std/chan.hpp`), Independent Native Execution Engine (`viss vm`), Native Embedded Windows Icons, and VS Code Extension v0.4.0. |
+| `v0.3.1` | **"Peppermint Butler"** | Peppermint Butler | **Current Release (Scripting Powerhouse):** CLI argument handling (`sys.args()`, `sys.arg()`, `sys.argc()`), First-Class Map Literals (`{"key": val}`) with `.keys()`, `.values()`, `.has()`, `.get()`, Full JSON module (`json.parse()`, `json.stringify()`), Object String & List methods (`.upper()`, `.lower()`, `.trim()`, `.split()`, `.replace()`, `.join()`, `.contains()`, `.reverse()`, `.map()`, `.filter()`, `.reduce()`), Extended filesystem (`fs.list()`, `fs.mkdir()`, `fs.remove()`, `fs.size()`, `fs.ext()`, `fs.stem()`, `fs.filename()`, `fs.abs_path()`), Shell execution (`sys.cwd()`, `sys.exec()`). |
 
 ---
 

@@ -7,6 +7,7 @@
 #include <fstream>
 #include <array>
 #include <memory>
+#include <filesystem>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -248,6 +249,20 @@ namespace viss {
         inline Str env(const Str& key) {
             const char* val = std::getenv(key.c_str());
             return val ? Str(val) : "";
+        }
+        inline Bool set_env(const Str& key, const Str& val) {
+            #ifdef _WIN32
+            return _putenv_s(key.c_str(), val.c_str()) == 0;
+            #else
+            return setenv(key.c_str(), val.c_str(), 1) == 0;
+            #endif
+        }
+        inline Str cwd() {
+            std::error_code ec;
+            return std::filesystem::current_path(ec).string();
+        }
+        inline Str pwd() {
+            return cwd();
         }
         inline void exit(Int code = 0) {
             std::exit((int)code);

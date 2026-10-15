@@ -116,6 +116,19 @@ namespace viss {
             return std::filesystem::path(path).extension().string();
         }
 
+        inline Str ext(const Str& path) {
+            return extension(path);
+        }
+
+        inline Str abs_path(const Str& path) {
+            std::error_code ec;
+            return std::filesystem::absolute(path, ec).string();
+        }
+
+        inline Str absolute(const Str& path) {
+            return abs_path(path);
+        }
+
         inline Str filename(const Str& path) {
             return std::filesystem::path(path).filename().string();
         }
