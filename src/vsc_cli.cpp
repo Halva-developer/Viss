@@ -1,6 +1,6 @@
 // =============================================================================
 // VSC - Viss Script Core (Standalone CLI Executable)
-// Version 0.3.1 "Viss Script Core"
+// Version 0.3.2 "Viss Script Core"
 // =============================================================================
 
 #include <iostream>
@@ -10,6 +10,7 @@
 #include <vector>
 #include <filesystem>
 #include <cstdlib>
+#include <chrono>
 
 #include "vsc.hpp"
 
@@ -73,7 +74,10 @@ int buildBinary(const std::string& script_file, const std::string& out_name, con
 
     fs::path p(script_file);
     std::string stem = p.stem().string();
-    fs::path temp_viss = fs::current_path() / (stem + ".viss");
+    std::error_code ec;
+    fs::path temp_dir = fs::temp_directory_path(ec);
+    if (ec) temp_dir = fs::current_path();
+    fs::path temp_viss = temp_dir / ("vsc_build_tmp_" + stem + "_" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + ".viss");
 
     std::ofstream out(temp_viss);
     out << viss_code;

@@ -5,8 +5,8 @@
 # Viss Programming Language
 ### The High-Performance, Visually Structured Language for Everyday Development & Systems
 
-[![Version](https://img.shields.io/badge/version-v0.3.1%20%22Peppermint%20Butler%22-blue.svg)](https://github.com/Halva-developer/Viss)
-[![License](https://img.shields.io/badge/license-UniLicense-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-v0.3.2%20%22Peppermint%20Butler%22-blue.svg)](https://github.com/Halva-developer/Viss)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-orange.svg)](https://github.com/Halva-developer/Viss)
 [![Standard](https://img.shields.io/badge/standard-Viss%202.0-purple.svg)](https://github.com/Halva-developer/Viss)
 
@@ -39,8 +39,9 @@ Following the beloved Debian tradition with *Toy Story*, Viss codenames each off
 | `v0.1.2` | **"BMO"** | BMO | Retro-tech audio synthesizer, pixel screen buffer, and sound chip. |
 | `v0.2.0` | **"Marceline"** | Marceline the Vampire Queen | Struct member methods, enums, `Vec2`/`Vec3` vector math, pipelines (`\|>`), Elvis (`?:`), `!defer`, and complete handbook specs. |
 | `v0.2.1` | **"Hambo"** | Hambo | Dynamic auto-lists, Map/Dict literals (`{}`), range slicing (`..`), `in`/`!in` membership operators, tuple unpacking, native `!async`/`!await`, string kinds (`r""`, `b""`, `""""""`), `fs.glob`, `json.loads`/`dumps`, pure native C++ runtime. |
-| `v0.3.0` | **"Peppermint Butler"** | Peppermint Butler | VSC - Viss Script Core & CLI runner (`vsc` / `ssi`), Official Package Manager (`viss pkg`), Cross-Platform GUI (`libs/std/gui.hpp`), Native Language Server Protocol (`viss lsp`), Embedded SQLite Relational Database (`libs/std/db.hpp`), Multi-Threaded HTTP Web Server (`libs/std/net.hpp`), Go-Style Concurrency Channels (`libs/std/chan.hpp`), Independent Native Execution Engine (`viss vm`), Native Embedded Windows Icons, and VS Code Extension v0.4.0. |
-| `v0.3.1` | **"Peppermint Butler"** | Peppermint Butler | **Current Release (Scripting Powerhouse):** CLI argument handling (`sys.args()`, `sys.arg()`, `sys.argc()`), First-Class Map Literals (`{"key": val}`) with `.keys()`, `.values()`, `.has()`, `.get()`, Full JSON module (`json.parse()`, `json.stringify()`), Object String & List methods (`.upper()`, `.lower()`, `.trim()`, `.split()`, `.replace()`, `.join()`, `.contains()`, `.reverse()`, `.map()`, `.filter()`, `.reduce()`), Extended filesystem (`fs.list()`, `fs.mkdir()`, `fs.remove()`, `fs.size()`, `fs.ext()`, `fs.stem()`, `fs.filename()`, `fs.abs_path()`), Shell execution (`sys.cwd()`, `sys.exec()`). |
+| `v0.3.0` | **"Peppermint Butler"** | Peppermint Butler | VSC - Viss Script Core & CLI runner (`vsc` / `ssi`), Official Package Manager (`viss pkg`), Cross-Platform GUI (`libs/std/gui.hpp`), Native Language Server Protocol (`viss lsp`), Embedded JSON Document Database (`libs/std/db.hpp`), HTTP Networking (`libs/std/net.hpp`), Go-Style Concurrency Channels (`libs/std/chan.hpp`), Independent Native Execution Engine (`viss vm`), Native Embedded Windows Icons, and VS Code Extension. |
+| `v0.3.1` | **"Peppermint Butler"** | Peppermint Butler | CLI argument handling (`sys.args()`, `sys.arg()`, `sys.argc()`), First-Class Map Literals (`{"key": val}`), Full JSON module (`json.parse()`, `json.stringify()`), Object String & List methods (`.upper()`, `.lower()`, `.trim()`, `.split()`, `.replace()`, `.join()`), Extended filesystem (`fs.list()`, `fs.mkdir()`, `fs.remove()`), Shell execution (`sys.cwd()`, `sys.exec()`). |
+| `v0.3.2` | **"Peppermint Butler"** | Peppermint Butler | **Current Release (Hardening & Bugfix):** Complete audit cleanup; strict security hardening (path traversal protection, removal of proprietary license code, workspace trust); 64-bit integer literal precision; UTF-8 codepoint string handling (`.len`, `.substr`, `.upper()`, `.lower()`); control loop fixes (`!for`, `!while`, `?if` without paren collisions); non-zero error exits. |
 
 ---
 
@@ -356,17 +357,17 @@ viss version                               # Print toolchain version & codename
 ## Standard Library Modules (`libs/std`)
 
 * **`iostream` (`io`)**: Formatted variadic console I/O, truecolor ANSI, cursor control, interactive single-key input (`io.read_char()`), file I/O.
-* **`db`**: Embedded SQLite-compatible relational database with transactional ACID guarantees, persistence, and JSON serialization (`db.open`, `db.exec`, `db.query`, `db.to_json`, `db.close`).
-* **`net`**: High-performance multi-threaded HTTP Web Server and client (`net.create_server`, `@srv.get`, `@srv.post`, `@srv.listen`, `net.http_get`, `net.http_post`).
+* **`db`**: Lightweight embedded JSON document store and key-value database (`db.open`, `db.exec`, `db.query_json`, `db.count`, `db.close`).
+* **`net`**: HTTP networking client and development server (`net.create_server`, `@srv.get`, `@srv.post`, `@srv.listen`, `net.http_get`, `net.http_post`, `net.download_file`).
 * **`chan`**: Go-style thread-safe buffered and unbuffered concurrency channels (`chan.create<T>`, `chan.send`, `chan.recv`, `chan.try_recv`, `chan.close`).
 * **`gui`**: Cross-platform hardware-accelerated GUI and software rasterizer with identical API across Windows (GDI+), Linux, and macOS.
 * **`audio` / `media`**: SFX sound effects, synth waveforms, background music playback, and ID3/Vorbis/FLAC metadata tagging.
 * **`retrotech` (`rt`)**: Virtual retro graphics display engine (`DrawRawPixels`, `ColorScreen`, `UpdateScreen`), palette modulation, system sound (`Beep`).
-* **`system` (`sys`)**: Process spawning (`sys.command`, `sys.exec`), environment variables (`sys.env`), CPU core detection (`sys.cpu_count`), OS detection (`sys.os`).
-* **`fs`**: File system manipulation (`read_bytes`, `write_bytes`, `exists`, `mkdir`, `list_dir`, `size`, `remove`).
+* **`system` (`sys`)**: Process spawning (`sys.command`, `sys.exec`), environment variables (`sys.env`), CPU core detection (`sys.cpu_count`), OS detection (`sys.os`), distro detection (`sys.distro`).
+* **`fs`**: File system manipulation (`read`, `write`, `exists`, `mkdir`, `list`, `size`, `remove`).
 * **`math`**: Complete mathematical functions (`sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sqrt`, `cbrt`, `pow`, `abs`, `round`, `floor`, `ceil`, `clamp`, `random_int`, `random_dec`, `PI`, `E`).
 * **`time`**: Timestamps (`time.now_ms()`, `time.now_secs()`), high-resolution sleep, timestamp formatting.
-* **`str`**: Complete string manipulation (`split`, `join`, `trim`, `lower`, `upper`, `contains`, `replace`, `starts_with`, `ends_with`, `pad_left`, `pad_right`, `repeat`).
+* **`str`**: Complete UTF-8 aware string manipulation (`split`, `join`, `trim`, `lower`, `upper`, `contains`, `replace`, `starts_with`, `ends_with`, `substr`, `len`).
 * **`asyncIO` (`async`)**: High-performance thread pool, timers, async task dispatching.
 
 ---
@@ -379,7 +380,7 @@ Viss features an official Visual Studio Code extension located in `extensions/vi
 * **Diagnostics & Linter**: Instant on-save syntax error detection and human-friendly diagnostics (`viss check`).
 * **Hover Documentation**: Detailed documentation popups for all primitives, keywords, and standard library modules.
 * **IntelliSense Completions**: Contextual autocompletion for `db`, `net`, `chan`, `gui`, `audio`, `math`, `io`, and more.
-* **Snippets**: Pre-built templates for functions, classes, SQLite apps (`dbapp`), HTTP servers (`netserver`), channels (`chanapp`), and GUI apps (`guiapp`).
+* **Snippets**: Pre-built templates for functions, classes, apps, HTTP servers (`netserver`), channels (`chanapp`), and GUI apps (`guiapp`).
 * **Keybindings**: `F5` Run, `Ctrl+F5` Check Syntax, `Shift+F5` Build, `Alt+F5` Bundle Standalone Executable.
 
 ---
@@ -395,18 +396,19 @@ Viss features an official Visual Studio Code extension located in `extensions/vi
 - [x] Pattern Matching (`?match`, `case`, `else`)
 - [x] Cross-platform ThreadPool Concurrency (`!async.func`, `await`)
 - [x] Independent Native Execution Engine (`viss vm` / `VissVM`)
-- [x] Official Visual Studio Code Extension v0.4.0 (`viss-vscode`)
+- [x] Official Visual Studio Code Extension (`viss-vscode`)
 - [x] Official Package Manager (`viss pkg`)
 - [x] Language Server Protocol Daemon (`viss lsp`)
-- [x] Embedded SQLite Database Engine (`libs/std/db.hpp`)
-- [x] High-Performance Multi-Threaded HTTP Web Server (`libs/std/net.hpp`)
+- [x] Embedded JSON Document Database Engine (`libs/std/db.hpp`)
+- [x] HTTP Networking & Development Server (`libs/std/net.hpp`)
 - [x] Go-style Concurrency Channels (`libs/std/chan.hpp`)
 - [x] Cross-Platform Windowing & Software Rasterizer GUI (`libs/std/gui.hpp`)
+- [x] Viss 0.3.2 Security Hardening, Audit Fixes & UTF-8 Strings
 
 ---
 
 ## License
 
-Viss is released under the terms of the **UniLicense**. You are free to use, modify, distribute, and build commercial software with Viss without restrictions. See [LICENSE](LICENSE) for details.
+Viss is released under the terms of the **MIT License**. You are free to use, modify, distribute, and build commercial software with Viss without restrictions. See [LICENSE](LICENSE) for details.
 
 Developed by **Halva-developer**.

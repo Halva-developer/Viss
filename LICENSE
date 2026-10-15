@@ -1,12 +1,21 @@
-# The Viss UniLicense
+MIT License
 
 Copyright (c) 2026 Viss Language Community & Halva
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Viss Programming Language", its compiler, package manager, and standard libraries), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-1. **The Right to Improve:** Everyone has the absolute right to modify Viss, compile custom versions, and build upon this project.
-2. **Make It Better, Not Worse:** You must strive to make the language better, not worse. Keep the prefix-oriented design clean, fast, and beautiful. Every version that brings improvements and joy is highly appreciated.
-3. **Absolute Freedom:** You are allowed to do whatever you want with this language and its tools. Create, experiment, build, and have fun!
-4. **No Warranty:** The software is provided "as is", without warranty of any kind, express or implied.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-Let the future of Viss be shaped by creativity, kindness, and collaboration!
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

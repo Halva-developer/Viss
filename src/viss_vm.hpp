@@ -41,6 +41,117 @@ enum class VMType {
     Map
 };
 
+inline int64_t vm_utf8_len(const std::string& s) {
+    int64_t count = 0;
+    for (char c : s) {
+        if (((unsigned char)c & 0xC0) != 0x80) count++;
+    }
+    return count;
+}
+
+inline std::string vm_utf8_substr(const std::string& s, int64_t start, int64_t length = -1) {
+    if (start < 0) return "";
+    size_t b_start = s.size(), b_end = s.size();
+    int64_t cp = 0;
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (((unsigned char)s[i] & 0xC0) != 0x80) {
+            if (cp == start) b_start = i;
+            if (length >= 0 && cp == start + length) { b_end = i; break; }
+            cp++;
+        }
+    }
+    if (b_start >= s.size()) {
+        if (cp == start && length == 0) return "";
+        return "";
+    }
+    if (length < 0) return s.substr(b_start);
+    return s.substr(b_start, b_end - b_start);
+}
+
+inline uint32_t vm_decode_utf8(const std::string& s, size_t& i) {
+    unsigned char c = (unsigned char)s[i];
+    if (c < 0x80) { i += 1; return c; }
+    if ((c & 0xE0) == 0xC0) {
+        if (i + 1 < s.size()) {
+            uint32_t cp = ((c & 0x1F) << 6) | ((unsigned char)s[i + 1] & 0x3F);
+            i += 2; return cp;
+        }
+    } else if ((c & 0xF0) == 0xE0) {
+        if (i + 2 < s.size()) {
+            uint32_t cp = ((c & 0x0F) << 12) | (((unsigned char)s[i + 1] & 0x3F) << 6) | ((unsigned char)s[i + 2] & 0x3F);
+            i += 3; return cp;
+        }
+    } else if ((c & 0xF8) == 0xF0) {
+        if (i + 3 < s.size()) {
+            uint32_t cp = ((c & 0x07) << 18) | (((unsigned char)s[i + 1] & 0x3F) << 12) | (((unsigned char)s[i + 2] & 0x3F) << 6) | ((unsigned char)s[i + 3] & 0x3F);
+            i += 4; return cp;
+        }
+    }
+    i += 1; return c;
+}
+
+inline void vm_encode_utf8(uint32_t cp, std::string& out) {
+    if (cp <= 0x7F) {
+        out.push_back((char)cp);
+    } else if (cp <= 0x7FF) {
+        out.push_back((char)(0xC0 | ((cp >> 6) & 0x1F)));
+        out.push_back((char)(0x80 | (cp & 0x3F)));
+    } else if (cp <= 0xFFFF) {
+        out.push_back((char)(0xE0 | ((cp >> 12) & 0x0F)));
+        out.push_back((char)(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back((char)(0x80 | (cp & 0x3F)));
+    } else {
+        out.push_back((char)(0xF0 | ((cp >> 18) & 0x07)));
+        out.push_back((char)(0x80 | ((cp >> 12) & 0x3F)));
+        out.push_back((char)(0x80 | ((cp >> 6) & 0x3F)));
+        out.push_back((char)(0x80 | (cp & 0x3F)));
+    }
+}
+
+inline uint32_t vm_cp_upper(uint32_t cp) {
+    if (cp >= 'a' && cp <= 'z') return cp - ('a' - 'A');
+    if (cp >= 0x0430 && cp <= 0x044F) return cp - 0x20;
+    if (cp == 0x0451) return 0x0401; // ё -> Ё
+    if (cp == 0x0454) return 0x0404; // є -> Є
+    if (cp == 0x0456) return 0x0406; // і -> І
+    if (cp == 0x0457) return 0x0407; // ї -> Ї
+    if (cp == 0x045E) return 0x040E; // ў -> Ў
+    return cp;
+}
+
+inline uint32_t vm_cp_lower(uint32_t cp) {
+    if (cp >= 'A' && cp <= 'Z') return cp + ('a' - 'A');
+    if (cp >= 0x0410 && cp <= 0x042F) return cp + 0x20;
+    if (cp == 0x0401) return 0x0451; // Ё -> ё
+    if (cp == 0x0404) return 0x0454; // Є -> є
+    if (cp == 0x0406) return 0x0456; // І -> і
+    if (cp == 0x0407) return 0x0457; // Ї -> ї
+    if (cp == 0x040E) return 0x045E; // Ў -> ў
+    return cp;
+}
+
+inline std::string vm_utf8_upper(const std::string& s) {
+    std::string res;
+    res.reserve(s.size());
+    size_t i = 0;
+    while (i < s.size()) {
+        uint32_t cp = vm_decode_utf8(s, i);
+        vm_encode_utf8(vm_cp_upper(cp), res);
+    }
+    return res;
+}
+
+inline std::string vm_utf8_lower(const std::string& s) {
+    std::string res;
+    res.reserve(s.size());
+    size_t i = 0;
+    while (i < s.size()) {
+        uint32_t cp = vm_decode_utf8(s, i);
+        vm_encode_utf8(vm_cp_lower(cp), res);
+    }
+    return res;
+}
+
 struct VMVal {
     VMType type = VMType::Null;
     int64_t i_val = 0;
@@ -159,7 +270,7 @@ struct VMVal {
     }
 
     int64_t len() const {
-        if (type == VMType::Str) return (int64_t)s_val.size();
+        if (type == VMType::Str) return vm_utf8_len(s_val);
         if (type == VMType::List) return (int64_t)list_val.size();
         if (type == VMType::Bytes) return (int64_t)bytes_val.size();
         if (type == VMType::Map) return (int64_t)map_val.size();
@@ -327,6 +438,9 @@ struct VMContext {
     std::vector<std::string> cli_args;
     FlowSignal signal = FlowSignal::None;
     VMVal return_val;
+    bool has_error = false;
+    std::string error_msg = "";
+    int exit_code = 0;
 
     VMContext() {
         scopes.emplace_back(); // Global scope
@@ -473,6 +587,7 @@ private:
 
 public:
     static VMVal evaluate(const std::string& raw_expr, VMContext& ctx) {
+        if (ctx.has_error) return VMVal();
         std::string expr = trim(raw_expr);
         if (expr.empty()) return VMVal();
 
@@ -621,8 +736,18 @@ public:
                 else if (c == '[') bracket--;
                 else if (paren == 0 && brace == 0 && bracket == 0) {
                     if (c == '+' && i > 0) return op_add(evaluate(expr.substr(0, i), ctx), evaluate(expr.substr(i+1), ctx));
-                    if (c == '-' && i > 0 && expr[i-1] != '*' && expr[i-1] != '/' && expr[i-1] != '+' && expr[i-1] != '-') {
-                        return op_sub(evaluate(expr.substr(0, i), ctx), evaluate(expr.substr(i+1), ctx));
+                    if (c == '-' && i > 0) {
+                        int prev_idx = i - 1;
+                        while (prev_idx >= 0 && (expr[prev_idx] == ' ' || expr[prev_idx] == '\t')) prev_idx--;
+                        if (prev_idx >= 0) {
+                            char prev_c = expr[prev_idx];
+                            if (prev_c != '+' && prev_c != '-' && prev_c != '*' && prev_c != '/' &&
+                                prev_c != '%' && prev_c != '(' && prev_c != '[' && prev_c != '{' &&
+                                prev_c != '=' && prev_c != '<' && prev_c != '>' && prev_c != '!' &&
+                                prev_c != ',' && prev_c != ':') {
+                                return op_sub(evaluate(expr.substr(0, i), ctx), evaluate(expr.substr(i+1), ctx));
+                            }
+                        }
                     }
                 }
             }
@@ -644,8 +769,26 @@ public:
                 else if (c == '[') bracket--;
                 else if (paren == 0 && brace == 0 && bracket == 0) {
                     if (c == '*') return op_mul(evaluate(expr.substr(0, i), ctx), evaluate(expr.substr(i+1), ctx));
-                    if (c == '/') return op_div(evaluate(expr.substr(0, i), ctx), evaluate(expr.substr(i+1), ctx));
-                    if (c == '%') return op_mod(evaluate(expr.substr(0, i), ctx), evaluate(expr.substr(i+1), ctx));
+                    if (c == '/') {
+                        auto right = evaluate(expr.substr(i+1), ctx);
+                        if (right.to_dec() == 0.0) {
+                            std::cerr << "RuntimeError: Division by zero\n";
+                            ctx.has_error = true;
+                            ctx.exit_code = 1;
+                            return VMVal(0);
+                        }
+                        return op_div(evaluate(expr.substr(0, i), ctx), right);
+                    }
+                    if (c == '%') {
+                        auto right = evaluate(expr.substr(i+1), ctx);
+                        if (right.to_int() == 0) {
+                            std::cerr << "RuntimeError: Modulo by zero\n";
+                            ctx.has_error = true;
+                            ctx.exit_code = 1;
+                            return VMVal(0);
+                        }
+                        return op_mod(evaluate(expr.substr(0, i), ctx), right);
+                    }
                 }
             }
         }
@@ -821,14 +964,10 @@ public:
             // Methods on Strings
             if (target.type == VMType::Str) {
                 if (mname == "upper") {
-                    std::string s = target.s_val;
-                    for (char& c : s) c = (char)std::toupper((unsigned char)c);
-                    return VMVal(s);
+                    return VMVal(vm_utf8_upper(target.s_val));
                 }
                 if (mname == "lower") {
-                    std::string s = target.s_val;
-                    for (char& c : s) c = (char)std::tolower((unsigned char)c);
-                    return VMVal(s);
+                    return VMVal(vm_utf8_lower(target.s_val));
                 }
                 if (mname == "trim") {
                     return VMVal(trim(target.s_val));
@@ -880,12 +1019,12 @@ public:
                     auto s_args = splitArgs(margs);
                     if (!s_args.empty()) {
                         int64_t start = evaluate(s_args[0], ctx).to_int();
-                        if (start < 0 || (size_t)start >= target.s_val.size()) return VMVal("");
+                        if (start < 0) return VMVal("");
                         if (s_args.size() > 1) {
                             int64_t len = evaluate(s_args[1], ctx).to_int();
-                            return VMVal(target.s_val.substr(start, len));
+                            return VMVal(vm_utf8_substr(target.s_val, start, len));
                         }
-                        return VMVal(target.s_val.substr(start));
+                        return VMVal(vm_utf8_substr(target.s_val, start));
                     }
                 }
             }
@@ -1058,10 +1197,30 @@ public:
             std::vector<VMVal> args;
             for (const auto& a : args_raw) args.push_back(evaluate(a, ctx));
 
-            // Builtin prints
-            if (fname == "println" || fname == "print") {
-                return callModule("io", expr, ctx);
+            // Builtin prints & conversions
+            if (fname == "println") {
+                if (args.empty()) std::cout << "\n";
+                else {
+                    for (size_t i = 0; i < args.size(); ++i) {
+                        std::cout << args[i].to_string();
+                        if (i + 1 < args.size()) std::cout << " ";
+                    }
+                    std::cout << "\n";
+                }
+                return VMVal();
             }
+            if (fname == "print") {
+                for (size_t i = 0; i < args.size(); ++i) {
+                    std::cout << args[i].to_string();
+                    if (i + 1 < args.size()) std::cout << " ";
+                }
+                return VMVal();
+            }
+            if (fname == "len" && !args.empty()) return VMVal(args[0].len());
+            if (fname == "int" && !args.empty()) return VMVal(args[0].to_int());
+            if (fname == "dec" && !args.empty()) return VMVal(args[0].to_dec());
+            if (fname == "str" && !args.empty()) return VMVal(args[0].to_string());
+            if (fname == "bool" && !args.empty()) return VMVal(args[0].to_bool());
 
             auto fit = ctx.functions.find(fname);
             if (fit == ctx.functions.end()) {
@@ -1103,6 +1262,12 @@ public:
                 ctx.scopes.front() = updated_global;
                 return ret_v;
             }
+
+            // Function not found
+            std::cerr << "RuntimeError: Undefined function '" << fname << "'\n";
+            ctx.has_error = true;
+            ctx.exit_code = 1;
+            return VMVal();
         }
 
         // Variable Lookup: @var or var or &buf or 0-arg function call
@@ -1313,13 +1478,25 @@ public:
                 #elif defined(__APPLE__)
                 return VMVal("macOS");
                 #else
+                return VMVal("Linux");
+                #endif
+            }
+            if (fname == "distro") {
+                #ifdef _WIN32
+                return VMVal("Windows");
+                #elif defined(__APPLE__)
+                return VMVal("macOS");
+                #else
                 std::ifstream f("/etc/os-release");
                 if (f.is_open()) {
                     std::string line;
                     while (std::getline(f, line)) {
-                        if (line.find("Ubuntu") != std::string::npos) return VMVal("Ubuntu");
-                        if (line.find("Debian") != std::string::npos) return VMVal("Debian");
-                        if (line.find("Raspbian") != std::string::npos) return VMVal("Raspbian");
+                        if (line.rfind("PRETTY_NAME=", 0) == 0) {
+                            std::string val = line.substr(12);
+                            if (!val.empty() && val.front() == '"') val = val.substr(1);
+                            if (!val.empty() && val.back() == '"') val.pop_back();
+                            return VMVal(val);
+                        }
                     }
                 }
                 return VMVal("Linux");
@@ -1531,8 +1708,14 @@ public:
                 return VMVal(sfs::is_directory(args[0].to_string(), ec));
             }
             if (fname == "read" && !args.empty()) {
-                std::ifstream in(args[0].to_string());
-                if (!in.is_open()) return VMVal("");
+                std::string path = args[0].to_string();
+                std::ifstream in(path);
+                if (!in.is_open()) {
+                    std::cerr << "IOError: Cannot open file '" << path << "'\n";
+                    ctx.has_error = true;
+                    ctx.exit_code = 1;
+                    return VMVal("");
+                }
                 std::stringstream ss; ss << in.rdbuf();
                 return VMVal(ss.str());
             }
@@ -1644,7 +1827,13 @@ public:
         // JSON Module
         if (mod == "json") {
             if (fname == "parse" && !args.empty()) {
-                auto jv = viss::json::parse(args[0].to_string());
+                std::string err;
+                auto jv = viss::json::parse(args[0].to_string(), err);
+                if (!err.empty()) {
+                    std::cerr << "JSONError: " << err << "\n";
+                    ctx.has_error = true;
+                    ctx.exit_code = 1;
+                }
                 return jsonToVMVal(jv);
             }
             if (fname == "stringify" && !args.empty()) {
@@ -1981,8 +2170,12 @@ struct StmtForRange : public ASTNode {
         int64_t start_v = ExprEvaluator::evaluate(start_expr, ctx).to_int();
         int64_t end_v = ExprEvaluator::evaluate(end_expr, ctx).to_int();
 
+        int64_t step = (start_v <= end_v) ? 1 : -1;
         ctx.push_scope();
-        for (int64_t i = start_v; i < end_v; ++i) {
+        auto should_continue = [&](int64_t curr) {
+            return (step > 0) ? (curr < end_v) : (curr >= end_v);
+        };
+        for (int64_t i = start_v; should_continue(i); i += step) {
             ctx.set_var(var_name, VMVal(i));
             for (const auto& node : body) {
                 node->execute(ctx);
@@ -2115,9 +2308,10 @@ struct StmtReturn : public ASTNode {
     std::string expr;
     StmtReturn(const std::string& ex) : expr(ex) {}
     VMVal execute(VMContext& ctx) override {
+        VMVal val = expr.empty() ? VMVal() : ExprEvaluator::evaluate(expr, ctx);
         ctx.signal = FlowSignal::Return;
-        ctx.return_val = expr.empty() ? VMVal() : ExprEvaluator::evaluate(expr, ctx);
-        return ctx.return_val;
+        ctx.return_val = val;
+        return val;
     }
 };
 
@@ -2309,21 +2503,22 @@ public:
         // Execute top-level / functions
         for (const auto& node : root_nodes) {
             node->execute(ctx);
-            if (ctx.signal == FlowSignal::Return) break;
+            if (ctx.signal == FlowSignal::Return || ctx.has_error) break;
         }
 
         // Check if main() exists
         auto fit = ctx.functions.find("main");
-        if (fit != ctx.functions.end()) {
+        if (fit != ctx.functions.end() && !ctx.has_error) {
             ctx.push_scope();
             for (const auto& node : fit->second->body) {
                 node->execute(ctx);
-                if (ctx.signal == FlowSignal::Return) break;
+                if (ctx.signal == FlowSignal::Return || ctx.has_error) break;
             }
             ctx.pop_scope();
         }
 
-        return 0;
+        if (ctx.has_error) return ctx.exit_code != 0 ? ctx.exit_code : 1;
+        return ctx.exit_code;
     }
 
     static int executeFile(const std::string& filepath, const std::vector<std::string>& args = {}) {
@@ -2546,9 +2741,20 @@ private:
                 continue;
             }
 
-            bool is_func_decl = startsWith(line, "!func") || startsWith(line, "func") || startsWith(line, "def ") ||
+            auto is_control_kw = [](const std::string& l) -> bool {
+                return startsWith(l, "!if") || startsWith(l, "?if") || startsWith(l, "if ") || startsWith(l, "if(") ||
+                       startsWith(l, "!while") || startsWith(l, "?while") || startsWith(l, "while ") || startsWith(l, "while(") ||
+                       startsWith(l, "!for") || startsWith(l, "?for") || startsWith(l, "for ") || startsWith(l, "for(") ||
+                       startsWith(l, "!loop") || startsWith(l, "loop ") || startsWith(l, "loop(") ||
+                       startsWith(l, "!elif") || startsWith(l, "?elif") || startsWith(l, "elif") ||
+                       startsWith(l, "!else") || startsWith(l, "?else") || startsWith(l, "else") ||
+                       startsWith(l, "!return") || startsWith(l, "return");
+            };
+
+            bool is_func_decl = !is_control_kw(line) && (
+                                startsWith(line, "!func") || startsWith(line, "func") || startsWith(line, "def ") ||
                                 (startsWith(line, "$") && line.find('(') != std::string::npos) ||
-                                (line.find('(') != std::string::npos && (endsWith(line, ":") || endsWith(line, "->") || endsWith(line, "-") || endsWith(line, "{")));
+                                (line.find('(') != std::string::npos && (endsWith(line, ":") || endsWith(line, "->") || endsWith(line, "-") || endsWith(line, "{"))));
             if (is_func_decl) {
                 std::string decl_line = line;
                 if (endsWith(decl_line, "{") || endsWith(decl_line, ":")) {
@@ -2618,7 +2824,8 @@ private:
                 if (p1 != std::string::npos && p2 != std::string::npos && p2 > p1) {
                     stmt->cond = line.substr(p1 + 1, p2 - p1 - 1);
                 } else {
-                    stmt->cond = "true";
+                    size_t sp = line.find_first_of(" \t");
+                    stmt->cond = (sp != std::string::npos) ? trim(line.substr(sp + 1)) : "true";
                 }
                 parseBlock(lines, idx, stmt->then_branch, ctx);
 
@@ -2639,6 +2846,9 @@ private:
                         std::string econd = "true";
                         if (ep1 != std::string::npos && ep2 != std::string::npos && ep2 > ep1) {
                             econd = next.substr(ep1 + 1, ep2 - ep1 - 1);
+                        } else {
+                            size_t sp = next.find_first_of(" \t");
+                            if (sp != std::string::npos) econd = trim(next.substr(sp + 1));
                         }
                         std::vector<NodePtr> e_branch;
                         parseBlock(lines, idx, e_branch, ctx);
@@ -2663,7 +2873,7 @@ private:
             }
 
             // While Loop: !while (cond) { or while (cond)
-            bool is_while_decl = startsWith(line, "!while") || startsWith(line, "while ") || startsWith(line, "while(");
+            bool is_while_decl = startsWith(line, "!while") || startsWith(line, "?while") || startsWith(line, "while ") || startsWith(line, "while(");
             if (is_while_decl) {
                 if (endsWith(line, "{")) {
                     line = trim(line.substr(0, line.size() - 1));
@@ -2675,6 +2885,9 @@ private:
                 std::string cond = "true";
                 if (p1 != std::string::npos && p2 != std::string::npos && p2 > p1) {
                     cond = line.substr(p1 + 1, p2 - p1 - 1);
+                } else {
+                    size_t sp = line.find_first_of(" \t");
+                    if (sp != std::string::npos) cond = trim(line.substr(sp + 1));
                 }
                 std::vector<NodePtr> b;
                 parseBlock(lines, idx, b, ctx);
@@ -2690,8 +2903,10 @@ private:
                 } else if (idx < lines.size() && trim(lines[idx]) == "{") {
                     idx++;
                 }
-                size_t sp_pos = line.find(' ');
+                size_t sp_pos = line.find_first_of(" \t(");
                 std::string decl = trim(line.substr(sp_pos + 1));
+                if (!decl.empty() && decl.back() == ')') decl = trim(decl.substr(0, decl.size() - 1));
+                if (!decl.empty() && decl.front() == '(') decl = trim(decl.substr(1));
                 size_t in_pos = decl.find(" in ");
                 std::string vname = trim(decl.substr(0, in_pos));
                 if (vname.front() == '@') vname = vname.substr(1);

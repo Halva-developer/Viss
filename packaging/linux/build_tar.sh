@@ -5,7 +5,7 @@
 
 set -e
 
-VERSION="0.3.1"
+VERSION="0.3.2"
 ARCH="$(uname -m 2>/dev/null || echo x86_64)"
 DIST_NAME="viss-${VERSION}-linux-${ARCH}"
 STAGING_DIR="/tmp/${DIST_NAME}"

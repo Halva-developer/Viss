@@ -273,13 +273,25 @@ namespace viss {
             #elif defined(__APPLE__)
             return "macOS";
             #else
+            return "Linux";
+            #endif
+        }
+        inline Str distro() {
+            #ifdef _WIN32
+            return "Windows";
+            #elif defined(__APPLE__)
+            return "macOS";
+            #else
             std::ifstream f("/etc/os-release");
             if (f.is_open()) {
                 std::string line;
                 while (std::getline(f, line)) {
-                    if (line.find("Ubuntu") != std::string::npos) return "Ubuntu";
-                    if (line.find("Debian") != std::string::npos) return "Debian";
-                    if (line.find("Raspbian") != std::string::npos) return "Raspbian";
+                    if (line.rfind("PRETTY_NAME=", 0) == 0) {
+                        std::string val = line.substr(12);
+                        if (!val.empty() && val.front() == '"') val = val.substr(1);
+                        if (!val.empty() && val.back() == '"') val.pop_back();
+                        return val;
+                    }
                 }
             }
             return "Linux";

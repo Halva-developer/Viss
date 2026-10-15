@@ -21,7 +21,7 @@ namespace fs = std::filesystem;
 
 namespace vsc {
 
-const std::string VSC_VERSION = "0.3.1";
+const std::string VSC_VERSION = "0.3.2";
 const std::string VSC_CODENAME = "Viss Script Core";
 const std::string SSI_VERSION = VSC_VERSION;
 const std::string SSI_CODENAME = VSC_CODENAME;

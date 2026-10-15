@@ -30,7 +30,7 @@
 
 namespace fs = std::filesystem;
 
-const std::string VERSION = "0.3.1";
+const std::string VERSION = "0.3.2";
 const std::string CODENAME = "Peppermint Butler";
 
 // =============================================================================
@@ -104,10 +104,15 @@ std::string getExecutableDir() {
 #include "viss_update.hpp"
 
 std::string findCompiler() {
-    std::string candidate = "C:\\AGY\\TOOLS\\w64devkit\\bin\\g++.exe";
-    if (fs::exists(candidate)) return candidate;
-    std::string local = getExecutableDir() + "\\w64devkit\\bin\\g++.exe";
-    if (fs::exists(local)) return local;
+    const char* cxx_env = std::getenv("VISS_CXX");
+    if (!cxx_env) cxx_env = std::getenv("CXX");
+    if (cxx_env && fs::exists(cxx_env)) return cxx_env;
+
+    std::string exe_dir = getExecutableDir();
+    for (const auto& rel : {"\\w64devkit\\bin\\g++.exe", "\\mingw64\\bin\\g++.exe", "\\bin\\g++.exe", "\\..\\w64devkit\\bin\\g++.exe"}) {
+        std::string cand = exe_dir + rel;
+        if (fs::exists(cand)) return cand;
+    }
     return "g++";
 }
 
@@ -155,8 +160,9 @@ std::string getVissIncludeFlags(const fs::path& file_dir = "") {
                  "-I/usr/local/lib/viss "
                  "-I/opt/homebrew/share/viss -I/opt/homebrew/include/viss ";
 #else
-    if (fs::exists("C:\\AGY\\Viss_Helper")) {
-        inc_paths += "-I\"C:\\AGY\\Viss_Helper\" -I\"C:\\AGY\\Viss_Helper\\libs\" ";
+    const char* vhome = std::getenv("VISS_HOME");
+    if (vhome && fs::exists(vhome)) {
+        inc_paths += "-I\"" + std::string(vhome) + "\" -I\"" + std::string(vhome) + "\\libs\" ";
     }
 #endif
     return inc_paths;
@@ -171,6 +177,24 @@ std::string extractStringLiterals(const std::string& code, std::vector<std::stri
     size_t i = 0;
     size_t n = code.size();
     while (i < n) {
+        // Single-line comment: // ...
+        if (code[i] == '/' && i + 1 < n && code[i + 1] == '/') {
+            while (i < n && code[i] != '\n') {
+                out += code[i++];
+            }
+            continue;
+        }
+        // Multi-line comment: /* ... */
+        if (code[i] == '/' && i + 1 < n && code[i + 1] == '*') {
+            out += code[i++];
+            out += code[i++];
+            while (i < n && !(code[i] == '*' && i + 1 < n && code[i + 1] == '/')) {
+                out += code[i++];
+            }
+            if (i < n) { out += code[i++]; out += code[i++]; }
+            continue;
+        }
+
         if (code[i] == '"' || code[i] == '\'') {
             char quote_char = code[i];
             std::string lit = "\"";
@@ -179,11 +203,15 @@ std::string extractStringLiterals(const std::string& code, std::vector<std::stri
                 if (code[i] == '\\' && i + 1 < n) {
                     char next_c = code[i + 1];
                     if (next_c == quote_char) {
-                        lit += quote_char;
+                        lit += "\\\"";
                         i += 2;
                         continue;
                     } else if (next_c == '"' && quote_char == '\'') {
                         lit += "\\\"";
+                        i += 2;
+                        continue;
+                    } else if (next_c == '\\') {
+                        lit += "\\\\";
                         i += 2;
                         continue;
                     }
@@ -1340,6 +1368,14 @@ inline std::string transformInOperator(const std::string& expr) {
                     lhs_start--;
                 }
                 std::string lhs = trim(s.substr(lhs_start, lhs_end - lhs_start));
+                if (!lhs.empty() && lhs.back() == '.') {
+                    lhs.pop_back();
+                    lhs = trim(lhs);
+                }
+                if (lhs.size() > 1 && lhs[0] == '!' && lhs[1] != '=') {
+                    is_neg = !is_neg;
+                    lhs = trim(lhs.substr(1));
+                }
 
                 size_t rhs_start = i + op_len;
                 while (rhs_start < s.size() && (s[rhs_start] == ' ' || s[rhs_start] == '\t')) rhs_start++;
@@ -1366,6 +1402,9 @@ inline std::string transformInOperator(const std::string& expr) {
                     rhs_end++;
                 }
                 std::string rhs = trim(s.substr(rhs_start, rhs_end - rhs_start));
+                if (rhs.size() >= 2 && rhs.front() == '(' && rhs.back() == ')') {
+                    rhs = trim(rhs.substr(1, rhs.size() - 2));
+                }
 
                 std::string replacement;
                 if (is_contains) {
@@ -1406,7 +1445,7 @@ public:
 
     ScopeTracker() {
         scopes.emplace_back(); // global scope
-        known_modules = {"io", "rt", "sys", "time", "math", "str", "draw", "screen", "fs", "async", "json", "crypto", "collections", "env", "net", "db", "chan", "pkg", "mask", "bytemask", "colormask", "audio", "snd", "sound", "media", "tag", "gui", "ui", "window", "win", "lic", "license"};
+        known_modules = {"io", "rt", "sys", "time", "math", "str", "draw", "screen", "fs", "async", "json", "crypto", "collections", "env", "net", "db", "chan", "pkg", "mask", "bytemask", "colormask", "audio", "snd", "sound", "media", "tag", "gui", "ui", "window", "win"};
     }
 
     void enter_function() {
@@ -1837,16 +1876,9 @@ std::string transformExpression(
                 num += raw_expr[i++];
             }
             left_type = has_dot ? VissType::Dec : VissType::Int;
-            if (!has_dot && num.size() == 8) {
-                bool is_binary_byte = true;
-                for (char ch : num) {
-                    if (ch != '0' && ch != '1') {
-                        is_binary_byte = false;
-                        break;
-                    }
-                }
-                if (is_binary_byte) {
-                    num = "0b" + num;
+            if (!has_dot) {
+                if (num.back() != 'L' && num.back() != 'l' && num.back() != 'U' && num.back() != 'u') {
+                    num += "LL";
                 }
             }
             out += num;
@@ -2190,7 +2222,7 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
     std::vector<std::string> imported_aliases = {
         "io", "iostream", "sys", "fs", "math", "str", "rt", "retrotech", "async", "asyncIO", "json",
         "crypto", "collections", "env", "net", "db", "chan", "pkg", "mask", "bytemask", "colormask",
-        "audio", "snd", "sound", "media", "tag", "gui", "ui", "window", "win", "lic", "license"
+        "audio", "snd", "sound", "media", "tag", "gui", "ui", "window", "win"
     };
 
     ScopeTracker declared_vars;
@@ -2657,35 +2689,40 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
 
         // 6. Loops: !for @i in 0..10 {, ?for, for, !while, ?while, while
         std::smatch m_loop;
-        if (std::regex_match(stripped, m_loop, std::regex(R"(^[!?]?for\s+@?([a-zA-Z0-9_]+)\s+in\s+([^.]+)\.\.([^.]+)\.\.([^\{]+)\{$)"))) {
-            std::string v = m_loop[1].str();
-            declared_vars.enter_block();
-            declared_vars.insert(v);
-            std::string s = trim(replaceAll(replaceAll(m_loop[2].str(), "@", ""), "&", ""));
-            std::string e = trim(replaceAll(replaceAll(m_loop[3].str(), "@", ""), "&", ""));
-            std::string step = trim(replaceAll(replaceAll(m_loop[4].str(), "@", ""), "&", ""));
-            block_stack.push_back({"for", v});
-            current_target->push_back("for (viss::Int " + v + " = (" + s + "), _v_end_" + v + " = (" + e + "), _v_step_" + v + " = (" + step + "); (_v_step_" + v + " >= 0 ? " + v + " < _v_end_" + v + " : " + v + " > _v_end_" + v + "); " + v + " += _v_step_" + v + ") {");
-            continue;
-        }
-        if (std::regex_match(stripped, m_loop, std::regex(R"(^[!?]?for\s+@?([a-zA-Z0-9_]+)\s+in\s+([^.]+)\.\.([^\{]+)\{$)"))) {
-            std::string v = m_loop[1].str();
-            declared_vars.enter_block();
-            declared_vars.insert(v);
-            std::string s = trim(replaceAll(replaceAll(m_loop[2].str(), "@", ""), "&", ""));
-            std::string e = trim(replaceAll(replaceAll(m_loop[3].str(), "@", ""), "&", ""));
-            block_stack.push_back({"for", v});
-            current_target->push_back("for (viss::Int " + v + " = (" + s + "), _v_end_" + v + " = (" + e + "), _v_step_" + v + " = (" + v + " <= _v_end_" + v + " ? 1 : -1); (_v_step_" + v + " >= 0 ? " + v + " < _v_end_" + v + " : " + v + " > _v_end_" + v + "); " + v + " += _v_step_" + v + ") {");
-            continue;
-        }
-        if (std::regex_match(stripped, m_loop, std::regex(R"(^[!?]?for\s+@?([a-zA-Z0-9_]+)\s+in\s+([^\{]+)\{$)"))) {
-            std::string v = m_loop[1].str();
-            declared_vars.enter_block();
-            declared_vars.insert(v);
-            std::string coll = trim(replaceAll(replaceAll(m_loop[2].str(), "@", ""), "&", ""));
-            block_stack.push_back({"for", v});
-            current_target->push_back("for (auto& " + v + " : " + coll + ") {");
-            continue;
+        if (std::regex_match(stripped, m_loop, std::regex(R"(^[!?]?for(?:\s*\(\s*@?([a-zA-Z0-9_]+)\s+in\s+(.+?)\s*\)|\s+@?([a-zA-Z0-9_]+)\s+in\s+(.+?))\s*\{$)"))) {
+            std::string v = m_loop[1].matched ? m_loop[1].str() : m_loop[3].str();
+            std::string iter_str = trim(m_loop[1].matched ? m_loop[2].str() : m_loop[4].str());
+            size_t p1 = iter_str.find("..");
+            if (p1 != std::string::npos) {
+                size_t p2 = iter_str.find("..", p1 + 2);
+                if (p2 != std::string::npos) {
+                    std::string s = trim(replaceAll(replaceAll(iter_str.substr(0, p1), "@", ""), "&", ""));
+                    std::string e = trim(replaceAll(replaceAll(iter_str.substr(p1 + 2, p2 - (p1 + 2)), "@", ""), "&", ""));
+                    std::string step = trim(replaceAll(replaceAll(iter_str.substr(p2 + 2), "@", ""), "&", ""));
+                    declared_vars.enter_block();
+                    declared_vars.insert(v);
+                    block_stack.push_back({"for", v});
+                    current_target->push_back("for (viss::Int " + v + " = (" + s + "), _v_end_" + v + " = (" + e + "), _v_step_" + v + " = (" + step + "); (_v_step_" + v + " >= 0 ? " + v + " < _v_end_" + v + " : " + v + " > _v_end_" + v + "); " + v + " += _v_step_" + v + ") {");
+                    continue;
+                } else {
+                    std::string s = trim(replaceAll(replaceAll(iter_str.substr(0, p1), "@", ""), "&", ""));
+                    std::string e = trim(replaceAll(replaceAll(iter_str.substr(p1 + 2), "@", ""), "&", ""));
+                    declared_vars.enter_block();
+                    declared_vars.insert(v);
+                    block_stack.push_back({"for", v});
+                    current_target->push_back("for (viss::Int " + v + " = (" + s + "), _v_end_" + v + " = (" + e + "), _v_step_" + v + " = (" + v + " <= _v_end_" + v + " ? 1 : -1); (_v_step_" + v + " >= 0 ? " + v + " < _v_end_" + v + " : " + v + " > _v_end_" + v + "); " + v + " += _v_step_" + v + ") {");
+                    continue;
+                }
+            } else {
+                std::string coll = transformListLiterals(iter_str);
+                std::string err;
+                coll = transformExpression(coll, imported_aliases, declared_vars, line_num, filename, err);
+                declared_vars.enter_block();
+                declared_vars.insert(v);
+                block_stack.push_back({"for", v});
+                current_target->push_back("for (auto&& " + v + " : " + coll + ") {");
+                continue;
+            }
         }
         if (std::regex_match(stripped, m_loop, std::regex(R"(^[!?]?while(?:\s*\((.*)\)|\s+(.+?))\s*\{$)"))) {
             declared_vars.enter_block();

@@ -1,0 +1,118 @@
+$import lib "iostream" as io;
+$import lib "sys" as sys;
+$import lib "str" as str;
+$import lib "json" as json;
+
+!func main() {
+    io.println("=================================================");
+    io.println("Running Viss v0.3.2 Integrity & Hardening Tests");
+    io.println("=================================================");
+
+    // Test 1: 8-digit decimal numbers containing 0 and 1 must NOT be treated as binary
+    @num8 = 10000000;
+    ?if (@num8 != 10000000) {
+        io.println("FAILED: 10000000 was converted to: " + @num8);
+        sys.exit(1);
+    }
+    io.println("PASS: 8-digit decimal (10000000 == 10000000)");
+
+    // Test 2: 64-bit integer literal precision (no 32-bit overflow)
+    @big1 = 2000000000;
+    @big2 = 2000000000;
+    @big_sum = @big1 + @big2;
+    ?if (@big_sum != 4000000000) {
+        io.println("FAILED: 64-bit overflow (2000000000 + 2000000000 = " + @big_sum + ")");
+        sys.exit(1);
+    }
+    io.println("PASS: 64-bit integer literal math (sum == 4000000000)");
+
+    // Test 3: Apostrophes in comments must not swallow code
+    // don't break here!
+    // it's an important check
+    /* it's also a block comment with 'quotes' */
+    @comm_check = 12345;
+    ?if (@comm_check != 12345) {
+        io.println("FAILED: comments with apostrophes swallowed code");
+        sys.exit(1);
+    }
+    io.println("PASS: Comments with apostrophes handled cleanly");
+
+    // Test 4: Escaped quotes in strings
+    @escaped = "Hello \"Viss\" World";
+    ?if (!@escaped.contains("\"Viss\"")) {
+        io.println("FAILED: Escaped quotes in string corrupted");
+        sys.exit(1);
+    }
+    io.println("PASS: Escaped quotes in string literals");
+
+    // Test 5: UTF-8 Cyrillic codepoint handling
+    @ru = "Привет";
+    ?if (str.len(@ru) != 6) {
+        io.println("FAILED: UTF-8 str.len returned " + str.len(@ru) + ", expected 6");
+        sys.exit(1);
+    }
+    ?if (str.substr(@ru, 0, 3) != "При") {
+        io.println("FAILED: UTF-8 str.substr(0, 3) returned " + str.substr(@ru, 0, 3) + ", expected При");
+        sys.exit(1);
+    }
+    ?if (str.upper(@ru) != "ПРИВЕТ") {
+        io.println("FAILED: UTF-8 str.upper returned " + str.upper(@ru) + ", expected ПРИВЕТ");
+        sys.exit(1);
+    }
+    ?if (str.lower(@ru) != "привет") {
+        io.println("FAILED: UTF-8 str.lower returned " + str.lower(@ru) + ", expected привет");
+        sys.exit(1);
+    }
+    io.println("PASS: UTF-8 string str.len, str.substr, str.upper, str.lower");
+
+    // Test 6: Math with unary minus and subtraction
+    @neg_mul = -3 * -3;
+    ?if (@neg_mul != 9) {
+        io.println("FAILED: -3 * -3 evaluated to " + @neg_mul + ", expected 9");
+        sys.exit(1);
+    }
+    @sub_neg = 10 - -3;
+    ?if (@sub_neg != 13) {
+        io.println("FAILED: 10 - -3 evaluated to " + @sub_neg + ", expected 13");
+        sys.exit(1);
+    }
+    @normal_sub = 10 - 3;
+    ?if (@normal_sub != 7) {
+        io.println("FAILED: 10 - 3 evaluated to " + @normal_sub + ", expected 7");
+        sys.exit(1);
+    }
+    io.println("PASS: Unary minus vs binary subtraction (-3 * -3 == 9, 10 - -3 == 13)");
+
+    // Test 7: Loop & Conditional Execution
+    @cnt = 0;
+    !while (@cnt < 5) {
+        @cnt = @cnt + 1;
+    }
+    ?if (@cnt != 5) {
+        io.println("FAILED: !while (@cnt < 5) terminated at " + @cnt);
+        sys.exit(1);
+    }
+
+    @loop_sum = 0;
+    !for (@x in [10, 20, 30]) {
+        @loop_sum = @loop_sum + @x;
+    }
+    ?if (@loop_sum != 60) {
+        io.println("FAILED: !for (@x in [10, 20, 30]) evaluated to " + @loop_sum);
+        sys.exit(1);
+    }
+    io.println("PASS: Loops (!while with parens, !for with parens)");
+
+    // Test 8: JSON with Unicode escapes and scientific notation
+    @json_data = json.parse("{\"message\": \"\\u041f\\u0440\\u0438\\u0432\\u0435\\u0442\", \"exp\": 1e3}");
+    @msg = @json_data.get("message").as_str();
+    ?if (@msg != "Привет") {
+        io.println("FAILED: json unicode escape: " + @msg);
+        sys.exit(1);
+    }
+    io.println("PASS: JSON unicode escapes (\\u041f -> П)");
+
+    io.println("=================================================");
+    io.println("ALL 8 INTEGRITY TESTS PASSED SUCCESSFULLY! (rc=0)");
+    io.println("=================================================");
+}

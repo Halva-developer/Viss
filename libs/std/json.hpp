@@ -266,11 +266,31 @@ namespace viss {
                         else if (esc == 't') res += '\t';
                         else if (esc == '"') res += '"';
                         else if (esc == '\\') res += '\\';
-                        else res += esc;
+                        else if (esc == 'u' && pos + 4 <= s.size()) {
+                            std::string hex = s.substr(pos, 4);
+                            pos += 4;
+                            try {
+                                uint32_t cp = (uint32_t)std::stoul(hex, nullptr, 16);
+                                if (cp <= 0x7F) {
+                                    res += (char)cp;
+                                } else if (cp <= 0x7FF) {
+                                    res += (char)(0xC0 | ((cp >> 6) & 0x1F));
+                                    res += (char)(0x80 | (cp & 0x3F));
+                                } else {
+                                    res += (char)(0xE0 | ((cp >> 12) & 0x0F));
+                                    res += (char)(0x80 | ((cp >> 6) & 0x3F));
+                                    res += (char)(0x80 | (cp & 0x3F));
+                                }
+                            } catch (...) {
+                                res += "\\u" + hex;
+                            }
+                        } else res += esc;
                     } else {
                         res += c;
                     }
                 }
+                has_error = true;
+                error_msg = "Unterminated string literal";
                 return res;
             }
 
@@ -278,24 +298,31 @@ namespace viss {
                 size_t start = pos;
                 bool is_dec = false;
                 if (s[pos] == '-') pos++;
-                while (pos < s.size() && (isdigit((unsigned char)s[pos]) || s[pos] == '.' || s[pos] == 'e' || s[pos] == 'E' || s[pos] == '+')) {
-                    if (s[pos] == '.') is_dec = true;
+                while (pos < s.size() && (isdigit((unsigned char)s[pos]) || s[pos] == '.' || s[pos] == 'e' || s[pos] == 'E' || s[pos] == '+' || s[pos] == '-')) {
+                    if (s[pos] == '.' || s[pos] == 'e' || s[pos] == 'E') is_dec = true;
                     pos++;
                 }
                 Str num_str = s.substr(start, pos - start);
                 if (is_dec) {
-                    try { return JsonValue(std::stod(num_str)); } catch (...) { return JsonValue(0.0); }
+                    try { return JsonValue(std::stod(num_str)); } catch (...) { has_error = true; error_msg = "Invalid number format"; return JsonValue(0.0); }
                 } else {
-                    try { return JsonValue((Int)std::stoll(num_str)); } catch (...) { return JsonValue((Int)0); }
+                    try { return JsonValue((Int)std::stoll(num_str)); } catch (...) { has_error = true; error_msg = "Invalid number format"; return JsonValue((Int)0); }
                 }
             }
 
         public:
+            bool has_error = false;
+            Str error_msg = "";
+
             JsonParser(const Str& src) : s(src), pos(0) {}
 
             JsonValue parse_value() {
                 skip_ws();
-                if (pos >= s.size()) return JsonValue();
+                if (pos >= s.size()) {
+                    has_error = true;
+                    error_msg = "Unexpected end of JSON input";
+                    return JsonValue();
+                }
                 char c = s[pos];
 
                 if (c == '"') {
@@ -306,14 +333,26 @@ namespace viss {
                     obj.type = JsonType::Object;
                     if (peek() == '}') { get(); return obj; }
                     while (pos < s.size()) {
-                        if (peek() != '"') break;
+                        if (peek() != '"') {
+                            has_error = true;
+                            error_msg = "Expected string key in JSON object";
+                            break;
+                        }
                         Str key = parse_string();
-                        if (get() != ':') break;
+                        if (get() != ':') {
+                            has_error = true;
+                            error_msg = "Expected ':' after key in JSON object";
+                            break;
+                        }
                         obj.obj_val[key] = parse_value();
                         char next = peek();
                         if (next == ',') { get(); }
                         else if (next == '}') { get(); break; }
-                        else break;
+                        else {
+                            has_error = true;
+                            error_msg = "Expected ',' or '}' in JSON object";
+                            break;
+                        }
                     }
                     return obj;
                 } else if (c == '[') {
@@ -326,7 +365,11 @@ namespace viss {
                         char next = peek();
                         if (next == ',') { get(); }
                         else if (next == ']') { get(); break; }
-                        else break;
+                        else {
+                            has_error = true;
+                            error_msg = "Expected ',' or ']' in JSON array";
+                            break;
+                        }
                     }
                     return arr;
                 } else if (c == 't' && s.compare(pos, 4, "true") == 0) {
@@ -338,6 +381,8 @@ namespace viss {
                 } else if (c == '-' || isdigit((unsigned char)c)) {
                     return parse_number();
                 }
+                has_error = true;
+                error_msg = "Unexpected character in JSON: '" + Str(1, c) + "'";
                 return JsonValue();
             }
         };
@@ -345,6 +390,16 @@ namespace viss {
         inline JsonValue parse(const Str& src) {
             JsonParser p(src);
             return p.parse_value();
+        }
+
+        inline JsonValue parse(const Str& src, Str& err_out) {
+            JsonParser p(src);
+            auto val = p.parse_value();
+            if (p.has_error) err_out = p.error_msg;
+            else {
+                p.parse_value(); // Check if remaining unexpected characters
+            }
+            return val;
         }
 
         inline JsonValue loads(const Str& src) {

@@ -178,8 +178,7 @@ namespace pkg {
         if (raw_json.empty()) {
             std::vector<std::string> candidates = {
                 "index.json",
-                "../index.json",
-                "C:/Users/halva/Desktop/viss-packages/index.json"
+                "../index.json"
             };
             for (const auto& c : candidates) {
                 if (sfs::exists(c)) {
@@ -339,8 +338,8 @@ namespace pkg {
         sfs::create_directories(base_dir);
 
         std::string pkg_name = pkg_target;
-        if (pkg_name.find('/') != std::string::npos) {
-            size_t last_slash = pkg_name.find_last_of('/');
+        if (pkg_name.find('/') != std::string::npos || pkg_name.find('\\') != std::string::npos) {
+            size_t last_slash = pkg_name.find_last_of("/\\");
             if (last_slash != std::string::npos && last_slash + 1 < pkg_name.size()) {
                 pkg_name = pkg_name.substr(last_slash + 1);
             }
@@ -349,7 +348,32 @@ namespace pkg {
             }
         }
 
-        std::string dest = base_dir + "/" + pkg_name;
+        // Sanitize package name: must be strictly alphanumeric, underscores, dots, or dashes
+        auto isValidPkgName = [](const std::string& name) {
+            if (name.empty() || name == "." || name == "..") return false;
+            for (char ch : name) {
+                if (!std::isalnum((unsigned char)ch) && ch != '_' && ch != '-' && ch != '.') return false;
+            }
+            return true;
+        };
+
+        if (!isValidPkgName(pkg_name)) {
+            std::cerr << "[Viss PKG Error] Security rejection: invalid package name '" << pkg_name << "'\n";
+            return 1;
+        }
+
+        sfs::path base_path = sfs::weakly_canonical(sfs::path(base_dir));
+        sfs::path dest_path = sfs::weakly_canonical(base_path / pkg_name);
+
+        // Security check: ensure dest_path is strictly inside base_path
+        std::string s_base = base_path.string();
+        std::string s_dest = dest_path.string();
+        if (s_dest.find(s_base) != 0 || s_dest == s_base) {
+            std::cerr << "[Viss PKG Error] Security rejection: path traversal attempt detected for '" << pkg_target << "'\n";
+            return 1;
+        }
+
+        std::string dest = s_dest;
         std::cout << "[Viss PKG] Resolving package '" << pkg_target << "'...\n";
 
         bool is_git = (pkg_target.find("http://") == 0 || pkg_target.find("https://") == 0 || pkg_target.find("git@") == 0);
@@ -363,11 +387,23 @@ namespace pkg {
         }
 
         if (!git_url.empty()) {
-            std::cout << "[Viss PKG] Cloning repository from " << git_url << "...\n";
-            if (sfs::exists(dest)) {
-                sfs::remove_all(dest);
+            // Validate URL to prevent command injection
+            auto isSafeUrl = [](const std::string& u) {
+                for (char ch : u) {
+                    if (ch == '"' || ch == '\'' || ch == ';' || ch == '&' || ch == '|' || ch == '`' || ch == '$' || ch == '<' || ch == '>' || ch == '\n' || ch == '\r' || std::isspace((unsigned char)ch)) return false;
+                }
+                return true;
+            };
+            if (!isSafeUrl(git_url)) {
+                std::cerr << "[Viss PKG Error] Security rejection: invalid characters in git URL\n";
+                return 1;
             }
-            std::string cmd = "git clone --depth 1 " + git_url + " \"" + dest + "\"";
+
+            std::cout << "[Viss PKG] Cloning repository from " << git_url << "...\n";
+            if (sfs::exists(dest_path)) {
+                sfs::remove_all(dest_path);
+            }
+            std::string cmd = "git clone --depth 1 \"" + git_url + "\" \"" + dest + "\"";
             int ret = system(cmd.c_str());
             if (ret != 0) {
                 std::cerr << "[Viss PKG Error] git clone failed with code " << ret << "\n";
@@ -380,8 +416,7 @@ namespace pkg {
             if (pkgs.count(pkg_name)) {
                 std::vector<std::string> local_srcs = {
                     "packages/" + pkg_name,
-                    "../packages/" + pkg_name,
-                    "C:/Users/halva/Desktop/viss-packages/packages/" + pkg_name
+                    "../packages/" + pkg_name
                 };
                 for (const auto& src : local_srcs) {
                     if (sfs::exists(src) && sfs::is_directory(src)) {

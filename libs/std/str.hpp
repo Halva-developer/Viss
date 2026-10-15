@@ -6,24 +6,101 @@
 
 namespace viss {
     namespace str {
+        // UTF-8 Helpers
+        inline uint32_t decode_utf8(const Str& s, size_t& i) {
+            unsigned char c = (unsigned char)s[i];
+            if (c < 0x80) { i += 1; return c; }
+            if ((c & 0xE0) == 0xC0) {
+                if (i + 1 < s.size()) {
+                    uint32_t cp = ((c & 0x1F) << 6) | ((unsigned char)s[i + 1] & 0x3F);
+                    i += 2; return cp;
+                }
+            } else if ((c & 0xF0) == 0xE0) {
+                if (i + 2 < s.size()) {
+                    uint32_t cp = ((c & 0x0F) << 12) | (((unsigned char)s[i + 1] & 0x3F) << 6) | ((unsigned char)s[i + 2] & 0x3F);
+                    i += 3; return cp;
+                }
+            } else if ((c & 0xF8) == 0xF0) {
+                if (i + 3 < s.size()) {
+                    uint32_t cp = ((c & 0x07) << 18) | (((unsigned char)s[i + 1] & 0x3F) << 12) | (((unsigned char)s[i + 2] & 0x3F) << 6) | ((unsigned char)s[i + 3] & 0x3F);
+                    i += 4; return cp;
+                }
+            }
+            i += 1; return c;
+        }
+
+        inline void encode_utf8(uint32_t cp, Str& out) {
+            if (cp <= 0x7F) {
+                out.push_back((char)cp);
+            } else if (cp <= 0x7FF) {
+                out.push_back((char)(0xC0 | ((cp >> 6) & 0x1F)));
+                out.push_back((char)(0x80 | (cp & 0x3F)));
+            } else if (cp <= 0xFFFF) {
+                out.push_back((char)(0xE0 | ((cp >> 12) & 0x0F)));
+                out.push_back((char)(0x80 | ((cp >> 6) & 0x3F)));
+                out.push_back((char)(0x80 | (cp & 0x3F)));
+            } else {
+                out.push_back((char)(0xF0 | ((cp >> 18) & 0x07)));
+                out.push_back((char)(0x80 | ((cp >> 12) & 0x3F)));
+                out.push_back((char)(0x80 | ((cp >> 6) & 0x3F)));
+                out.push_back((char)(0x80 | (cp & 0x3F)));
+            }
+        }
+
+        inline uint32_t cp_upper(uint32_t cp) {
+            if (cp >= 'a' && cp <= 'z') return cp - ('a' - 'A');
+            if (cp >= 0x0430 && cp <= 0x044F) return cp - 0x20;
+            if (cp == 0x0451) return 0x0401; // ё -> Ё
+            if (cp == 0x0454) return 0x0404; // є -> Є
+            if (cp == 0x0456) return 0x0406; // і -> І
+            if (cp == 0x0457) return 0x0407; // ї -> Ї
+            if (cp == 0x045E) return 0x040E; // ў -> Ў
+            return cp;
+        }
+
+        inline uint32_t cp_lower(uint32_t cp) {
+            if (cp >= 'A' && cp <= 'Z') return cp + ('a' - 'A');
+            if (cp >= 0x0410 && cp <= 0x042F) return cp + 0x20;
+            if (cp == 0x0401) return 0x0451; // Ё -> ё
+            if (cp == 0x0404) return 0x0454; // Є -> є
+            if (cp == 0x0406) return 0x0456; // І -> і
+            if (cp == 0x0407) return 0x0457; // Ї -> ї
+            if (cp == 0x040E) return 0x045E; // Ў -> ў
+            return cp;
+        }
+
         inline Int len(const Str& s) {
-            return (Int)s.length();
+            Int count = 0;
+            for (char c : s) {
+                if (((unsigned char)c & 0xC0) != 0x80) count++;
+            }
+            return count;
         }
         inline Int size(const Str& s) {
             return len(s);
         }
+        inline Int byte_len(const Str& s) {
+            return (Int)s.length();
+        }
         inline Str sub(const Str& s, Int start, Int length) {
-            if (start < 0 || start >= (Int)s.length()) return "";
-            return s.substr(start, length);
+            if (start < 0 || length <= 0) return "";
+            size_t b_start = s.size(), b_end = s.size();
+            Int cp = 0;
+            for (size_t i = 0; i < s.size(); ++i) {
+                if (((unsigned char)s[i] & 0xC0) != 0x80) {
+                    if (cp == start) b_start = i;
+                    if (cp == start + length) { b_end = i; break; }
+                    cp++;
+                }
+            }
+            if (b_start >= s.size()) return "";
+            return s.substr(b_start, b_end - b_start);
         }
         inline Str substr(const Str& s, Int start, Int length) {
             return sub(s, start, length);
         }
         inline Str at(const Str& s, Int index) {
-            Int n = (Int)s.length();
-            if (index < 0) index += n;
-            if (index >= 0 && index < n) return Str(1, s[(size_t)index]);
-            return "";
+            return sub(s, index, 1);
         }
         inline Str get(const Str& s, Int index) {
             return at(s, index);
@@ -95,13 +172,25 @@ namespace viss {
             if (s.length() < suffix.length()) return false;
             return s.compare(s.length() - suffix.length(), suffix.length(), suffix) == 0;
         }
-        inline Str lower(Str s) {
-            std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return std::tolower(c); });
-            return s;
+        inline Str lower(const Str& s) {
+            Str res;
+            res.reserve(s.size());
+            size_t i = 0;
+            while (i < s.size()) {
+                uint32_t cp = decode_utf8(s, i);
+                encode_utf8(cp_lower(cp), res);
+            }
+            return res;
         }
-        inline Str upper(Str s) {
-            std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return std::toupper(c); });
-            return s;
+        inline Str upper(const Str& s) {
+            Str res;
+            res.reserve(s.size());
+            size_t i = 0;
+            while (i < s.size()) {
+                uint32_t cp = decode_utf8(s, i);
+                encode_utf8(cp_upper(cp), res);
+            }
+            return res;
         }
         inline Str trim(const Str& s) {
             auto wsfront = std::find_if_not(s.begin(), s.end(), [](int c){ return std::isspace(c); });

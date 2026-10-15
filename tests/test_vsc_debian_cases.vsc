@@ -1,0 +1,42 @@
+// =============================================================================
+// VSC Regression Suite: Debian 13 Bug Report Cases (v0.3.2 Hardening)
+// =============================================================================
+
+%import system as sys;
+
+// Case 1: UTF-8 strings
+s = "Привет";
+println("Case 1 Len: " + s.len);
+println("Case 1 Substr: " + s.substr(0, 3));
+println("Case 1 Upper: " + s.upper());
+println("Case 1 ASCII Upper: " + "Hello".upper());
+
+// Case 2: !for loop execution
+!for (@x in [1, 2, 3]) {
+    println("Case 2 x=" + @x);
+}
+
+// Case 3: !while loop with parens
+@k = 0;
+!while (@k < 3) {
+    println("Case 3 k=" + @k);
+    @k = @k + 1;
+}
+
+// Case 4: !while loop without parens
+@k4 = 0;
+!while @k4 < 3 {
+    @k4 = @k4 + 1;
+}
+println("Case 4 after while, k=" + @k4);
+
+// Case 5: ?if ... ?else execution branch and order
+println("Case 5 start");
+?if (1 == 1) -> println("Case 5 if-branch");
+?else -> println("Case 5 else-branch");
+println("Case 5 end");
+
+// Case 7: sys.os() platform detection
+println("Case 7 OS: " + sys.os());
+
+println("ALL DEBIAN REGRESSION CASES COMPLETED SUCCESSFULLY!");

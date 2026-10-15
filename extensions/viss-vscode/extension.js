@@ -22,12 +22,12 @@ function activate(context) {
             return configPath;
         }
 
-        // 1. Check workspace folder root
-        if (doc && vscode.workspace.getWorkspaceFolder(doc.uri)) {
+        // 1. Check workspace folder root ONLY if workspace is trusted
+        if (vscode.workspace.isTrusted && doc && vscode.workspace.getWorkspaceFolder(doc.uri)) {
             const wsDir = vscode.workspace.getWorkspaceFolder(doc.uri).uri.fsPath;
             const candidates = [
-                path.join(wsDir, 'viss.exe'),
                 path.join(wsDir, 'bin', 'viss.exe'),
+                path.join(wsDir, 'viss.exe'),
                 path.join(wsDir, 'viss')
             ];
             for (const c of candidates) {
@@ -35,26 +35,27 @@ function activate(context) {
             }
         }
 
-        // 2. Helper toolchain path
+        // 2. User local programs install (Standard Windows installer target)
+        if (process.env.LOCALAPPDATA) {
+            const localCandidates = [
+                path.join(process.env.LOCALAPPDATA, 'Programs', 'Viss', 'bin', 'viss.exe'),
+                path.join(process.env.LOCALAPPDATA, 'Programs', 'Viss', 'viss.exe')
+            ];
+            for (const lc of localCandidates) {
+                if (fs.existsSync(lc)) return lc;
+            }
+        }
+
+        // 3. Helper toolchain path
         const helperPath = 'C:\\AGY\\Viss_Helper\\bin\\viss.exe';
         if (fs.existsSync(helperPath)) return helperPath;
 
-        // 3. User local programs install
-        if (process.env.LOCALAPPDATA) {
-            const localProg = path.join(process.env.LOCALAPPDATA, 'Programs', 'Viss', 'viss.exe');
-            if (fs.existsSync(localProg)) return localProg;
-        }
-
-        // 4. Default repository path
-        const repoPath = 'C:\\Users\\halva\\Desktop\\Viss\\viss.exe';
-        if (fs.existsSync(repoPath)) return repoPath;
-
-        // 5. Standard Linux/Unix paths
-        for (const lp of ['/usr/local/bin/viss', '/usr/bin/viss']) {
+        // 4. Standard Linux/Unix paths
+        for (const lp of ['/usr/local/bin/viss', '/usr/bin/viss', path.join(process.env.HOME || '', '.local', 'bin', 'viss')]) {
             if (fs.existsSync(lp)) return lp;
         }
 
-        // 6. Fallback to system PATH
+        // 5. Fallback to system PATH
         return 'viss';
     }
 
