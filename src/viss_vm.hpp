@@ -15,11 +15,13 @@
 #include <memory>
 #include <cctype>
 #include <fstream>
+#include <filesystem>
 #include "../libs/std/audio.hpp"
 #include "../libs/std/media.hpp"
 #include "../libs/std/gui.hpp"
 #include "../libs/std/net.hpp"
 #include "../libs/std/db.hpp"
+#include "../libs/std/json.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -165,6 +167,51 @@ struct VMVal {
     }
 };
 
+inline VMVal jsonToVMVal(const viss::json::JsonValue& jv) {
+    switch (jv.type) {
+        case viss::json::JsonType::Null: return VMVal();
+        case viss::json::JsonType::Bool: return VMVal((bool)jv.bool_val);
+        case viss::json::JsonType::Int: return VMVal((int64_t)jv.int_val);
+        case viss::json::JsonType::Number: return VMVal((double)jv.num_val);
+        case viss::json::JsonType::String: return VMVal(std::string(jv.str_val));
+        case viss::json::JsonType::Array: {
+            std::vector<VMVal> list;
+            for (const auto& item : jv.arr_val) list.push_back(jsonToVMVal(item));
+            return VMVal(list);
+        }
+        case viss::json::JsonType::Object: {
+            VMVal m;
+            m.type = VMType::Map;
+            for (const auto& kv : jv.obj_val) {
+                m.map_val[std::string(kv.first)] = jsonToVMVal(kv.second);
+            }
+            return m;
+        }
+    }
+    return VMVal();
+}
+
+inline viss::json::JsonValue vmValToJson(const VMVal& v) {
+    switch (v.type) {
+        case VMType::Null: return viss::json::JsonValue();
+        case VMType::Bool: return viss::json::JsonValue((Bool)v.b_val);
+        case VMType::Int: return viss::json::JsonValue((Int)v.i_val);
+        case VMType::Dec: return viss::json::JsonValue((Dec)v.d_val);
+        case VMType::Str: return viss::json::JsonValue(v.s_val);
+        case VMType::List: {
+            auto arr = viss::json::JsonValue::array();
+            for (const auto& item : v.list_val) arr.push(vmValToJson(item));
+            return arr;
+        }
+        case VMType::Map: {
+            auto obj = viss::json::JsonValue::object();
+            for (const auto& kv : v.map_val) obj[kv.first] = vmValToJson(kv.second);
+            return obj;
+        }
+        default: return viss::json::JsonValue(v.to_string());
+    }
+}
+
 inline VMVal op_add(const VMVal& a, const VMVal& b) {
     if (a.type == VMType::Str || b.type == VMType::Str) {
         return VMVal(a.to_string() + b.to_string());
@@ -239,15 +286,6 @@ inline VMVal op_gte(const VMVal& a, const VMVal& b) {
 }
 
 inline VMVal op_contains(const VMVal& a, const VMVal& b) {
-    if (a.type == VMType::Str || b.type == VMType::Str) {
-        std::string s_a = a.to_string();
-        std::string s_b = b.to_string();
-        std::string lower_a = s_a;
-        std::string lower_b = s_b;
-        for (char& c : lower_a) c = (char)std::tolower((unsigned char)c);
-        for (char& c : lower_b) c = (char)std::tolower((unsigned char)c);
-        return VMVal(lower_a.find(lower_b) != std::string::npos);
-    }
     if (a.type == VMType::List) {
         for (const auto& item : a.list_val) {
             if (op_eq(item, b).to_bool()) return VMVal(true);
@@ -256,6 +294,15 @@ inline VMVal op_contains(const VMVal& a, const VMVal& b) {
     }
     if (a.type == VMType::Map) {
         return VMVal(a.map_val.find(b.to_string()) != a.map_val.end());
+    }
+    if (a.type == VMType::Str || b.type == VMType::Str) {
+        std::string s_a = a.to_string();
+        std::string s_b = b.to_string();
+        std::string lower_a = s_a;
+        std::string lower_b = s_b;
+        for (char& c : lower_a) c = (char)std::tolower((unsigned char)c);
+        for (char& c : lower_b) c = (char)std::tolower((unsigned char)c);
+        return VMVal(lower_a.find(lower_b) != std::string::npos);
     }
     return VMVal(false);
 }
@@ -277,6 +324,7 @@ struct VMContext {
     std::vector<std::unordered_map<std::string, VMVal>> scopes;
     std::unordered_map<std::string, std::shared_ptr<struct UserFunction>> functions;
     std::unordered_map<std::string, std::string> module_aliases;
+    std::vector<std::string> cli_args;
     FlowSignal signal = FlowSignal::None;
     VMVal return_val;
 
@@ -371,6 +419,24 @@ private:
         if (start == std::string::npos) return "";
         size_t end = s.find_last_not_of(" \t\r\n");
         return s.substr(start, end - start + 1);
+    }
+
+    static std::string replaceAll(std::string str, const std::string& from, const std::string& to) {
+        if (from.empty()) return str;
+        size_t start_pos = 0;
+        while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
+            str.replace(start_pos, from.length(), to);
+            start_pos += to.length();
+        }
+        return str;
+    }
+
+    static bool startsWith(const std::string& str, const std::string& prefix) {
+        return str.size() >= prefix.size() && str.compare(0, prefix.size(), prefix) == 0;
+    }
+
+    static bool endsWith(const std::string& str, const std::string& suffix) {
+        return str.size() >= suffix.size() && str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
     }
 
     static std::vector<std::string> splitArgs(const std::string& s) {
@@ -523,8 +589,8 @@ public:
                         if (idx + 1 < (int)wlen) return false;
                         int start = idx - (int)wlen + 1;
                         if (expr.substr(start, wlen) != word) return false;
-                        if (start > 0 && (std::isalnum((unsigned char)expr[start - 1]) || expr[start - 1] == '_' || expr[start - 1] == '@')) return false;
-                        if (idx + 1 < (int)expr.size() && (std::isalnum((unsigned char)expr[idx + 1]) || expr[idx + 1] == '_' || expr[idx + 1] == '@')) return false;
+                        if (start > 0 && (std::isalnum((unsigned char)expr[start - 1]) || expr[start - 1] == '_' || expr[start - 1] == '@' || expr[start - 1] == '.')) return false;
+                        if (idx + 1 < (int)expr.size() && (std::isalnum((unsigned char)expr[idx + 1]) || expr[idx + 1] == '_' || expr[idx + 1] == '@' || expr[idx + 1] == '(')) return false;
                         return true;
                     };
                     if (matchWordOp(i, "contains")) {
@@ -632,6 +698,46 @@ public:
             return VMVal(list);
         }
 
+        // Map Literals: {"a": 1, "b": 2} or {a: 1, b: 2}
+        if (expr.front() == '{' && expr.back() == '}') {
+            std::string inner = trim(expr.substr(1, expr.size() - 2));
+            VMVal map_res;
+            map_res.type = VMType::Map;
+            if (inner.empty()) return map_res;
+            auto items = splitArgs(inner);
+            for (const auto& itm : items) {
+                size_t col_pos = std::string::npos;
+                int p = 0, br = 0, bc = 0; bool ins = false; char q = 0;
+                for (size_t ci = 0; ci < itm.size(); ++ci) {
+                    char ch = itm[ci];
+                    if (ins) {
+                        if (ch == q && (ci == 0 || itm[ci-1] != '\\')) ins = false;
+                    } else {
+                        if (ch == '"' || ch == '\'') { ins = true; q = ch; }
+                        else if (ch == '(') p++; else if (ch == ')') p--;
+                        else if (ch == '[') br++; else if (ch == ']') br--;
+                        else if (ch == '{') bc++; else if (ch == '}') bc--;
+                        else if (p == 0 && br == 0 && bc == 0 && ch == ':') {
+                            col_pos = ci;
+                            break;
+                        }
+                    }
+                }
+                if (col_pos != std::string::npos) {
+                    std::string k_str = trim(itm.substr(0, col_pos));
+                    std::string v_str = trim(itm.substr(col_pos + 1));
+                    std::string k_val;
+                    if (!k_str.empty() && ((k_str.front() == '"' && k_str.back() == '"') || (k_str.front() == '\'' && k_str.back() == '\''))) {
+                        k_val = k_str.substr(1, k_str.size() - 2);
+                    } else {
+                        k_val = k_str;
+                    }
+                    map_res.map_val[k_val] = evaluate(v_str, ctx);
+                }
+            }
+            return map_res;
+        }
+
         // Booleans & Null
         if (expr == "true") return VMVal(true);
         if (expr == "false") return VMVal(false);
@@ -712,16 +818,129 @@ public:
                 return VMVal();
             }
 
-            // Methods
-            if (mname == "upper" && target.type == VMType::Str) {
-                std::string s = target.s_val;
-                for (char& c : s) c = (char)std::toupper(c);
-                return VMVal(s);
+            // Methods on Strings
+            if (target.type == VMType::Str) {
+                if (mname == "upper") {
+                    std::string s = target.s_val;
+                    for (char& c : s) c = (char)std::toupper((unsigned char)c);
+                    return VMVal(s);
+                }
+                if (mname == "lower") {
+                    std::string s = target.s_val;
+                    for (char& c : s) c = (char)std::tolower((unsigned char)c);
+                    return VMVal(s);
+                }
+                if (mname == "trim") {
+                    return VMVal(trim(target.s_val));
+                }
+                if (mname == "split") {
+                    std::string delim = margs.empty() ? " " : evaluate(margs, ctx).to_string();
+                    std::string s = target.s_val;
+                    std::vector<VMVal> tokens;
+                    if (delim.empty()) {
+                        for (char c : s) tokens.push_back(VMVal(std::string(1, c)));
+                    } else {
+                        size_t prev = 0, pos = 0;
+                        do {
+                            pos = s.find(delim, prev);
+                            if (pos == std::string::npos) pos = s.length();
+                            tokens.push_back(VMVal(s.substr(prev, pos - prev)));
+                            prev = pos + delim.length();
+                        } while (pos < s.length() && prev < s.length());
+                    }
+                    return VMVal(tokens);
+                }
+                if (mname == "replace") {
+                    auto r_args = splitArgs(margs);
+                    if (r_args.size() >= 2) {
+                        std::string from = evaluate(r_args[0], ctx).to_string();
+                        std::string to = evaluate(r_args[1], ctx).to_string();
+                        return VMVal(replaceAll(target.s_val, from, to));
+                    }
+                    return target;
+                }
+                if (mname == "starts_with") {
+                    std::string p = evaluate(margs, ctx).to_string();
+                    return VMVal(target.s_val.size() >= p.size() && target.s_val.compare(0, p.size(), p) == 0);
+                }
+                if (mname == "ends_with") {
+                    std::string suff = evaluate(margs, ctx).to_string();
+                    return VMVal(target.s_val.size() >= suff.size() && target.s_val.compare(target.s_val.size() - suff.size(), suff.size(), suff) == 0);
+                }
+                if (mname == "contains") {
+                    std::string sub = evaluate(margs, ctx).to_string();
+                    return VMVal(target.s_val.find(sub) != std::string::npos);
+                }
+                if (mname == "find" || mname == "index_of") {
+                    std::string sub = evaluate(margs, ctx).to_string();
+                    auto pos = target.s_val.find(sub);
+                    return VMVal(pos == std::string::npos ? (int64_t)-1 : (int64_t)pos);
+                }
+                if (mname == "substr" || mname == "slice") {
+                    auto s_args = splitArgs(margs);
+                    if (!s_args.empty()) {
+                        int64_t start = evaluate(s_args[0], ctx).to_int();
+                        if (start < 0 || (size_t)start >= target.s_val.size()) return VMVal("");
+                        if (s_args.size() > 1) {
+                            int64_t len = evaluate(s_args[1], ctx).to_int();
+                            return VMVal(target.s_val.substr(start, len));
+                        }
+                        return VMVal(target.s_val.substr(start));
+                    }
+                }
             }
-            if (mname == "lower" && target.type == VMType::Str) {
-                std::string s = target.s_val;
-                for (char& c : s) c = (char)std::tolower(c);
-                return VMVal(s);
+
+            // Methods on Maps
+            if (target.type == VMType::Map) {
+                if (mname == "keys") {
+                    std::vector<VMVal> klist;
+                    for (const auto& kv : target.map_val) klist.push_back(VMVal(kv.first));
+                    return VMVal(klist);
+                }
+                if (mname == "values") {
+                    std::vector<VMVal> vlist;
+                    for (const auto& kv : target.map_val) vlist.push_back(kv.second);
+                    return VMVal(vlist);
+                }
+                if (mname == "has" || mname == "contains") {
+                    std::string k = evaluate(margs, ctx).to_string();
+                    return VMVal(target.map_val.find(k) != target.map_val.end());
+                }
+                if (mname == "get") {
+                    auto g_args = splitArgs(margs);
+                    if (!g_args.empty()) {
+                        std::string k = evaluate(g_args[0], ctx).to_string();
+                        auto it = target.map_val.find(k);
+                        if (it != target.map_val.end()) return it->second;
+                        if (g_args.size() > 1) return evaluate(g_args[1], ctx);
+                    }
+                    return VMVal();
+                }
+            }
+
+            // Methods on Lists
+            if (target.type == VMType::List) {
+                if (mname == "join") {
+                    std::string delim = margs.empty() ? "" : evaluate(margs, ctx).to_string();
+                    std::string res;
+                    for (size_t i = 0; i < target.list_val.size(); ++i) {
+                        res += target.list_val[i].to_string();
+                        if (i + 1 < target.list_val.size()) res += delim;
+                    }
+                    return VMVal(res);
+                }
+                if (mname == "contains") {
+                    VMVal to_find = evaluate(margs, ctx);
+                    for (const auto& item : target.list_val) {
+                        if (op_eq(item, to_find).to_bool()) return VMVal(true);
+                    }
+                    return VMVal(false);
+                }
+                if (mname == "reverse") {
+                    auto rev = target.list_val;
+                    std::reverse(rev.begin(), rev.end());
+                    return VMVal(rev);
+                }
             }
 
             // Higher-Order Lambda Methods: .map(|x| ...), .filter(|x| ...), .reduce(init, |acc, x| ...)
@@ -1034,6 +1253,47 @@ public:
 
         // SYS Module
         if (mod == "sys" || mod == "system") {
+            if (fname == "args") {
+                std::vector<VMVal> res;
+                for (const auto& a : ctx.cli_args) res.push_back(VMVal(a));
+                return VMVal(res);
+            }
+            if (fname == "arg" && !args.empty()) {
+                int64_t idx = args[0].to_int();
+                if (idx >= 0 && idx < (int64_t)ctx.cli_args.size()) {
+                    return VMVal(ctx.cli_args[idx]);
+                }
+                return VMVal();
+            }
+            if (fname == "argc") {
+                return VMVal((int64_t)ctx.cli_args.size());
+            }
+            if (fname == "exec" && !args.empty()) {
+                return VMVal(std::string(viss::sys::exec(args[0].to_string())));
+            }
+            if ((fname == "system" || fname == "command" || fname == "run") && !args.empty()) {
+                return VMVal((int64_t)viss::sys::system(args[0].to_string()));
+            }
+            if (fname == "env" && !args.empty()) {
+                return VMVal(std::string(viss::sys::env(args[0].to_string())));
+            }
+            if (fname == "set_env" && args.size() >= 2) {
+                #ifdef _WIN32
+                _putenv_s(args[0].to_string().c_str(), args[1].to_string().c_str());
+                #else
+                setenv(args[0].to_string().c_str(), args[1].to_string().c_str(), 1);
+                #endif
+                return VMVal(true);
+            }
+            if (fname == "cwd" || fname == "pwd") {
+                return VMVal(std::filesystem::current_path().string());
+            }
+            if (fname == "last_exit_code") {
+                return VMVal((int64_t)viss::sys::last_exit_code());
+            }
+            if (fname == "cpu_count") {
+                return VMVal((int64_t)viss::sys::cpu_count());
+            }
             if (fname == "sleep" && !args.empty()) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(args[0].to_int()));
                 return VMVal();
@@ -1080,17 +1340,96 @@ public:
         }
 
         // STR Module
-        if (mod == "str") {
+        if (mod == "str" || mod == "string") {
             if (fname == "len" && !args.empty()) return VMVal(args[0].len());
+            if (fname == "size" && !args.empty()) return VMVal(args[0].len());
             if (fname == "upper" && !args.empty()) {
                 std::string s = args[0].to_string();
-                for (char& c : s) c = (char)std::toupper(c);
+                for (char& c : s) c = (char)std::toupper((unsigned char)c);
                 return VMVal(s);
             }
             if (fname == "lower" && !args.empty()) {
                 std::string s = args[0].to_string();
-                for (char& c : s) c = (char)std::tolower(c);
+                for (char& c : s) c = (char)std::tolower((unsigned char)c);
                 return VMVal(s);
+            }
+            if (fname == "trim" && !args.empty()) {
+                return VMVal(trim(args[0].to_string()));
+            }
+            if (fname == "split" && args.size() >= 2) {
+                std::string s = args[0].to_string();
+                std::string delim = args[1].to_string();
+                std::vector<VMVal> tokens;
+                if (delim.empty()) {
+                    for (char c : s) tokens.push_back(VMVal(std::string(1, c)));
+                } else {
+                    size_t prev = 0, pos = 0;
+                    do {
+                        pos = s.find(delim, prev);
+                        if (pos == std::string::npos) pos = s.length();
+                        tokens.push_back(VMVal(s.substr(prev, pos - prev)));
+                        prev = pos + delim.length();
+                    } while (pos < s.length() && prev < s.length());
+                }
+                return VMVal(tokens);
+            }
+            if (fname == "join" && args.size() >= 2) {
+                std::string delim = args[1].to_string();
+                std::string res;
+                if (args[0].type == VMType::List) {
+                    for (size_t i = 0; i < args[0].list_val.size(); ++i) {
+                        res += args[0].list_val[i].to_string();
+                        if (i + 1 < args[0].list_val.size()) res += delim;
+                    }
+                } else {
+                    res = args[0].to_string();
+                }
+                return VMVal(res);
+            }
+            if (fname == "replace" && args.size() >= 3) {
+                return VMVal(replaceAll(args[0].to_string(), args[1].to_string(), args[2].to_string()));
+            }
+            if (fname == "contains" && args.size() >= 2) {
+                return VMVal(args[0].to_string().find(args[1].to_string()) != std::string::npos);
+            }
+            if (fname == "starts_with" && args.size() >= 2) {
+                return VMVal(startsWith(args[0].to_string(), args[1].to_string()));
+            }
+            if (fname == "ends_with" && args.size() >= 2) {
+                return VMVal(endsWith(args[0].to_string(), args[1].to_string()));
+            }
+            if (fname == "find" && args.size() >= 2) {
+                auto pos = args[0].to_string().find(args[1].to_string());
+                return VMVal(pos == std::string::npos ? (int64_t)-1 : (int64_t)pos);
+            }
+            if (fname == "sub" || fname == "substr" || fname == "slice") {
+                if (args.size() >= 2) {
+                    std::string s = args[0].to_string();
+                    int64_t start = args[1].to_int();
+                    if (start < 0 || (size_t)start >= s.size()) return VMVal("");
+                    if (args.size() >= 3) {
+                        int64_t len = args[2].to_int();
+                        return VMVal(s.substr(start, len));
+                    }
+                    return VMVal(s.substr(start));
+                }
+            }
+            if (fname == "repeat" && args.size() >= 2) {
+                std::string s = args[0].to_string();
+                int64_t cnt = args[1].to_int();
+                std::string res;
+                for (int64_t i = 0; i < cnt; ++i) res += s;
+                return VMVal(res);
+            }
+            if (fname == "lines" && !args.empty()) {
+                std::vector<VMVal> lines;
+                std::stringstream ss(args[0].to_string());
+                std::string line;
+                while (std::getline(ss, line)) {
+                    if (!line.empty() && line.back() == '\r') line.pop_back();
+                    lines.push_back(VMVal(line));
+                }
+                return VMVal(lines);
             }
         }
 
@@ -1178,17 +1517,158 @@ public:
 
         // FS Module
         if (mod == "fs") {
-            if (fname == "exists" && !args.empty()) return VMVal(fs::exists(args[0].to_string()));
+            namespace sfs = std::filesystem;
+            if (fname == "exists" && !args.empty()) {
+                std::error_code ec;
+                return VMVal(sfs::exists(args[0].to_string(), ec));
+            }
+            if (fname == "is_file" && !args.empty()) {
+                std::error_code ec;
+                return VMVal(sfs::is_regular_file(args[0].to_string(), ec));
+            }
+            if (fname == "is_dir" && !args.empty()) {
+                std::error_code ec;
+                return VMVal(sfs::is_directory(args[0].to_string(), ec));
+            }
             if (fname == "read" && !args.empty()) {
                 std::ifstream in(args[0].to_string());
                 if (!in.is_open()) return VMVal("");
                 std::stringstream ss; ss << in.rdbuf();
                 return VMVal(ss.str());
             }
+            if ((fname == "read_lines" || fname == "lines") && !args.empty()) {
+                std::ifstream in(args[0].to_string());
+                std::vector<VMVal> lines;
+                if (in.is_open()) {
+                    std::string line;
+                    while (std::getline(in, line)) {
+                        if (!line.empty() && line.back() == '\r') line.pop_back();
+                        lines.push_back(VMVal(line));
+                    }
+                }
+                return VMVal(lines);
+            }
             if (fname == "write" && args.size() >= 2) {
                 std::ofstream out(args[0].to_string());
+                if (!out.is_open()) return VMVal(false);
                 out << args[1].to_string();
                 return VMVal(true);
+            }
+            if (fname == "write_lines" && args.size() >= 2) {
+                std::ofstream out(args[0].to_string());
+                if (!out.is_open()) return VMVal(false);
+                if (args[1].type == VMType::List) {
+                    for (const auto& item : args[1].list_val) out << item.to_string() << "\n";
+                } else {
+                    out << args[1].to_string() << "\n";
+                }
+                return VMVal(true);
+            }
+            if (fname == "append" && args.size() >= 2) {
+                std::ofstream out(args[0].to_string(), std::ios::app);
+                if (!out.is_open()) return VMVal(false);
+                out << args[1].to_string();
+                return VMVal(true);
+            }
+            if ((fname == "list" || fname == "list_dir" || fname == "list_files") && !args.empty()) {
+                std::vector<VMVal> items;
+                std::string target_dir = args[0].to_string();
+                try {
+                    for (const auto& entry : sfs::directory_iterator(target_dir)) {
+                        items.push_back(VMVal(entry.path().filename().string()));
+                    }
+                } catch (...) {}
+                return VMVal(items);
+            }
+            if (fname == "list_paths" && !args.empty()) {
+                std::vector<VMVal> items;
+                std::string target_dir = args[0].to_string();
+                try {
+                    for (const auto& entry : sfs::directory_iterator(target_dir)) {
+                        items.push_back(VMVal(entry.path().string()));
+                    }
+                } catch (...) {}
+                return VMVal(items);
+            }
+            if ((fname == "mkdir" || fname == "mkdir_p") && !args.empty()) {
+                std::error_code ec;
+                sfs::create_directories(args[0].to_string(), ec);
+                return VMVal(!ec);
+            }
+            if ((fname == "remove" || fname == "delete") && !args.empty()) {
+                std::error_code ec;
+                return VMVal(sfs::remove(args[0].to_string(), ec));
+            }
+            if (fname == "remove_all" && !args.empty()) {
+                std::error_code ec;
+                return VMVal((int64_t)sfs::remove_all(args[0].to_string(), ec));
+            }
+            if (fname == "copy" && args.size() >= 2) {
+                std::error_code ec;
+                return VMVal(sfs::copy_file(args[0].to_string(), args[1].to_string(), sfs::copy_options::overwrite_existing, ec));
+            }
+            if ((fname == "move" || fname == "rename") && args.size() >= 2) {
+                std::error_code ec;
+                sfs::rename(args[0].to_string(), args[1].to_string(), ec);
+                return VMVal(!ec);
+            }
+            if (fname == "size" && !args.empty()) {
+                std::error_code ec;
+                auto sz = sfs::file_size(args[0].to_string(), ec);
+                return VMVal(ec ? 0 : (int64_t)sz);
+            }
+            if (fname == "ext" || fname == "extension") {
+                if (args.empty()) return VMVal("");
+                return VMVal(sfs::path(args[0].to_string()).extension().string());
+            }
+            if (fname == "stem") {
+                if (args.empty()) return VMVal("");
+                return VMVal(sfs::path(args[0].to_string()).stem().string());
+            }
+            if (fname == "filename" || fname == "basename") {
+                if (args.empty()) return VMVal("");
+                return VMVal(sfs::path(args[0].to_string()).filename().string());
+            }
+            if (fname == "parent" || fname == "dirname") {
+                if (args.empty()) return VMVal("");
+                return VMVal(sfs::path(args[0].to_string()).parent_path().string());
+            }
+            if (fname == "abs_path" || fname == "absolute") {
+                if (args.empty()) return VMVal("");
+                std::error_code ec;
+                auto p = sfs::absolute(args[0].to_string(), ec);
+                return VMVal(p.string());
+            }
+        }
+
+        // JSON Module
+        if (mod == "json") {
+            if (fname == "parse" && !args.empty()) {
+                auto jv = viss::json::parse(args[0].to_string());
+                return jsonToVMVal(jv);
+            }
+            if (fname == "stringify" && !args.empty()) {
+                bool pretty = args.size() > 1 ? args[1].to_bool() : false;
+                auto jv = vmValToJson(args[0]);
+                return VMVal(std::string(viss::json::stringify(jv, pretty)));
+            }
+            if (fname == "get" && args.size() >= 2) {
+                if (args[0].type == VMType::Map) {
+                    auto it = args[0].map_val.find(args[1].to_string());
+                    if (it != args[0].map_val.end()) return it->second;
+                    return VMVal();
+                } else {
+                    auto jv = viss::json::parse(args[0].to_string());
+                    return jsonToVMVal(jv.get(args[1].to_string()));
+                }
+            }
+            if (fname == "has" && args.size() >= 2) {
+                if (args[0].type == VMType::Map) {
+                    return VMVal(args[0].map_val.find(args[1].to_string()) != args[0].map_val.end());
+                } else {
+                    auto jv = viss::json::parse(args[0].to_string());
+                    return VMVal((bool)jv.has(args[1].to_string()));
+                }
             }
         }
 
@@ -1385,7 +1865,8 @@ struct StmtSubscriptAssign : public ASTNode {
 
     VMVal execute(VMContext& ctx) override {
         auto cur = ctx.get_var(var_name);
-        int64_t idx = ExprEvaluator::evaluate(idx_expr, ctx).to_int();
+        auto idx_val = ExprEvaluator::evaluate(idx_expr, ctx);
+        int64_t idx = idx_val.to_int();
         auto val = ExprEvaluator::evaluate(val_expr, ctx);
 
         if (cur.type == VMType::List) {
@@ -1398,6 +1879,9 @@ struct StmtSubscriptAssign : public ASTNode {
                 cur.bytes_val[idx] = (uint8_t)val.to_int();
                 ctx.set_var(var_name, cur);
             }
+        } else if (cur.type == VMType::Map) {
+            cur.map_val[idx_val.to_string()] = val;
+            ctx.set_var(var_name, cur);
         }
         return val;
     }
@@ -1728,11 +2212,12 @@ private:
         }
 
         std::vector<std::string> lines;
+        std::string cur = "";
+        bool in_str = false;
+        char q_char = 0;
+        int paren = 0, bracket = 0, expr_brace = 0;
+
         for (const auto& rline : raw_lines) {
-            std::string cur = "";
-            bool in_str = false;
-            char q_char = 0;
-            int paren = 0, bracket = 0;
             for (size_t i = 0; i < rline.size(); ++i) {
                 char c = rline[i];
                 if (in_str) {
@@ -1752,21 +2237,38 @@ private:
                     } else if (c == ']') {
                         if (bracket > 0) bracket--; cur += c;
                     } else if (c == '{') {
-                        cur += c;
-                        std::string t = trim(cur);
-                        if (!t.empty()) lines.push_back(t);
-                        cur.clear();
+                        bool has_assign = false;
+                        size_t eq_p = cur.find('=');
+                        if (eq_p != std::string::npos && (eq_p == 0 || cur[eq_p-1] != '!') && (eq_p + 1 >= cur.size() || (cur[eq_p+1] != '=' && cur[eq_p+1] != '>'))) {
+                            has_assign = true;
+                        }
+                        std::string tcur = trim(cur);
+                        bool is_return = startsWith(tcur, "return") || startsWith(tcur, "!return");
+                        if (has_assign || is_return || paren > 0 || bracket > 0 || expr_brace > 0) {
+                            expr_brace++;
+                            cur += c;
+                        } else {
+                            cur += c;
+                            std::string t = trim(cur);
+                            if (!t.empty()) lines.push_back(t);
+                            cur.clear();
+                        }
                     } else if (c == '}') {
-                        std::string t = trim(cur);
-                        if (!t.empty()) lines.push_back(t);
-                        cur.clear();
-                        lines.push_back("}");
-                    } else if (c == ';' && paren == 0 && bracket == 0) {
+                        if (expr_brace > 0) {
+                            expr_brace--;
+                            cur += c;
+                        } else {
+                            std::string t = trim(cur);
+                            if (!t.empty()) lines.push_back(t);
+                            cur.clear();
+                            lines.push_back("}");
+                        }
+                    } else if (c == ';' && paren == 0 && bracket == 0 && expr_brace == 0) {
                         std::string t = trim(cur);
                         if (t == "END") lines.push_back("}");
                         else if (!t.empty()) lines.push_back(t);
                         cur.clear();
-                    } else if (c == ',' && paren == 0 && bracket == 0 && trim(cur) == "END") {
+                    } else if (c == ',' && paren == 0 && bracket == 0 && expr_brace == 0 && trim(cur) == "END") {
                         lines.push_back("}");
                         cur.clear();
                     } else {
@@ -1774,10 +2276,17 @@ private:
                     }
                 }
             }
-            std::string rem = trim(cur);
-            if (rem == "END") lines.push_back("}");
-            else if (!rem.empty()) lines.push_back(rem);
+            if (paren == 0 && bracket == 0 && expr_brace == 0 && !in_str) {
+                std::string rem = trim(cur);
+                if (rem == "END") { lines.push_back("}"); cur.clear(); }
+                else if (!rem.empty()) { lines.push_back(rem); cur.clear(); }
+            } else {
+                cur += " ";
+            }
         }
+        std::string rem = trim(cur);
+        if (rem == "END") lines.push_back("}");
+        else if (!rem.empty()) lines.push_back(rem);
 
         return lines;
     }
@@ -1785,6 +2294,12 @@ private:
 public:
     static int executeSource(const std::string& source, const std::vector<std::string>& args = {}) {
         VMContext ctx;
+        ctx.cli_args = args;
+        std::vector<VMVal> vargs;
+        for (const auto& a : args) vargs.push_back(VMVal(a));
+        ctx.set_var("@args", VMVal(vargs));
+        ctx.set_var("args", VMVal(vargs));
+
         auto lines = tokenizeLines(source);
 
         std::vector<NodePtr> root_nodes;

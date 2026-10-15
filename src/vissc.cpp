@@ -30,7 +30,7 @@
 
 namespace fs = std::filesystem;
 
-const std::string VERSION = "0.3.0";
+const std::string VERSION = "0.3.1";
 const std::string CODENAME = "Peppermint Butler";
 
 // =============================================================================
@@ -2454,7 +2454,7 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             declared_vars.enter_function();
             block_stack.push_back({"func", "main"});
             current_target = &main_section;
-            current_target->push_back("int main() {");
+            current_target->push_back("int main(int argc, char* argv[]) { viss::sys::init_args(argc, argv);");
             continue;
         }
 

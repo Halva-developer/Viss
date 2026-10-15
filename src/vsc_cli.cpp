@@ -1,6 +1,6 @@
 // =============================================================================
 // VSC - Viss Script Core (Standalone CLI Executable)
-// Version 0.3.0 "Viss Script Core"
+// Version 0.3.1 "Viss Script Core"
 // =============================================================================
 
 #include <iostream>

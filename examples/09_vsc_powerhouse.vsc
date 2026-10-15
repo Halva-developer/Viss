@@ -1,0 +1,85 @@
+// VSC v0.3.1 Powerhouse Test Suite
+// Verifying CLI args, OS/Sys, Strings, FileSystem, Lists, and JSON
+
+println("=== Test 1: CLI Arguments ===");
+args = sys.args();
+println("Arg count: " + sys.argc());
+println("Arg list: " + args.join(", "));
+if (sys.argc() > 0) {
+    println("Arg[0]: " + sys.arg(0));
+}
+
+println("\n=== Test 2: System & OS ===");
+cwd = sys.cwd();
+println("CWD is valid: " + (cwd.len > 0));
+os_name = sys.os();
+println("OS name: " + os_name);
+cpus = sys.cpu_count();
+println("CPU count: " + cpus);
+
+println("\n=== Test 3: String Methods & Operations ===");
+orig = "  Hello VSC World  ";
+trimmed = orig.trim();
+println("Trimmed: '" + trimmed + "'");
+println("Upper: " + trimmed.upper());
+println("Lower: " + trimmed.lower());
+println("Replaced: " + trimmed.replace("World", "Peppermint"));
+tokens = trimmed.split(" ");
+println("Split tokens: " + tokens.join("|"));
+println("Starts with 'Hello': " + trimmed.starts_with("Hello"));
+println("Ends with 'World': " + trimmed.ends_with("World"));
+println("Contains 'VSC': " + trimmed.contains("VSC"));
+println("Substr(0, 5): " + trimmed.substr(0, 5));
+
+println("\n=== Test 4: List Methods & Higher-Order ===");
+nums = [10, 20, 30, 40];
+println("Nums joined: " + nums.join(" - "));
+println("Contains 20: " + nums.contains(20));
+println("Contains 99: " + nums.contains(99));
+rev = nums.reverse();
+println("Reversed: " + rev.join(", "));
+doubled = nums.map(|x| x * 2);
+println("Doubled: " + doubled.join(", "));
+filtered = nums.filter(|x| x > 25);
+println("Filtered (>25): " + filtered.join(", "));
+
+println("\n=== Test 5: Filesystem Operations ===");
+test_dir = "_test_tmp_dir";
+fs.mkdir(test_dir);
+println("Dir created: " + fs.is_dir(test_dir));
+
+test_file = test_dir + "/sample.txt";
+fs.write(test_file, "First Line\nSecond Line\nThird Line\n");
+println("File exists: " + fs.exists(test_file));
+println("File is_file: " + fs.is_file(test_file));
+println("File size > 0: " + (fs.size(test_file) > 0));
+println("File ext: " + fs.ext(test_file));
+println("File name: " + fs.filename(test_file));
+
+lines = fs.read_lines(test_file);
+println("Read lines count: " + lines.len);
+println("Line 1: " + lines[0]);
+
+fs.append(test_file, "Fourth Line\n");
+lines2 = fs.read_lines(test_file);
+println("Updated lines count: " + lines2.len);
+
+// Clean up test file and dir
+fs.remove(test_file);
+fs.remove(test_dir);
+println("Cleaned up: " + (!fs.exists(test_file) && !fs.exists(test_dir)));
+
+println("\n=== Test 6: Maps and JSON ===");
+map_obj = {"title": "Viss v0.3.1", "version": 0.31, "active": true};
+println("Map title: " + map_obj["title"]);
+println("Map has 'version': " + map_obj.has("version"));
+println("Map keys: " + map_obj.keys().join(", "));
+
+json_str = json.stringify(map_obj);
+println("Stringified JSON: " + json_str);
+
+parsed = json.parse(json_str);
+println("Parsed title: " + parsed["title"]);
+println("Parsed version: " + parsed["version"]);
+
+println("\n=== All Tests Finished Successfully! ===");

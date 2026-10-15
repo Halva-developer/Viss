@@ -52,6 +52,35 @@ namespace viss {
             return (Int)g_last_exit_code;
         }
 
+        inline List<Str>& get_cli_args() {
+            static List<Str> s_args;
+            return s_args;
+        }
+
+        inline void init_args(int argc, char* argv[]) {
+            auto& a = get_cli_args();
+            a.clear();
+            for (int i = 0; i < argc; ++i) {
+                a.add(Str(argv[i]));
+            }
+        }
+
+        inline List<Str> args() {
+            return get_cli_args();
+        }
+
+        inline Str arg(Int index) {
+            auto& a = get_cli_args();
+            if (index >= 0 && index < a.size()) {
+                return a.get(index);
+            }
+            return "";
+        }
+
+        inline Int argc() {
+            return get_cli_args().size();
+        }
+
         inline void hide_console() {
 #ifdef _WIN32
             HWND hWnd = GetConsoleWindow();

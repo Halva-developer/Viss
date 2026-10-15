@@ -1,0 +1,13 @@
+# Native Compiled Viss Args Test
+$import lib "iostream" as io
+$import lib "sys" as sys
+
+!main {
+    io.println("Native compiled args test:");
+    io.println("argc = ", sys.argc());
+    @args = sys.args();
+    io.println("args count = ", @args.size());
+    if (sys.argc() > 1) {
+        io.println("arg 1 = ", sys.arg(1));
+    }
+}
