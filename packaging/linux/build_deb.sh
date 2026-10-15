@@ -5,7 +5,7 @@
 
 set -e
 
-VERSION="0.3.0"
+VERSION="0.3.1"
 ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
 PACKAGE_NAME="viss_${VERSION}_${ARCH}"
 BUILD_ROOT="/tmp/${PACKAGE_NAME}"
