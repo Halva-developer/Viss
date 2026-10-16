@@ -247,6 +247,14 @@ namespace viss {
             return i_val == o.i_val;
         }
         inline bool operator!=(const Var& o) const { return !(*this == o); }
+        template<typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
+        inline bool operator==(T val) const {
+            if constexpr (std::is_floating_point_v<T>) return d_val == (double)val;
+            else if constexpr (std::is_same_v<T, bool>) return b_val == (bool)val;
+            else return i_val == (int64_t)val;
+        }
+        template<typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
+        inline bool operator!=(T val) const { return !(*this == val); }
         inline bool operator<(const Var& o) const {
             if (type == Type::Str && o.type == Type::Str) return s_val < o.s_val;
             if (type == Type::Dec || o.type == Type::Dec) return d_val < o.d_val;
@@ -3068,6 +3076,16 @@ namespace viss {
             return std::to_string(val) + s;
         }
     }
+
+    inline Str operator+(const Str& s, const Var& v) { return s + v.s_val; }
+    inline Str operator+(const Var& v, const Str& s) { return v.s_val + s; }
+    inline Str operator+(const char* s, const Var& v) { return Str(s) + v.s_val; }
+    inline Str operator+(const Var& v, const char* s) { return v.s_val + Str(s); }
+
+    template<typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
+    inline bool operator==(T val, const Var& v) { return v == val; }
+    template<typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
+    inline bool operator!=(T val, const Var& v) { return v != val; }
 
 }
 

@@ -13,7 +13,7 @@ Write-Host "    \ \/ / | / __/ __|    " -ForegroundColor Cyan
 Write-Host "     \  /  | \__ \__ \    " -ForegroundColor Cyan
 Write-Host "      \/   |_|___/___/    " -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Viss Language Engine v0.3.3h 'Flame Princess' (Hot Speed) Installer" -ForegroundColor Yellow
+Write-Host "Viss Language Engine v0.4.0hl 'Flame Princess' (Hot Speed & Loud) Installer" -ForegroundColor Yellow
 Write-Host ""
 
 $installDir = "$env:LOCALAPPDATA\Programs\Viss"

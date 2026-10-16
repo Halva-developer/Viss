@@ -21,8 +21,8 @@ namespace fs = std::filesystem;
 
 namespace vsc {
 
-const std::string VSC_VERSION = "0.3.3h";
-const std::string VSC_CODENAME = "Flame Princess";
+const std::string VSC_VERSION = "0.4.0hl";
+const std::string VSC_CODENAME = "Flame Princess (Hot Speed & Loud)";
 const std::string SSI_VERSION = VSC_VERSION;
 const std::string SSI_CODENAME = VSC_CODENAME;
 

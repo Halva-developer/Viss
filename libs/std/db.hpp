@@ -674,11 +674,13 @@ namespace db {
     // Parameterized exec helper (replaces ? with string-escaped parameter values)
     inline Int exec_params(DbHandle db, const Str& sql_query, const List<Str>& params) {
         Str final_sql = sql_query;
+        size_t search_pos = 0;
         for (size_t i = 0; i < (size_t)params.size(); ++i) {
-            size_t q_pos = final_sql.find('?');
+            size_t q_pos = final_sql.find('?', search_pos);
             if (q_pos == Str::npos) break;
             Str val = "'" + str::replace(params[i], "'", "''") + "'";
             final_sql.replace(q_pos, 1, val);
+            search_pos = q_pos + val.size();
         }
         return exec(db, final_sql);
     }
@@ -686,11 +688,13 @@ namespace db {
     // Parameterized query helper
     inline List<Map<Str, Str>> query_params(DbHandle db, const Str& sql_query, const List<Str>& params) {
         Str final_sql = sql_query;
+        size_t search_pos = 0;
         for (size_t i = 0; i < (size_t)params.size(); ++i) {
-            size_t q_pos = final_sql.find('?');
+            size_t q_pos = final_sql.find('?', search_pos);
             if (q_pos == Str::npos) break;
             Str val = "'" + str::replace(params[i], "'", "''") + "'";
             final_sql.replace(q_pos, 1, val);
+            search_pos = q_pos + val.size();
         }
         return query(db, final_sql);
     }

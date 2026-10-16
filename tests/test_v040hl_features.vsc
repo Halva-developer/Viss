@@ -1,0 +1,57 @@
+// =============================================================================
+// Viss & VSC v0.4.0hl "Flame Princess (Hot Speed & Loud)" Feature & Regression Suite
+// =============================================================================
+
+%import iostream as io;
+
+RUN:
+    println("[*] Starting Viss/VSC v0.4.0hl 'Flame Princess' (Hot Speed & Loud) Verification...");
+
+    // 1. Strings containing pipe symbol '|'
+    s_pipe = "hello | world | test";
+    ?if (s_pipe == "hello | world | test") {
+        println("[PASS] Pipe in string literal: " + s_pipe);
+    } ?else {
+        println("[FAIL] Pipe in string literal failed: " + s_pipe);
+        sys.exit(1);
+    }
+
+    // 2. String interpolation i"..." and f"..."
+    hero = "Finn";
+    level = 42;
+    msg_i = i"Hero {hero} has reached level {level}!";
+    ?if (msg_i == "Hero Finn has reached level 42!") {
+        println("[PASS] Interpolation i'...' test: " + msg_i);
+    } ?else {
+        println("[FAIL] Interpolation i'...' failed: " + msg_i);
+        sys.exit(1);
+    }
+
+    msg_f = f"Loud: {hero} (lvl {level})";
+    ?if (msg_f == "Loud: Finn (lvl 42)") {
+        println("[PASS] Interpolation f'...' test: " + msg_f);
+    } ?else {
+        println("[FAIL] Interpolation f'...' failed: " + msg_f);
+        sys.exit(1);
+    }
+
+    // 3. StmtIf elif/else execution order
+    val = 15;
+    branch = "none";
+    ?if (val < 10) {
+        branch = "low";
+    } ?elif (val == 15) {
+        branch = "mid";
+    } ?else {
+        branch = "high";
+    }
+
+    ?if (branch == "mid") {
+        println("[PASS] VM elif/else branch selection: " + branch);
+    } ?else {
+        println("[FAIL] VM elif/else branch selection failed: " + branch);
+        sys.exit(1);
+    }
+
+    println("[+] All v0.4.0hl features and fixes validated cleanly! 🔥🔊");
+END;

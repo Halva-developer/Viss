@@ -825,6 +825,42 @@ public:
             return VMVal(bytes);
         }
 
+        // Interpolated String Literals: i"..." or i'...' or f"..." or f'...'
+        if (expr.size() >= 3 && (expr[0] == 'i' || expr[0] == 'I' || expr[0] == 'f' || expr[0] == 'F') &&
+            ((expr[1] == '"' && expr.back() == '"') || (expr[1] == '\'' && expr.back() == '\''))) {
+            std::string content = expr.substr(2, expr.size() - 3);
+            std::string result = "";
+            size_t k = 0;
+            while (k < content.size()) {
+                if (content[k] == '\\' && k + 1 < content.size()) {
+                    char esc = content[++k];
+                    if (esc == 'n') result += '\n';
+                    else if (esc == 't') result += '\t';
+                    else if (esc == 'r') result += '\r';
+                    else if (esc == '\\') result += '\\';
+                    else if (esc == '"') result += '"';
+                    else if (esc == '\'') result += '\'';
+                    else if (esc == '{') result += '{';
+                    else if (esc == '}') result += '}';
+                    else { result += '\\'; result += esc; }
+                    k++;
+                } else if (content[k] == '{') {
+                    size_t close_brace = content.find('}', k + 1);
+                    if (close_brace != std::string::npos) {
+                        std::string sub_expr = content.substr(k + 1, close_brace - k - 1);
+                        auto sub_val = evaluate(sub_expr, ctx);
+                        result += sub_val.to_string();
+                        k = close_brace + 1;
+                    } else {
+                        result += content[k++];
+                    }
+                } else {
+                    result += content[k++];
+                }
+            }
+            return VMVal(result);
+        }
+
         // String Literals
         if ((expr.front() == '"' && expr.back() == '"') || (expr.front() == '\'' && expr.back() == '\'')) {
             std::string content = expr.substr(1, expr.size() - 2);
@@ -1365,6 +1401,13 @@ public:
             ctx.scopes = std::move(saved_scopes);
             ctx.scopes.front() = updated_global;
             return ret_v;
+        }
+
+        if (!expr.empty() && (expr.front() == '@' || expr.front() == '&')) {
+            std::cerr << "NameError: Undefined variable '" << expr << "'\n";
+            ctx.has_error = true;
+            ctx.exit_code = 1;
+            return VMVal();
         }
 
         return VMVal();
@@ -2253,12 +2296,19 @@ struct StmtAssign : public ASTNode {
     std::string var_name;
     std::string op;
     std::string expr;
+    std::string cast_type;
 
-    StmtAssign(const std::string& vn, const std::string& o, const std::string& ex)
-        : var_name(vn), op(o), expr(ex) {}
+    StmtAssign(const std::string& vn, const std::string& o, const std::string& ex, const std::string& ct = "")
+        : var_name(vn), op(o), expr(ex), cast_type(ct) {}
 
     VMVal execute(VMContext& ctx) override {
         VMVal val = ExprEvaluator::evaluate(expr, ctx);
+        if (!cast_type.empty()) {
+            if (cast_type == "int" || cast_type == "i64" || cast_type == "i32") val = VMVal(val.to_int());
+            else if (cast_type == "dec" || cast_type == "f64" || cast_type == "float" || cast_type == "double") val = VMVal(val.to_dec());
+            else if (cast_type == "str" || cast_type == "string") val = VMVal(val.to_string());
+            else if (cast_type == "bool") val = VMVal(val.to_bool());
+        }
         if (op == "=") {
             ctx.set_var(var_name, val);
         } else if (op == "+=") {
@@ -2666,10 +2716,12 @@ private:
                         bool is_control = startsWith(tcur, "!if") || startsWith(tcur, "?if") || startsWith(tcur, "if ") || startsWith(tcur, "if(") ||
                                           startsWith(tcur, "!while") || startsWith(tcur, "?while") || startsWith(tcur, "while ") || startsWith(tcur, "while(") ||
                                           startsWith(tcur, "!for") || startsWith(tcur, "?for") || startsWith(tcur, "for ") || startsWith(tcur, "for(") ||
+                                          startsWith(tcur, "!loop") || startsWith(tcur, "loop ") || startsWith(tcur, "loop(") ||
                                           startsWith(tcur, "!func") || startsWith(tcur, "func") || startsWith(tcur, "def ") ||
                                           startsWith(tcur, "!class") || startsWith(tcur, "class") ||
                                           startsWith(tcur, "!struct") || startsWith(tcur, "struct") ||
                                           startsWith(tcur, "!main") || startsWith(tcur, "main()") || startsWith(tcur, "main ") ||
+                                          startsWith(tcur, "!else if") || startsWith(tcur, "?else if") || startsWith(tcur, "else if") ||
                                           startsWith(tcur, "!elif") || startsWith(tcur, "?elif") || startsWith(tcur, "elif") ||
                                           startsWith(tcur, "!else") || startsWith(tcur, "?else") || startsWith(tcur, "else") ||
                                           (tcur.find('(') != std::string::npos && !startsWith(tcur, "@") && !startsWith(tcur, "&") && tcur.find('=') == std::string::npos);
@@ -2893,11 +2945,15 @@ private:
         const std::vector<std::string>& lines,
         size_t& idx,
         std::vector<NodePtr>& out_nodes,
-        VMContext& ctx
+        VMContext& ctx,
+        int depth = 0
     ) {
         while (idx < lines.size()) {
             std::string line = lines[idx++];
-            if (line == "}") return; // End of block
+            if (line == "}") {
+                if (depth > 0) return; // End of block
+                continue; // Ignore stray closing brace at root level
+            }
 
             // Strip trailing semicolons
             if (!line.empty() && line.back() == ';') line.pop_back();
@@ -2982,7 +3038,7 @@ private:
                 }
                 auto fn = std::make_shared<UserFunction>();
                 fn->name = "main";
-                parseBlock(lines, idx, fn->body, ctx);
+                parseBlock(lines, idx, fn->body, ctx, depth + 1);
                 ctx.functions["main"] = fn;
                 continue;
             }
@@ -2992,6 +3048,7 @@ private:
                        startsWith(l, "!while") || startsWith(l, "?while") || startsWith(l, "while ") || startsWith(l, "while(") ||
                        startsWith(l, "!for") || startsWith(l, "?for") || startsWith(l, "for ") || startsWith(l, "for(") ||
                        startsWith(l, "!loop") || startsWith(l, "loop ") || startsWith(l, "loop(") ||
+                       startsWith(l, "!else if") || startsWith(l, "?else if") || startsWith(l, "else if") ||
                        startsWith(l, "!elif") || startsWith(l, "?elif") || startsWith(l, "elif") ||
                        startsWith(l, "!else") || startsWith(l, "?else") || startsWith(l, "else") ||
                        startsWith(l, "!return") || startsWith(l, "return");
@@ -3048,7 +3105,7 @@ private:
                             if (!p_item.empty()) fn->params.push_back(p_item);
                         }
                     }
-                    parseBlock(lines, idx, fn->body, ctx);
+                    parseBlock(lines, idx, fn->body, ctx, depth + 1);
                     ctx.functions[fname] = fn;
                     continue;
                 }
@@ -3073,12 +3130,15 @@ private:
                     size_t sp = line.find_first_of(" \t");
                     stmt->cond = (sp != std::string::npos) ? trim(line.substr(sp + 1)) : "true";
                 }
-                parseBlock(lines, idx, stmt->then_branch, ctx);
+                parseBlock(lines, idx, stmt->then_branch, ctx, depth + 1);
 
                 // Check for elif / else
                 while (idx < lines.size()) {
                     std::string next = trim(lines[idx]);
-                    if (startsWith(next, "!elif") || startsWith(next, "?elif") || startsWith(next, "else if") || startsWith(next, "elif")) {
+                    bool is_elif = startsWith(next, "!else if") || startsWith(next, "?else if") || startsWith(next, "else if") ||
+                                   startsWith(next, "!elif") || startsWith(next, "?elif") || startsWith(next, "elif");
+                    bool is_else = !is_elif && (startsWith(next, "!else") || startsWith(next, "?else") || startsWith(next, "else"));
+                    if (is_elif) {
                         idx++;
                         if (endsWith(next, "{")) {
                             next = trim(next.substr(0, next.size() - 1));
@@ -3093,13 +3153,18 @@ private:
                         if (ep1 != std::string::npos && ep2 != std::string::npos && ep2 > ep1) {
                             econd = next.substr(ep1 + 1, ep2 - ep1 - 1);
                         } else {
-                            size_t sp = next.find_first_of(" \t");
-                            if (sp != std::string::npos) econd = trim(next.substr(sp + 1));
+                            if (startsWith(next, "!else if")) next = trim(next.substr(8));
+                            else if (startsWith(next, "?else if")) next = trim(next.substr(8));
+                            else if (startsWith(next, "else if")) next = trim(next.substr(7));
+                            else if (startsWith(next, "!elif")) next = trim(next.substr(5));
+                            else if (startsWith(next, "?elif")) next = trim(next.substr(5));
+                            else if (startsWith(next, "elif")) next = trim(next.substr(4));
+                            econd = trim(next);
                         }
                         std::vector<NodePtr> e_branch;
-                        parseBlock(lines, idx, e_branch, ctx);
+                        parseBlock(lines, idx, e_branch, ctx, depth + 1);
                         stmt->elif_branches.push_back({econd, e_branch});
-                    } else if (startsWith(next, "!else") || startsWith(next, "?else") || startsWith(next, "else")) {
+                    } else if (is_else) {
                         idx++;
                         if (endsWith(next, "{")) {
                             next = trim(next.substr(0, next.size() - 1));
@@ -3108,7 +3173,7 @@ private:
                         } else if (idx < lines.size() && (trim(lines[idx]) == "{" || trim(lines[idx]) == "->")) {
                             idx++;
                         }
-                        parseBlock(lines, idx, stmt->else_branch, ctx);
+                        parseBlock(lines, idx, stmt->else_branch, ctx, depth + 1);
                         break;
                     } else {
                         break;
@@ -3136,7 +3201,7 @@ private:
                     if (sp != std::string::npos) cond = trim(line.substr(sp + 1));
                 }
                 std::vector<NodePtr> b;
-                parseBlock(lines, idx, b, ctx);
+                parseBlock(lines, idx, b, ctx, depth + 1);
                 out_nodes.push_back(std::make_shared<StmtWhile>(cond, b));
                 continue;
             }
@@ -3163,11 +3228,11 @@ private:
                     std::string s_expr = trim(rest.substr(0, dotdot));
                     std::string e_expr = trim(rest.substr(dotdot + 2));
                     std::vector<NodePtr> b;
-                    parseBlock(lines, idx, b, ctx);
+                    parseBlock(lines, idx, b, ctx, depth + 1);
                     out_nodes.push_back(std::make_shared<StmtForRange>(vname, s_expr, e_expr, b));
                 } else {
                     std::vector<NodePtr> b;
-                    parseBlock(lines, idx, b, ctx);
+                    parseBlock(lines, idx, b, ctx, depth + 1);
                     out_nodes.push_back(std::make_shared<StmtForIn>(vname, rest, b));
                 }
                 continue;
@@ -3188,7 +3253,7 @@ private:
                     cnt = line.substr(p1 + 1, p2 - p1 - 1);
                 }
                 std::vector<NodePtr> b;
-                parseBlock(lines, idx, b, ctx);
+                parseBlock(lines, idx, b, ctx, depth + 1);
                 out_nodes.push_back(std::make_shared<StmtLoopRepeat>(cnt, b));
                 continue;
             }
@@ -3287,11 +3352,31 @@ private:
                 if (vname.front() == '@' || vname.front() == '&') vname = vname.substr(1);
                 if (isIdentifier(vname)) {
                     std::string expr = trim(line.substr(eq_pos + 1));
-                    size_t pipe_pos = expr.find('|');
-                    if (pipe_pos != std::string::npos && expr.find('|', pipe_pos + 1) == std::string::npos) {
+                    bool in_q = false;
+                    char qc = 0;
+                    size_t pipe_pos = std::string::npos;
+                    for (size_t pi = 0; pi < expr.size(); ++pi) {
+                        char c = expr[pi];
+                        if (in_q) {
+                            if (c == qc && (pi == 0 || expr[pi - 1] != '\\')) in_q = false;
+                        } else {
+                            if (c == '"' || c == '\'') { in_q = true; qc = c; }
+                            else if (c == '|') {
+                                if ((pi + 1 < expr.size() && (expr[pi + 1] == '|' || expr[pi + 1] == '>')) ||
+                                    (pi > 0 && expr[pi - 1] == '|')) {
+                                    // || or |>
+                                } else {
+                                    pipe_pos = pi;
+                                }
+                            }
+                        }
+                    }
+                    std::string cast_type = "";
+                    if (pipe_pos != std::string::npos) {
+                        cast_type = trim(expr.substr(pipe_pos + 1));
                         expr = trim(expr.substr(0, pipe_pos));
                     }
-                    out_nodes.push_back(std::make_shared<StmtAssign>(vname, "=", expr));
+                    out_nodes.push_back(std::make_shared<StmtAssign>(vname, "=", expr, cast_type));
                     continue;
                 }
             }

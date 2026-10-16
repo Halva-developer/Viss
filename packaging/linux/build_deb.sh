@@ -5,7 +5,7 @@
 
 set -e
 
-VERSION="0.3.2"
+VERSION="0.4.0hl"
 ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
 PACKAGE_NAME="viss_${VERSION}_${ARCH}"
 BUILD_ROOT="/tmp/${PACKAGE_NAME}"
@@ -57,7 +57,7 @@ fi
 # 3. Create DEBIAN/control
 cat << 'EOF' > "$BUILD_ROOT/DEBIAN/control"
 Package: viss
-Version: 0.3.0
+Version: ${VERSION}
 Section: devel
 Priority: optional
 Architecture: amd64

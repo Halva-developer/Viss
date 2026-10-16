@@ -30,8 +30,8 @@
 
 namespace fs = std::filesystem;
 
-const std::string VERSION = "0.3.3h";
-const std::string CODENAME = "Flame Princess";
+const std::string VERSION = "0.4.0hl";
+const std::string CODENAME = "Flame Princess (Hot Speed & Loud)";
 
 // =============================================================================
 // 1. UTILITY FUNCTIONS
@@ -113,6 +113,32 @@ std::string findCompiler() {
         std::string cand = exe_dir + rel;
         if (fs::exists(cand)) return cand;
     }
+
+    // Search in PATH directories
+    const char* path_env = std::getenv("PATH");
+    if (path_env) {
+        std::string path_str(path_env);
+        size_t start = 0;
+        char delim = ';';
+#ifndef _WIN32
+        delim = ':';
+#endif
+        while (start < path_str.size()) {
+            size_t end = path_str.find(delim, start);
+            if (end == std::string::npos) end = path_str.size();
+            std::string dir = path_str.substr(start, end - start);
+            start = end + 1;
+            if (dir.empty()) continue;
+#ifdef _WIN32
+            fs::path cand = fs::path(dir) / "g++.exe";
+#else
+            fs::path cand = fs::path(dir) / "g++";
+#endif
+            std::error_code ec;
+            if (fs::exists(cand, ec)) return cand.string();
+        }
+    }
+
     return "g++";
 }
 
@@ -1026,6 +1052,7 @@ inline std::string resolveVissCppType(const std::string& type_name) {
     if (tl == "list" || tl == "[]") return "viss::List<viss::Var>";
     if (tl == "map" || tl == "dict" || tl == "{}") return "viss::Map<viss::Str, viss::Var>";
     if (tl == "inf") return "viss::Inf";
+    if (tl == "class" || tl == "auto") return "auto";
 
     // Typed lists: [str], list<str>, List<int>, etc.
     if ((startsWith(t, "[") && endsWith(t, "]")) || (startsWith(tl, "list<") && endsWith(tl, ">"))) {
@@ -2244,7 +2271,8 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
     std::vector<std::pair<std::string, std::string>> block_stack;
     std::vector<std::string>* current_target = &main_section;
 
-    for (const auto& item : statements) {
+    for (size_t stmt_idx = 0; stmt_idx < statements.size(); ++stmt_idx) {
+        const auto& item = statements[stmt_idx];
         std::string stripped = trim(item.first);
         int line_num = item.second;
         if (stripped.empty()) continue;
@@ -2482,10 +2510,106 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             if (!pnames.empty()) {
                 std::string parent_cls = known_classes.count(pnames) ? ("_cls_" + pnames) : pnames;
                 current_target->push_back("struct _cls_" + cname + " : public " + parent_cls + " {");
+                if (class_fields.count(pnames)) {
+                    class_fields[cname] = class_fields[pnames];
+                }
             } else {
                 current_target->push_back("struct _cls_" + cname + " {");
             }
             current_target->push_back("    _cls_" + cname + "() = default;");
+
+            // Pre-scan explicitly declared fields and method parameter types in this class block
+            std::map<std::string, std::string> method_param_types;
+            std::set<std::string> explicit_fields;
+            int c_depth = 1;
+            for (size_t si = stmt_idx + 1; si < statements.size(); ++si) {
+                std::string s_text = trim(statements[si].first);
+                for (char sc : s_text) {
+                    if (sc == '{') c_depth++;
+                    else if (sc == '}') c_depth--;
+                }
+                if (c_depth <= 0) break;
+
+                // Explicit fields: @name as str; or @name: str;
+                std::smatch m_fld;
+                if (std::regex_match(s_text, m_fld, std::regex(R"(^@([a-zA-Z0-9_]+)(?:\s+as\s+|\s*:\s*)([a-zA-Z0-9_<>[\]]+)(?:\s*=\s*[\s\S]+)?(?:;)?$)"))) {
+                    explicit_fields.insert(m_fld[1].str());
+                    class_fields[cname][m_fld[1].str()] = resolveVissCppType(m_fld[2].str());
+                }
+
+                // Method parameters: !func name(...) or func name(...)
+                std::smatch m_fn;
+                if (std::regex_search(s_text, m_fn, std::regex(R"((?:!func|func)\s+[a-zA-Z0-9_]+\s*\(([^)]*)\))"))) {
+                    std::string params_str = m_fn[1].str();
+                    std::stringstream pss(params_str);
+                    std::string ptoken;
+                    while (std::getline(pss, ptoken, ',')) {
+                        ptoken = trim(ptoken);
+                        size_t as_pos = ptoken.find(" as ");
+                        size_t col_pos = ptoken.find(':');
+                        if (as_pos != std::string::npos) {
+                            std::string pname = trim(ptoken.substr(0, as_pos));
+                            if (startsWith(pname, "@")) pname = pname.substr(1);
+                            std::string ptype = trim(ptoken.substr(as_pos + 4));
+                            method_param_types[pname] = resolveVissCppType(ptype);
+                        } else if (col_pos != std::string::npos) {
+                            std::string pname = trim(ptoken.substr(0, col_pos));
+                            if (startsWith(pname, "@")) pname = pname.substr(1);
+                            std::string ptype = trim(ptoken.substr(col_pos + 1));
+                            method_param_types[pname] = resolveVissCppType(ptype);
+                        }
+                    }
+                }
+            }
+
+            // Auto-detect and declare @me.field members not already declared or inherited
+            std::map<std::string, std::string> detected_fields;
+            c_depth = 1;
+            for (size_t si = stmt_idx + 1; si < statements.size(); ++si) {
+                std::string s_text = trim(statements[si].first);
+                for (char sc : s_text) {
+                    if (sc == '{') c_depth++;
+                    else if (sc == '}') c_depth--;
+                }
+                if (c_depth <= 0) break;
+
+                size_t me_pos = 0;
+                while ((me_pos = s_text.find("@me.", me_pos)) != std::string::npos) {
+                    size_t f_start = me_pos + 4;
+                    size_t f_end = f_start;
+                    while (f_end < s_text.size() && (std::isalnum((unsigned char)s_text[f_end]) || s_text[f_end] == '_')) {
+                        f_end++;
+                    }
+                    std::string fld = s_text.substr(f_start, f_end - f_start);
+                    if (!fld.empty() && !explicit_fields.count(fld) && (!class_fields.count(cname) || !class_fields[cname].count(fld)) && !detected_fields.count(fld)) {
+                        std::string f_type = "viss::Var";
+                        size_t eq_p = s_text.find('=', f_end);
+                        if (eq_p != std::string::npos) {
+                            std::string rhs = trim(s_text.substr(eq_p + 1));
+                            if (!rhs.empty() && rhs.back() == ';') rhs.pop_back();
+                            rhs = trim(rhs);
+                            if (method_param_types.count(rhs)) {
+                                f_type = method_param_types[rhs];
+                            } else if (rhs.find("| str") != std::string::npos || rhs.find("| string") != std::string::npos) f_type = "viss::Str";
+                            else if (rhs.find("| int") != std::string::npos || rhs.find("| i64") != std::string::npos) f_type = "viss::Int";
+                            else if (rhs.find("| dec") != std::string::npos || rhs.find("| double") != std::string::npos) f_type = "viss::Dec";
+                            else if (rhs.find("| bool") != std::string::npos) f_type = "viss::Bool";
+                            else if (rhs.find("| list") != std::string::npos || (startsWith(rhs, "[") && rhs.find(']') != std::string::npos)) f_type = "viss::List<viss::Var>";
+                            else if (rhs.find("| map") != std::string::npos || rhs.find("| inf") != std::string::npos || (startsWith(rhs, "{") && rhs.find('}') != std::string::npos)) f_type = "viss::Map<viss::Str, viss::Var>";
+                            else if (startsWith(rhs, "\"") || startsWith(rhs, "'") || startsWith(rhs, "__VISS_STR_LIT_")) f_type = "viss::Str";
+                            else if (rhs == "true" || rhs == "false") f_type = "viss::Bool";
+                            else if (std::all_of(rhs.begin(), rhs.end(), ::isdigit)) f_type = "viss::Int";
+                        }
+                        detected_fields[fld] = f_type;
+                        class_fields[cname][fld] = f_type;
+                    }
+                    me_pos = f_end;
+                }
+            }
+
+            for (const auto& fld_pair : detected_fields) {
+                current_target->push_back("    " + fld_pair.second + " " + fld_pair.first + "{};");
+            }
             continue;
         }
 
@@ -3366,6 +3490,38 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             continue;
         }
 
+        // 16.5 Assignment to object or member: @me.field = val; or @obj.field = val;
+        std::smatch m_member_asn;
+        if (std::regex_match(stripped, m_member_asn, std::regex(R"(^(@(?:me|[a-zA-Z0-9_]+)\.[a-zA-Z0-9_.]+)\s*=\s*([\s\S]+?);?$)"))) {
+            std::string target = m_member_asn[1].str();
+            std::string val = trim(m_member_asn[2].str());
+            size_t p_idx = val.rfind('|');
+            if (p_idx != std::string::npos && (p_idx == 0 || val[p_idx-1] != '|') && (p_idx + 1 >= val.size() || val[p_idx+1] != '|')) {
+                std::string type_part = trim(val.substr(p_idx + 1));
+                if (!type_part.empty() && (type_part == "str" || type_part == "string" || type_part == "int" || type_part == "i64" || type_part == "dec" || type_part == "double" || type_part == "bool" || type_part == "list" || type_part == "map")) {
+                    val = trim(val.substr(0, p_idx));
+                }
+            }
+            if (startsWith(val, "[") && endsWith(val, "]")) {
+                std::string inner = trim(val.substr(1, val.size() - 2));
+                val = inner.empty() ? "viss::List<viss::Var>{}" : "viss::List{" + inner + "}";
+            } else if (isDictLiteral(val)) {
+                val = transformDictLiteral(val, "viss::Map<viss::Str, viss::Var>");
+            }
+            std::string err;
+            target = transformExpression(target, imported_aliases, declared_vars, line_num, filename, err);
+            val = transformExpression(val, imported_aliases, declared_vars, line_num, filename, err);
+            if (!err.empty()) {
+                std::cerr << "\n[Viss " << (err.find("Cannot apply") != std::string::npos ? "TypeError" : "NameError") << "] " << filename << ":" << line_num << "\n";
+                std::cerr << "    " << stripped << "\n";
+                std::cerr << "    " << err << "\n";
+                return "";
+            }
+            current_target->push_back("#line " + std::to_string(line_num) + " \"" + filename + "\"");
+            current_target->push_back(target + " = " + val + ";");
+            continue;
+        }
+
         // 17. Generic variable assignment: @var = val;
         std::smatch m_asn;
         if (std::regex_match(stripped, m_asn, std::regex(R"(^@([a-zA-Z0-9_]+)\s*=\s*([\s\S]+?);?$)"))) {
@@ -3594,7 +3750,8 @@ bool validateSyntax(const std::string& code, const std::string& filename) {
 // =============================================================================
 
 std::string formatCode(const std::string& code) {
-    auto statements = splitIntoStatements(code);
+    std::stringstream in_ss(code);
+    std::string line;
     std::string out;
     int indent_level = 0;
     auto get_indent = [](int level) -> std::string {
@@ -3602,19 +3759,48 @@ std::string formatCode(const std::string& code) {
         return std::string(level * 4, ' ');
     };
 
-    for (const auto& item : statements) {
-        std::string s = trim(item.first);
-        if (s.empty()) continue;
-
-        if (startsWith(s, "}")) {
-            if (indent_level > 0) indent_level--;
+    while (std::getline(in_ss, line)) {
+        std::string trimmed = trim(line);
+        if (trimmed.empty()) {
+            out += "\n";
+            continue;
         }
 
-        out += get_indent(indent_level) + s + "\n";
-
-        if (endsWith(s, "{")) {
-            indent_level++;
+        // Adjust indentation for closing braces at start of line
+        int closing_leading = 0;
+        for (char c : trimmed) {
+            if (c == '}') closing_leading++;
+            else if (c != ' ' && c != '\t') break;
         }
+        if (closing_leading > 0) {
+            indent_level = std::max(0, indent_level - closing_leading);
+        }
+
+        // If line is a comment, preserve with current indentation
+        if (startsWith(trimmed, "//") || startsWith(trimmed, "/*") || startsWith(trimmed, "#") || startsWith(trimmed, "*")) {
+            out += get_indent(indent_level) + trimmed + "\n";
+            continue;
+        }
+
+        out += get_indent(indent_level) + trimmed + "\n";
+
+        // Count net open braces outside quotes
+        bool in_q = false;
+        char qc = 0;
+        int net_braces = 0;
+        for (size_t i = 0; i < trimmed.size(); ++i) {
+            char c = trimmed[i];
+            if (in_q) {
+                if (c == qc && (i == 0 || trimmed[i - 1] != '\\')) in_q = false;
+            } else {
+                if (c == '"' || c == '\'') { in_q = true; qc = c; }
+                else if (c == '/' && i + 1 < trimmed.size() && trimmed[i + 1] == '/') break;
+                else if (c == '{') net_braces++;
+                else if (c == '}') net_braces--;
+            }
+        }
+        net_braces += closing_leading;
+        indent_level = std::max(0, indent_level + net_braces);
     }
     return out;
 }
@@ -4419,7 +4605,7 @@ int main(int argc, char* argv[]) {
 #endif
         fs::path err_log = cache_dir / "bundle_err.log";
         std::string inc_paths = getVissIncludeFlags(file_dir);
-        std::string bundle_cmd = std::string("g++ -std=c++20 -O3 -pipe ")
+        std::string bundle_cmd = "\"" + cxx + "\" -std=c++20 -O3 -pipe "
 #ifdef _WIN32
                                 + "-static -static-libgcc -static-libstdc++ -s "
 #else
@@ -4476,7 +4662,12 @@ int main(int argc, char* argv[]) {
 #endif
         bundle_cmd += " 2> \"" + err_log.string() + "\"";
 
+#ifdef _WIN32
+        std::string sys_cmd = "\"" + bundle_cmd + "\"";
+        int ret = std::system(sys_cmd.c_str());
+#else
         int ret = std::system(bundle_cmd.c_str());
+#endif
         if (ret != 0) {
             sanitizeAndPrintCompilerErrors(err_log.string(), target_file);
             return ret;
@@ -4699,6 +4890,11 @@ int main(int argc, char* argv[]) {
     }
 
     if (!has_compiler) {
+        if (cmd == "build") {
+            std::cerr << "[Viss Compiler Error] C++ compiler (g++) not found on system. Cannot build native binary.\n";
+            std::cerr << "                      Please install MinGW-w64 or set VISS_CXX environment variable.\n";
+            return 1;
+        }
         std::cout << "[Viss Runner] C++ Compiler (g++) not found on system.\n";
         std::cout << "[Viss Runner] Executing via native VissVM engine (0ms compile overhead, no C++ needed!)...\n";
         std::vector<std::string> pass_args;
@@ -4727,7 +4923,7 @@ int main(int argc, char* argv[]) {
         }
     }
     std::string opt_flag = is_debug ? "-O0" : "-O2";
-    std::string compile_cmd = std::string("g++ -std=c++20 ") + opt_flag + " -pipe "
+    std::string compile_cmd = "\"" + cxx + "\" -std=c++20 " + opt_flag + " -pipe "
                             + inc_paths
                             + "\"" + cpp_file.string() + "\" "
                             + "-o \"" + exe_file.string() + "\"";
@@ -4778,7 +4974,12 @@ int main(int argc, char* argv[]) {
 #endif
     compile_cmd += " 2> \"" + err_log.string() + "\"";
 
+#ifdef _WIN32
+    std::string sys_cmd = "\"" + compile_cmd + "\"";
+    int ret = std::system(sys_cmd.c_str());
+#else
     int ret = std::system(compile_cmd.c_str());
+#endif
     if (ret != 0) {
         sanitizeAndPrintCompilerErrors(err_log.string(), viss_file);
         return ret;
