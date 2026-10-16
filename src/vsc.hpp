@@ -21,8 +21,8 @@ namespace fs = std::filesystem;
 
 namespace vsc {
 
-const std::string VSC_VERSION = "0.3.2";
-const std::string VSC_CODENAME = "Viss Script Core";
+const std::string VSC_VERSION = "0.3.3";
+const std::string VSC_CODENAME = "Flame Princess";
 const std::string SSI_VERSION = VSC_VERSION;
 const std::string SSI_CODENAME = VSC_CODENAME;
 
@@ -112,6 +112,70 @@ inline std::string unrollPipeline(const std::string& expr) {
     return cur;
 }
 
+inline std::string transformArrowConditionals(std::string clean) {
+    clean = replaceAll(clean, "?else -> ?if", "?elif");
+    clean = replaceAll(clean, "?else ->?if", "?elif");
+
+    if (clean.find("->") != std::string::npos &&
+        (clean.find("?if") != std::string::npos || clean.find("?elif") != std::string::npos || clean.find("?else") != std::string::npos)) {
+        std::string transformed = "";
+        size_t pos = 0;
+        while (pos < clean.size()) {
+            if (clean.compare(pos, 3, "?if") == 0 || clean.compare(pos, 5, "?elif") == 0) {
+                bool is_elif = (clean.compare(pos, 5, "?elif") == 0);
+                std::string kw = is_elif ? "?elif" : "?if";
+                pos += kw.size();
+                size_t arrow_p = clean.find("->", pos);
+                if (arrow_p != std::string::npos) {
+                    std::string cond = trim(clean.substr(pos, arrow_p - pos));
+                    pos = arrow_p + 2;
+                    size_t next_branch = clean.find("?else", pos);
+                    if (next_branch == std::string::npos) next_branch = clean.find("?elif", pos);
+                    std::string action = "";
+                    if (next_branch != std::string::npos) {
+                        action = trim(clean.substr(pos, next_branch - pos));
+                        pos = next_branch;
+                    } else {
+                        action = trim(clean.substr(pos));
+                        pos = clean.size();
+                    }
+                    if (startsWith(action, "return(") || startsWith(action, "return ")) {
+                        action = "!" + action;
+                    }
+                    if (!action.empty() && !endsWith(action, ";")) action += ";";
+                    if (!transformed.empty()) transformed += " ";
+                    transformed += kw + " " + cond + " { " + action + " }";
+                } else {
+                    transformed += clean.substr(pos);
+                    break;
+                }
+            } else if (clean.compare(pos, 5, "?else") == 0) {
+                pos += 5;
+                size_t arrow_p = clean.find("->", pos);
+                if (arrow_p != std::string::npos) {
+                    pos = arrow_p + 2;
+                    std::string action = trim(clean.substr(pos));
+                    pos = clean.size();
+                    if (action == "break;" || action == "break") action = ";";
+                    if (startsWith(action, "return(") || startsWith(action, "return ")) {
+                        action = "!" + action;
+                    }
+                    if (!action.empty() && !endsWith(action, ";")) action += ";";
+                    if (!transformed.empty()) transformed += " ";
+                    transformed += "?else { " + action + " }";
+                } else {
+                    transformed += "?else { }";
+                    break;
+                }
+            } else {
+                transformed += clean[pos++];
+            }
+        }
+        clean = transformed;
+    }
+    return clean;
+}
+
 // Preprocessor from VSC to standard Viss AST source
 inline std::string transpileVSCtoViss(const std::string& source, bool is_repl = false) {
     std::stringstream in_ss(source);
@@ -174,6 +238,7 @@ inline std::string transpileVSCtoViss(const std::string& source, bool is_repl = 
             if (fname == "if" || fname == "while" || fname == "for" || fname == "elif" || fname == "switch" || fname == "println" || fname == "print") break;
             std::string params = m_sfn[2].str();
             std::string body = trim(m_sfn[3].str());
+            body = transformArrowConditionals(body);
             if (!body.empty() && !endsWith(body, ";")) body += ";";
             if (startsWith(body, "return(") || startsWith(body, "return ")) {
                 body = "!" + body;
@@ -222,12 +287,13 @@ inline std::string transpileVSCtoViss(const std::string& source, bool is_repl = 
         if (!rem.empty()) statements.push_back(rem);
     }
 
-    // Check if script explicitly has $RUN or !main
+    // Check if script explicitly has $RUN or !main or !func main
     bool has_main_block = false;
     for (const auto& s : statements) {
         std::string ts = trim(s);
         if (startsWith(ts, "$RUN") || startsWith(ts, "RUN") ||
-            startsWith(ts, "!main") || startsWith(ts, "main()")) {
+            startsWith(ts, "!main") || startsWith(ts, "main()") ||
+            startsWith(ts, "!func main") || startsWith(ts, "func main")) {
             has_main_block = true;
             break;
         }
@@ -298,12 +364,12 @@ inline std::string transpileVSCtoViss(const std::string& source, bool is_repl = 
         std::string clean_no_semi = clean;
         while (!clean_no_semi.empty() && (clean_no_semi.back() == ';' || clean_no_semi.back() == ' ')) clean_no_semi.pop_back();
         if (clean_no_semi == "END" || clean == "}") {
-            if (in_run) {
-                main_body.push_back("}");
-                in_run = false;
-            } else if (in_func) {
+            if (in_func) {
                 funcs.push_back("}");
                 in_func = false;
+            } else if (in_run) {
+                main_body.push_back("}");
+                in_run = false;
             } else {
                 main_body.push_back("}");
             }
@@ -323,63 +389,7 @@ inline std::string transpileVSCtoViss(const std::string& source, bool is_repl = 
         }
 
         // 5. Arrow conditionals: ?if (...) -> action; ?else -> ...
-        // Replace ?else -> ?if with ?elif
-        clean = replaceAll(clean, "?else -> ?if", "?elif");
-        clean = replaceAll(clean, "?else ->?if", "?elif");
-
-        if (clean.find("->") != std::string::npos &&
-            (clean.find("?if") != std::string::npos || clean.find("?elif") != std::string::npos || clean.find("?else") != std::string::npos)) {
-            // Parse arrow conditional chain
-            std::string transformed = "";
-            size_t pos = 0;
-            while (pos < clean.size()) {
-                if (clean.compare(pos, 3, "?if") == 0 || clean.compare(pos, 5, "?elif") == 0) {
-                    bool is_elif = (clean.compare(pos, 5, "?elif") == 0);
-                    std::string kw = is_elif ? "?elif" : "?if";
-                    pos += kw.size();
-                    size_t arrow_p = clean.find("->", pos);
-                    if (arrow_p != std::string::npos) {
-                        std::string cond = trim(clean.substr(pos, arrow_p - pos));
-                        pos = arrow_p + 2;
-                        // Find end of action
-                        size_t next_branch = clean.find("?else", pos);
-                        if (next_branch == std::string::npos) next_branch = clean.find("?elif", pos);
-                        std::string action = "";
-                        if (next_branch != std::string::npos) {
-                            action = trim(clean.substr(pos, next_branch - pos));
-                            pos = next_branch;
-                        } else {
-                            action = trim(clean.substr(pos));
-                            pos = clean.size();
-                        }
-                        if (!action.empty() && !endsWith(action, ";")) action += ";";
-                        if (!transformed.empty()) transformed += " ";
-                        transformed += kw + " " + cond + " { " + action + " }";
-                    } else {
-                        transformed += clean.substr(pos);
-                        break;
-                    }
-                } else if (clean.compare(pos, 5, "?else") == 0) {
-                    pos += 5;
-                    size_t arrow_p = clean.find("->", pos);
-                    if (arrow_p != std::string::npos) {
-                        pos = arrow_p + 2;
-                        std::string action = trim(clean.substr(pos));
-                        pos = clean.size();
-                        if (action == "break;" || action == "break") action = ";";
-                        if (!action.empty() && !endsWith(action, ";")) action += ";";
-                        if (!transformed.empty()) transformed += " ";
-                        transformed += "?else { " + action + " }";
-                    } else {
-                        transformed += "?else { }";
-                        break;
-                    }
-                } else {
-                    transformed += clean[pos++];
-                }
-            }
-            clean = transformed;
-        }
+        clean = transformArrowConditionals(clean);
 
         // 6. Pipeline unrolling: @var expr |> f() or expr |> f()
         if (clean.find("|>") != std::string::npos && !startsWith(clean, "println(") && !startsWith(clean, "print(") && !startsWith(clean, "io.println(") && !startsWith(clean, "iostream.println(")) {

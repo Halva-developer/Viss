@@ -467,7 +467,9 @@ struct VMContext {
             {"json", "json"},
             {"async", "async"}, {"asyncIO", "async"},
             {"env", "env"},
-            {"collections", "collections"}
+            {"collections", "collections"},
+            {"re", "re"}, {"regex", "re"},
+            {"zip", "zip"}
         };
     }
 
@@ -811,6 +813,18 @@ public:
             return VMVal(-val.i_val);
         }
 
+        // Raw String Literals: r"..." or r'...'
+        if (expr.size() >= 3 && (expr[0] == 'r' || expr[0] == 'R') && ((expr[1] == '"' && expr.back() == '"') || (expr[1] == '\'' && expr.back() == '\''))) {
+            return VMVal(expr.substr(2, expr.size() - 3));
+        }
+
+        // Byte String Literals: b"..." or b'...'
+        if (expr.size() >= 3 && (expr[0] == 'b' || expr[0] == 'B') && ((expr[1] == '"' && expr.back() == '"') || (expr[1] == '\'' && expr.back() == '\''))) {
+            std::string content = expr.substr(2, expr.size() - 3);
+            std::vector<uint8_t> bytes(content.begin(), content.end());
+            return VMVal(bytes);
+        }
+
         // String Literals
         if ((expr.front() == '"' && expr.back() == '"') || (expr.front() == '\'' && expr.back() == '\'')) {
             std::string content = expr.substr(1, expr.size() - 2);
@@ -823,7 +837,12 @@ public:
                     else if (esc == 'r') clean += '\r';
                     else if (esc == '\\') clean += '\\';
                     else if (esc == '"') clean += '"';
-                    else clean += esc;
+                    else if (esc == '\'') clean += '\'';
+                    else if (esc == '0') clean += '\0';
+                    else {
+                        clean += '\\';
+                        clean += esc;
+                    }
                 } else {
                     clean += content[i];
                 }
@@ -885,6 +904,43 @@ public:
         if (expr == "true") return VMVal(true);
         if (expr == "false") return VMVal(false);
         if (expr == "null") return VMVal();
+
+        // Hex numbers: 0xFF, 0x1A
+        if ((startsWith(expr, "0x") || startsWith(expr, "0X")) && expr.size() > 2) {
+            bool is_hex = true;
+            for (size_t i = 2; i < expr.size(); ++i) {
+                if (!std::isxdigit((unsigned char)expr[i])) { is_hex = false; break; }
+            }
+            if (is_hex) {
+                try {
+                    return VMVal((int64_t)std::stoll(expr, nullptr, 16));
+                } catch (...) {}
+            }
+        }
+
+        // Binary numbers: 0b1010
+        if ((startsWith(expr, "0b") || startsWith(expr, "0B")) && expr.size() > 2) {
+            bool is_bin = true;
+            for (size_t i = 2; i < expr.size(); ++i) {
+                if (expr[i] != '0' && expr[i] != '1') { is_bin = false; break; }
+            }
+            if (is_bin) {
+                try {
+                    return VMVal((int64_t)std::stoll(expr.substr(2), nullptr, 2));
+                } catch (...) {}
+            }
+        }
+
+        // Scientific notation: e.g. 1e3, 2.5e-4
+        if ((expr.find('e') != std::string::npos || expr.find('E') != std::string::npos) && expr.size() > 1) {
+            try {
+                size_t idx_c = 0;
+                double d = std::stod(expr, &idx_c);
+                if (idx_c == expr.size()) {
+                    return VMVal(d);
+                }
+            } catch (...) {}
+        }
 
         // Numbers
         bool is_num = true, has_dot = false;
@@ -1919,6 +1975,181 @@ public:
             }
         }
 
+        // RE / REGEX Module
+        if (mod == "re" || mod == "regex") {
+            if (fname == "match" && args.size() >= 2) {
+                try {
+                    std::regex rx(args[0].to_string());
+                    std::string s = args[1].to_string();
+                    return VMVal(std::regex_search(s.c_str(), rx, std::regex_constants::match_continuous));
+                } catch (...) {
+                    return VMVal(false);
+                }
+            }
+            if (fname == "search" && args.size() >= 2) {
+                try {
+                    std::regex rx(args[0].to_string());
+                    std::string s = args[1].to_string();
+                    std::cmatch m;
+                    if (std::regex_search(s.c_str(), m, rx)) {
+                        return VMVal(m.str());
+                    }
+                } catch (...) {}
+                return VMVal("");
+            }
+            if (fname == "findall" && args.size() >= 2) {
+                std::vector<VMVal> res;
+                try {
+                    std::regex rx(args[0].to_string());
+                    std::string s = args[1].to_string();
+                    auto it = std::sregex_iterator(s.begin(), s.end(), rx);
+                    auto end = std::sregex_iterator();
+                    for (; it != end; ++it) {
+                        res.push_back(VMVal(it->str()));
+                    }
+                } catch (...) {}
+                return VMVal(res);
+            }
+            if (fname == "sub" && args.size() >= 3) {
+                try {
+                    std::regex rx(args[0].to_string());
+                    std::string repl = args[1].to_string();
+                    std::string s = args[2].to_string();
+                    return VMVal(std::regex_replace(s, rx, repl));
+                } catch (...) {
+                    return args.size() >= 3 ? args[2] : VMVal("");
+                }
+            }
+            if (fname == "split" && args.size() >= 2) {
+                std::vector<VMVal> res;
+                try {
+                    std::regex rx(args[0].to_string());
+                    std::string s = args[1].to_string();
+                    std::sregex_token_iterator it(s.begin(), s.end(), rx, -1);
+                    std::sregex_token_iterator end;
+                    for (; it != end; ++it) {
+                        res.push_back(VMVal(it->str()));
+                    }
+                } catch (...) {
+                    if (args.size() >= 2) res.push_back(args[1]);
+                }
+                return VMVal(res);
+            }
+        }
+
+        // ZIP Module
+        if (mod == "zip") {
+            if (fname == "list" && !args.empty()) {
+                std::vector<VMVal> res;
+                std::string p = args[0].to_string();
+                std::ifstream file(p, std::ios::binary);
+                if (file.is_open()) {
+                    file.seekg(0, std::ios::end);
+                    size_t file_size = file.tellg();
+                    if (file_size >= 22) {
+                        size_t search_len = std::min(file_size, (size_t)65557);
+                        std::vector<char> buf(search_len);
+                        file.seekg(file_size - search_len, std::ios::beg);
+                        file.read(buf.data(), search_len);
+                        size_t eocd_pos = std::string::npos;
+                        for (int i = (int)search_len - 22; i >= 0; --i) {
+                            if ((uint8_t)buf[i] == 0x50 && (uint8_t)buf[i+1] == 0x4b &&
+                                (uint8_t)buf[i+2] == 0x05 && (uint8_t)buf[i+3] == 0x06) {
+                                eocd_pos = (file_size - search_len) + i;
+                                break;
+                            }
+                        }
+                        if (eocd_pos != std::string::npos) {
+                            file.seekg(eocd_pos + 12, std::ios::beg);
+                            uint32_t cd_size = 0, cd_offset = 0;
+                            file.read((char*)&cd_size, 4);
+                            file.read((char*)&cd_offset, 4);
+                            file.seekg(cd_offset, std::ios::beg);
+                            while (file.tellg() < (std::streampos)(cd_offset + cd_size)) {
+                                uint32_t sig = 0;
+                                file.read((char*)&sig, 4);
+                                if (sig != 0x02014b50) break;
+                                file.seekg(24, std::ios::cur);
+                                uint16_t fname_len = 0, extra_len = 0, comment_len = 0;
+                                file.read((char*)&fname_len, 2);
+                                file.read((char*)&extra_len, 2);
+                                file.read((char*)&comment_len, 2);
+                                file.seekg(12, std::ios::cur);
+                                if (fname_len > 0) {
+                                    std::vector<char> fname_buf(fname_len + 1, 0);
+                                    file.read(fname_buf.data(), fname_len);
+                                    res.push_back(VMVal(std::string(fname_buf.data())));
+                                }
+                                if (extra_len + comment_len > 0) {
+                                    file.seekg(extra_len + comment_len, std::ios::cur);
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!res.empty()) return VMVal(res);
+                #ifdef _WIN32
+                std::string cmd = "tar.exe -tf \"" + p + "\"";
+                FILE* pipe = _popen(cmd.c_str(), "r");
+                #else
+                std::string cmd = "tar -tf \"" + p + "\" 2>/dev/null || unzip -l \"" + p + "\"";
+                FILE* pipe = popen(cmd.c_str(), "r");
+                #endif
+                if (pipe) {
+                    char line_b[1024];
+                    while (fgets(line_b, sizeof(line_b), pipe)) {
+                        std::string s(line_b);
+                        while (!s.empty() && (s.back() == '\r' || s.back() == '\n')) s.pop_back();
+                        if (!s.empty()) res.push_back(VMVal(s));
+                    }
+                    #ifdef _WIN32
+                    _pclose(pipe);
+                    #else
+                    pclose(pipe);
+                    #endif
+                }
+                return VMVal(res);
+            }
+            if ((fname == "read_text" || fname == "read") && args.size() >= 2) {
+                std::string zp = args[0].to_string();
+                std::string fz = args[1].to_string();
+                std::string result;
+                #ifdef _WIN32
+                std::string cmd = "tar.exe -xOf \"" + zp + "\" \"" + fz + "\"";
+                FILE* pipe = _popen(cmd.c_str(), "rb");
+                #else
+                std::string cmd = "tar -xOf \"" + zp + "\" \"" + fz + "\" 2>/dev/null || unzip -p \"" + zp + "\" \"" + fz + "\" 2>/dev/null";
+                FILE* pipe = popen(cmd.c_str(), "r");
+                #endif
+                if (pipe) {
+                    char buf[4096];
+                    size_t n;
+                    while ((n = fread(buf, 1, sizeof(buf), pipe)) > 0) {
+                        result.append(buf, n);
+                    }
+                    #ifdef _WIN32
+                    _pclose(pipe);
+                    #else
+                    pclose(pipe);
+                    #endif
+                }
+                return VMVal(result);
+            }
+            if (fname == "extract" && args.size() >= 2) {
+                std::string zp = args[0].to_string();
+                std::string dp = args[1].to_string();
+                std::filesystem::create_directories(dp);
+                #ifdef _WIN32
+                std::string cmd = "tar.exe -xf \"" + zp + "\" -C \"" + dp + "\"";
+                int ret = std::system(cmd.c_str());
+                #else
+                std::string cmd = "tar -xf \"" + zp + "\" -C \"" + dp + "\" 2>/dev/null || unzip -q -o \"" + zp + "\" -d \"" + dp + "\"";
+                int ret = std::system(cmd.c_str());
+                #endif
+                return VMVal(ret == 0);
+            }
+        }
+
         return VMVal();
     }
 
@@ -2431,14 +2662,29 @@ private:
                     } else if (c == ']') {
                         if (bracket > 0) bracket--; cur += c;
                     } else if (c == '{') {
-                        bool has_assign = false;
-                        size_t eq_p = cur.find('=');
-                        if (eq_p != std::string::npos && (eq_p == 0 || cur[eq_p-1] != '!') && (eq_p + 1 >= cur.size() || (cur[eq_p+1] != '=' && cur[eq_p+1] != '>'))) {
-                            has_assign = true;
-                        }
                         std::string tcur = trim(cur);
+                        bool is_control = startsWith(tcur, "!if") || startsWith(tcur, "?if") || startsWith(tcur, "if ") || startsWith(tcur, "if(") ||
+                                          startsWith(tcur, "!while") || startsWith(tcur, "?while") || startsWith(tcur, "while ") || startsWith(tcur, "while(") ||
+                                          startsWith(tcur, "!for") || startsWith(tcur, "?for") || startsWith(tcur, "for ") || startsWith(tcur, "for(") ||
+                                          startsWith(tcur, "!func") || startsWith(tcur, "func") || startsWith(tcur, "def ") ||
+                                          startsWith(tcur, "!class") || startsWith(tcur, "class") ||
+                                          startsWith(tcur, "!struct") || startsWith(tcur, "struct") ||
+                                          startsWith(tcur, "!main") || startsWith(tcur, "main()") || startsWith(tcur, "main ") ||
+                                          startsWith(tcur, "!elif") || startsWith(tcur, "?elif") || startsWith(tcur, "elif") ||
+                                          startsWith(tcur, "!else") || startsWith(tcur, "?else") || startsWith(tcur, "else") ||
+                                          (tcur.find('(') != std::string::npos && !startsWith(tcur, "@") && !startsWith(tcur, "&") && tcur.find('=') == std::string::npos);
+
+                        bool has_assign = false;
+                        if (!is_control) {
+                            size_t eq_p = cur.find('=');
+                            if (eq_p != std::string::npos &&
+                                (eq_p == 0 || (cur[eq_p-1] != '!' && cur[eq_p-1] != '=' && cur[eq_p-1] != '<' && cur[eq_p-1] != '>' && cur[eq_p-1] != '+' && cur[eq_p-1] != '-' && cur[eq_p-1] != '*' && cur[eq_p-1] != '/')) &&
+                                (eq_p + 1 >= cur.size() || (cur[eq_p+1] != '=' && cur[eq_p+1] != '>'))) {
+                                has_assign = true;
+                            }
+                        }
                         bool is_return = startsWith(tcur, "return") || startsWith(tcur, "!return");
-                        if (has_assign || is_return || paren > 0 || bracket > 0 || expr_brace > 0) {
+                        if (!is_control && (has_assign || is_return || paren > 0 || bracket > 0 || expr_brace > 0)) {
                             expr_brace++;
                             cur += c;
                         } else {

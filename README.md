@@ -5,8 +5,8 @@
 # Viss Programming Language
 ### The High-Performance, Visually Structured Language for Everyday Development & Systems
 
-[![Version](https://img.shields.io/badge/version-v0.3.2%20%22Hot%20Dog%20Princess%22-blue.svg)](https://github.com/Halva-developer/Viss)
-[![Hotfix](https://img.shields.io/badge/%F0%9F%94%A5%20and%20hot%20fix-v0.3.2-red.svg)](https://github.com/Halva-developer/Viss)
+[![Version](https://img.shields.io/badge/version-v0.3.3%20%22Flame%20Princess%22-blue.svg)](https://github.com/Halva-developer/Viss)
+[![Release](https://img.shields.io/badge/%F0%9F%94%A5%20release-v0.3.3-orange.svg)](https://github.com/Halva-developer/Viss)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-orange.svg)](https://github.com/Halva-developer/Viss)
 
@@ -41,7 +41,8 @@ Following the beloved Debian tradition with *Toy Story*, Viss codenames each off
 | `v0.2.1` | **"Hambo"** | Hambo | Dynamic auto-lists, Map/Dict literals (`{}`), range slicing (`..`), `in`/`!in` membership operators, tuple unpacking, native `!async`/`!await`, string kinds (`r""`, `b""`, `""""""`), `fs.glob`, `json.loads`/`dumps`, pure native C++ runtime. |
 | `v0.3.0` | **"Peppermint Butler"** | Peppermint Butler | VSC - Viss Script Core & CLI runner (`vsc` / `ssi`), Official Package Manager (`viss pkg`), Cross-Platform GUI (`libs/std/gui.hpp`), Native Language Server Protocol (`viss lsp`), Embedded JSON Document Database (`libs/std/db.hpp`), HTTP Networking (`libs/std/net.hpp`), Go-Style Concurrency Channels (`libs/std/chan.hpp`), Independent Native Execution Engine (`viss vm`), Native Embedded Windows Icons, and VS Code Extension. |
 | `v0.3.1` | **"Peppermint Butler"** | Peppermint Butler | CLI argument handling (`sys.args()`, `sys.arg()`, `sys.argc()`), First-Class Map Literals (`{"key": val}`), Full JSON module (`json.parse()`, `json.stringify()`), Object String & List methods (`.upper()`, `.lower()`, `.trim()`, `.split()`, `.replace()`, `.join()`), Extended filesystem (`fs.list()`, `fs.mkdir()`, `fs.remove()`), Shell execution (`sys.cwd()`, `sys.exec()`). |
-| `v0.3.2` | **"Hot Dog Princess"** | Hot Dog Princess | **Current Release (🔥 and hot fix):** Complete audit cleanup; strict security hardening (SQL injection prevention, path traversal protection, removal of proprietary license code, workspace trust); 64-bit integer literal precision; class inheritance (`!class Player :: Entity`); bounds checking; UTF-8 codepoint string handling (`.len`, `.substr`, `.upper()`, `.lower()`); control loop fixes (`!for`, `!while`, `?if` without paren collisions); non-zero error exits. |
+| `v0.3.2` | **"Hot Dog Princess"** | Hot Dog Princess | Complete audit cleanup; strict security hardening (SQL injection prevention, path traversal protection, removal of proprietary license code, workspace trust); 64-bit integer literal precision; class inheritance (`!class Player :: Entity`); bounds checking; UTF-8 codepoint string handling (`.len`, `.substr`, `.upper()`, `.lower()`); control loop fixes (`!for`, `!while`, `?if` without paren collisions); non-zero error exits. |
+| `v0.3.3` | **"Flame Princess"** | Flame Princess | **Current Release:** VM parser and tokenization fixes (eliminated brace counter corruption on comparison operators `<=`, `>=`, `==` in `?if`/`!while`); regular expressions standard module `re` (`re.match`, `re.search`, `re.findall`, `re.sub`, `re.split`); zero-dependency zip archive module `zip` (`zip.list`, `zip.read_text`, `zip.extract` for reading `.docx` and archives); hex (`0xFF`), binary (`0b1010`), and scientific notation number literals; VSC arrow return statements normalization. |
 
 ---
 
@@ -368,6 +369,8 @@ viss version                               # Print toolchain version & codename
 * **`math`**: Complete mathematical functions (`sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sqrt`, `cbrt`, `pow`, `abs`, `round`, `floor`, `ceil`, `clamp`, `random_int`, `random_dec`, `PI`, `E`).
 * **`time`**: Timestamps (`time.now_ms()`, `time.now_secs()`), high-resolution sleep, timestamp formatting.
 * **`str`**: Complete UTF-8 aware string manipulation (`split`, `join`, `trim`, `lower`, `upper`, `contains`, `replace`, `starts_with`, `ends_with`, `substr`, `len`).
+* **`re`**: Full regular expressions engine (`match`, `search`, `findall`, `sub`, `split`).
+* **`zip`**: Zero-dependency ZIP archive reader and extractor (`list`, `read_text`, `extract`).
 * **`asyncIO` (`async`)**: High-performance thread pool, timers, async task dispatching.
 
 ---
@@ -404,6 +407,7 @@ Viss features an official Visual Studio Code extension located in `extensions/vi
 - [x] Go-style Concurrency Channels (`libs/std/chan.hpp`)
 - [x] Cross-Platform Windowing & Software Rasterizer GUI (`libs/std/gui.hpp`)
 - [x] Viss 0.3.2 Security Hardening, Audit Fixes & UTF-8 Strings
+- [x] Viss 0.3.3 VM Comparison Parser Fixes, Regex (`re`), Zero-Dependency ZIP (`zip`), Hex/Bin Numerics
 
 ---
 

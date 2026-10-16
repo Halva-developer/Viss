@@ -1,0 +1,118 @@
+// =============================================================================
+// Viss & VSC v0.3.3 "Flame Princess" Feature & Regression Test Suite
+// =============================================================================
+
+%import iostream as io;
+%import re as re;
+%import zip as zip;
+
+RUN:
+    println("[*] Starting Viss/VSC v0.3.3 'Flame Princess' Verification...");
+
+    // 1. Comparison Operator in Condition & Arrow Return Normalization
+    fib(n):
+        ?if (n <= 1) -> return(n);
+        ?else -> return(fib(n - 1) + fib(n - 2));
+    END;
+
+    val_fib = fib(10);
+    ?if (val_fib == 55) {
+        println("[PASS] Recursive fibonacci with <= and arrow return: " + val_fib);
+    } ?else {
+        println("[FAIL] Recursive fibonacci returned: " + val_fib);
+        sys.exit(1);
+    }
+
+    // 2. Numeric Literals (Hex, Binary, Scientific)
+    hex_val = 0xFF;
+    bin_val = 0b1010;
+    sci_val = 1e3;
+
+    ?if (hex_val == 255) {
+        println("[PASS] Hex literal 0xFF == 255");
+    } ?else {
+        println("[FAIL] Hex literal failed: " + hex_val);
+        sys.exit(1);
+    }
+
+    ?if (bin_val == 10) {
+        println("[PASS] Binary literal 0b1010 == 10");
+    } ?else {
+        println("[FAIL] Binary literal failed: " + bin_val);
+        sys.exit(1);
+    }
+
+    ?if (sci_val == 1000) {
+        println("[PASS] Scientific literal 1e3 == 1000");
+    } ?else {
+        println("[FAIL] Scientific literal failed: " + sci_val);
+        sys.exit(1);
+    }
+
+    // 3. Regex Engine (re)
+    text = "Flame Princess scored 98 points in 2 matches!";
+    
+    // re.findall
+    nums = re.findall(r"\d+", text);
+    ?if (nums.len() == 2) {
+        println("[PASS] re.findall digits: " + nums.join(", "));
+    } ?else {
+        println("[FAIL] re.findall failed, len: " + nums.len());
+        sys.exit(1);
+    }
+
+    // re.search
+    found = re.search(r"Princess", text);
+    ?if (found == "Princess") {
+        println("[PASS] re.search matched: " + found);
+    } ?else {
+        println("[FAIL] re.search failed: " + found);
+        sys.exit(1);
+    }
+
+    // re.match
+    is_flame = re.match(r"Flame.*", text);
+    ?if (is_flame) {
+        println("[PASS] re.match matched from start");
+    } ?else {
+        println("[FAIL] re.match failed");
+        sys.exit(1);
+    }
+
+    // re.sub
+    replaced = re.sub(r"\d+", "999", text);
+    ?if (replaced.contains("999 points")) {
+        println("[PASS] re.sub replaced digits: " + replaced);
+    } ?else {
+        println("[FAIL] re.sub failed: " + replaced);
+        sys.exit(1);
+    }
+
+    // re.split
+    parts = re.split(r"\s+", "one  two\tthree");
+    ?if (parts.len() == 3) {
+        println("[PASS] re.split parts count: " + parts.len());
+    } ?else {
+        println("[FAIL] re.split failed, len: " + parts.len());
+        sys.exit(1);
+    }
+
+    // 4. Zip Module
+    zip_entries = zip.list("extensions/viss-vscode/viss-vscode-0.4.0.vsix");
+    ?if (zip_entries.len() >= 5) {
+        println("[PASS] zip.list found entries: " + zip_entries.len());
+    } ?else {
+        println("[FAIL] zip.list failed, len: " + zip_entries.len());
+        sys.exit(1);
+    }
+
+    pkg_content = zip.read_text("extensions/viss-vscode/viss-vscode-0.4.0.vsix", "extension/package.json");
+    ?if (pkg_content.contains("viss-vscode")) {
+        println("[PASS] zip.read_text successfully read package.json (" + pkg_content.len() + " bytes)");
+    } ?else {
+        println("[FAIL] zip.read_text failed: " + pkg_content.len());
+        sys.exit(1);
+    }
+
+    println("[+] All v0.3.3 tests passed successfully! 🔥");
+END;

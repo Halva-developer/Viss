@@ -30,8 +30,8 @@
 
 namespace fs = std::filesystem;
 
-const std::string VERSION = "0.3.2";
-const std::string CODENAME = "Hot Dog Princess";
+const std::string VERSION = "0.3.3";
+const std::string CODENAME = "Flame Princess";
 
 // =============================================================================
 // 1. UTILITY FUNCTIONS
@@ -2328,6 +2328,12 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             } else if (lib_name == "gui" || lib_name == "ui" || lib_name == "window" || lib_name == "win") {
                 includes_section.push_back("#include \"libs/std/gui.hpp\"");
                 aliases_section.push_back("namespace " + alias + " = viss::gui;");
+            } else if (lib_name == "regex" || lib_name == "re") {
+                includes_section.push_back("#include \"libs/std/re.hpp\"");
+                aliases_section.push_back("namespace " + alias + " = viss::re;");
+            } else if (lib_name == "zip" || lib_name == "archive") {
+                includes_section.push_back("#include \"libs/std/zip.hpp\"");
+                aliases_section.push_back("namespace " + alias + " = viss::zip;");
             } else {
                 includes_section.push_back("#include \"libs/std/" + lib_name + ".hpp\"");
                 aliases_section.push_back("namespace " + alias + " = viss::" + lib_name + ";");
