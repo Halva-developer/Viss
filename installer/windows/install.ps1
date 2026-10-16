@@ -13,7 +13,7 @@ Write-Host "    \ \/ / | / __/ __|    " -ForegroundColor Cyan
 Write-Host "     \  /  | \__ \__ \    " -ForegroundColor Cyan
 Write-Host "      \/   |_|___/___/    " -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Viss Language Engine v0.3.2 'Peppermint Butler' Installer" -ForegroundColor Yellow
+Write-Host "Viss Language Engine v0.3.2 'Hot Dog Princess' (Hotfix) Installer" -ForegroundColor Yellow
 Write-Host ""
 
 $installDir = "$env:LOCALAPPDATA\Programs\Viss"

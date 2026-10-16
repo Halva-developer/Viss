@@ -1,6 +1,6 @@
 # =============================================================================
 # Viss Language Toolchain Makefile
-# Version: 0.3.2 "Peppermint Butler"
+# Version: 0.3.2 "Hot Dog Princess" (Hotfix)
 # Supported Platforms: Linux, macOS, FreeBSD, MinGW/Windows
 # =============================================================================
 

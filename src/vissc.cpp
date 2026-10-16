@@ -31,7 +31,7 @@
 namespace fs = std::filesystem;
 
 const std::string VERSION = "0.3.2";
-const std::string CODENAME = "Peppermint Butler";
+const std::string CODENAME = "Hot Dog Princess";
 
 // =============================================================================
 // 1. UTILITY FUNCTIONS
@@ -4117,7 +4117,7 @@ int handleCreateCommand(int argc, char* argv[]) {
 void runRepl();
 
 void printHelp() {
-    std::cout << "Viss Programming Language Compiler & Toolchain v" << VERSION << " \"" << CODENAME << "\" (Native)\n\n"
+    std::cout << "Viss Programming Language Compiler & Toolchain v" << VERSION << " \"" << CODENAME << "\" (Hotfix Native)\n\n"
               << "Usage: viss [command] <file.viss> [options]\n\n"
               << "Commands:\n"
               << "  create <target> <file>    Unified binary builder (targets: exe, bin, apple)\n"
@@ -4168,7 +4168,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (cmd == "version" || cmd == "-v" || cmd == "--version") {
-        std::cout << "Viss v" << VERSION << " \"" << CODENAME << "\" (Native Toolchain & VM)\n";
+        std::cout << "Viss v" << VERSION << " \"" << CODENAME << "\" (Hotfix / Native Toolchain & VM)\n";
         return 0;
     }
 
@@ -4493,7 +4493,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (cmd == "-v" || cmd == "--version" || cmd == "version") {
-        std::cout << "Viss Programming Language Compiler & Toolchain v" << VERSION << " \"" << CODENAME << "\" (Native C++20)\n";
+        std::cout << "Viss Programming Language Compiler & Toolchain v" << VERSION << " \"" << CODENAME << "\" (Hotfix / Native C++20)\n";
         return 0;
     }
     if (cmd == "-h" || cmd == "--help" || cmd == "help") {
@@ -4669,7 +4669,7 @@ int main(int argc, char* argv[]) {
     std::stringstream buffer; buffer << in.rdbuf();
     std::string viss_code = buffer.str();
 
-    std::cout << "[Viss Compiler v" << VERSION << " \"" << CODENAME << "\"] Transpiling " << viss_file << "...\n";
+    std::cout << "[Viss Compiler v" << VERSION << " \"" << CODENAME << "\" (Hotfix)] Transpiling " << viss_file << "...\n";
     std::string cpp_code = transpile(viss_code, p.filename().string(), file_dir.string());
     if (cpp_code.empty()) {
         return 1;
@@ -4778,10 +4778,10 @@ int main(int argc, char* argv[]) {
         return ret;
     }
 
-    std::cout << "[Viss Compiler v" << VERSION << " \"" << CODENAME << "\"] Build successful: " << exe_file.filename().string() << "\n";
+    std::cout << "[Viss Compiler v" << VERSION << " \"" << CODENAME << "\" (Hotfix)] Build successful: " << exe_file.filename().string() << "\n";
 
     if (run_after) {
-        std::cout << "[Viss Compiler v" << VERSION << " \"" << CODENAME << "\"] Running " << exe_file.filename().string() << "...\n";
+        std::cout << "[Viss Compiler v" << VERSION << " \"" << CODENAME << "\" (Hotfix)] Running " << exe_file.filename().string() << "...\n";
         std::string run_cmd = "\"" + exe_file.string() + "\"";
         if (cmd != "-e" && cmd != "eval") {
             for (int ai = (cmd == "run" ? 3 : 2); ai < argc; ++ai) {
@@ -4801,7 +4801,7 @@ int main(int argc, char* argv[]) {
 
 void runRepl() {
     std::cout << "\033[1;36m=================================================================\033[0m\n";
-    std::cout << "\033[1;36m  Viss v" << VERSION << " \"" << CODENAME << "\" Interactive REPL\033[0m\n";
+    std::cout << "\033[1;36m  Viss v" << VERSION << " \"" << CODENAME << "\" (Hotfix) Interactive REPL\033[0m\n";
     std::cout << "  Real-time in-memory execution engine (0ms compile overhead)\n";
     std::cout << "  Type expressions or code. Commands: \033[33mhelp\033[0m, \033[33mvars\033[0m, \033[33mfuncs\033[0m, \033[33mclear\033[0m, \033[33mexit\033[0m\n";
     std::cout << "\033[1;36m=================================================================\033[0m\n\n";
