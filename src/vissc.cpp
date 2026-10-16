@@ -30,7 +30,7 @@
 
 namespace fs = std::filesystem;
 
-const std::string VERSION = "0.3.3";
+const std::string VERSION = "0.3.3h";
 const std::string CODENAME = "Flame Princess";
 
 // =============================================================================
@@ -4174,7 +4174,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (cmd == "version" || cmd == "-v" || cmd == "--version") {
-        std::cout << "Viss v" << VERSION << " \"" << CODENAME << "\" (Hotfix / Native Toolchain & VM)\n";
+        std::cout << "Viss v" << VERSION << " \"" << CODENAME << "\" (Hot Speed / Native Toolchain & VM)\n";
         return 0;
     }
 

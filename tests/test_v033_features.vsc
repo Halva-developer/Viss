@@ -1,5 +1,5 @@
 // =============================================================================
-// Viss & VSC v0.3.3 "Flame Princess" Feature & Regression Test Suite
+// Viss & VSC v0.3.3h "Flame Princess" (Hot Speed) Feature & Regression Test Suite
 // =============================================================================
 
 %import iostream as io;
@@ -7,7 +7,7 @@
 %import zip as zip;
 
 RUN:
-    println("[*] Starting Viss/VSC v0.3.3 'Flame Princess' Verification...");
+    println("[*] Starting Viss/VSC v0.3.3h 'Flame Princess' (Hot Speed) Verification...");
 
     // 1. Comparison Operator in Condition & Arrow Return Normalization
     fib(n):

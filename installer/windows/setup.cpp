@@ -1,6 +1,6 @@
 // =============================================================================
 // Viss Autonomous Windows Installer (Setup_Viss.exe)
-// Version 0.3.3 "Flame Princess"
+// Version 0.3.3h "Flame Princess" (Hot Speed)
 // =============================================================================
 
 #include <iostream>
@@ -134,7 +134,7 @@ int main(int argc, char* argv[]) {
     std::cout << "     \\  /  | \\__ \\__ \\    \n";
     std::cout << "      \\/   |_|___/___/    \n";
     std::cout << "\033[0m\n";
-    std::cout << "\033[33m\033[1mViss Language Toolchain v0.3.3 \"Flame Princess\"\033[0m\n";
+    std::cout << "\033[33m\033[1mViss Language Toolchain v0.3.3h \"Flame Princess\" (Hot Speed)\033[0m\n";
     std::cout << "\033[37mAutonomous Windows Standalone Setup (with VSC - Viss Script Core)\033[0m\n\n";
 
     fs::path install_dir = fs::path(getLocalAppData()) / "Programs" / "Viss";

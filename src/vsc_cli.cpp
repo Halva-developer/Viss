@@ -1,6 +1,6 @@
 // =============================================================================
 // VSC - Viss Script Core (Standalone CLI Executable)
-// Version 0.3.3 "Flame Princess"
+// Version 0.3.3h "Flame Princess"
 // =============================================================================
 
 #include <iostream>
