@@ -5,7 +5,7 @@
 
 set -e
 
-VERSION="0.2.2"
+VERSION="0.3.2"
 ARCH="$(uname -m 2>/dev/null || echo x86_64)"
 APP_DIR="/tmp/Viss.AppDir"
 

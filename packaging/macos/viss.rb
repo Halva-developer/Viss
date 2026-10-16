@@ -1,8 +1,8 @@
 class Viss < Formula
   desc "Expressive and lightning-fast native systems scripting language"
   homepage "https://github.com/Halva-developer/Viss"
-  url "https://github.com/Halva-developer/Viss/archive/refs/tags/v0.2.2.tar.gz"
-  version "0.2.2"
+  url "https://github.com/Halva-developer/Viss/archive/refs/tags/v0.3.2.tar.gz"
+  version "0.3.2"
   license "MIT"
 
   depends_on "gcc" => :build
