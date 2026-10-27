@@ -671,12 +671,29 @@ namespace db {
         return out.str();
     }
 
+    inline size_t find_sql_placeholder(const Str& sql, size_t start_pos = 0) {
+        bool in_quotes = false;
+        for (size_t i = start_pos; i < sql.size(); ++i) {
+            char c = sql[i];
+            if (c == '\'') {
+                if (in_quotes && i + 1 < sql.size() && sql[i + 1] == '\'') {
+                    i++; // skip escaped quote ''
+                } else {
+                    in_quotes = !in_quotes;
+                }
+            } else if (c == '?' && !in_quotes) {
+                return i;
+            }
+        }
+        return Str::npos;
+    }
+
     // Parameterized exec helper (replaces ? with string-escaped parameter values)
     inline Int exec_params(DbHandle db, const Str& sql_query, const List<Str>& params) {
         Str final_sql = sql_query;
         size_t search_pos = 0;
         for (size_t i = 0; i < (size_t)params.size(); ++i) {
-            size_t q_pos = final_sql.find('?', search_pos);
+            size_t q_pos = find_sql_placeholder(final_sql, search_pos);
             if (q_pos == Str::npos) break;
             Str val = "'" + str::replace(params[i], "'", "''") + "'";
             final_sql.replace(q_pos, 1, val);
@@ -690,7 +707,7 @@ namespace db {
         Str final_sql = sql_query;
         size_t search_pos = 0;
         for (size_t i = 0; i < (size_t)params.size(); ++i) {
-            size_t q_pos = final_sql.find('?', search_pos);
+            size_t q_pos = find_sql_placeholder(final_sql, search_pos);
             if (q_pos == Str::npos) break;
             Str val = "'" + str::replace(params[i], "'", "''") + "'";
             final_sql.replace(q_pos, 1, val);

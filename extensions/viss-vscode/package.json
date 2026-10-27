@@ -160,7 +160,7 @@
         "viss.executablePath": {
           "type": "string",
           "default": "viss",
-          "description": "Path to the viss executable (defaults to auto-detection in PATH, workspace, or Viss_Helper)."
+          "description": "Path to the viss executable (defaults to auto-detection in PATH or workspace)."
         },
         "viss.checkOnSave": {
           "type": "boolean",

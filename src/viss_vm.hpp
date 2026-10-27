@@ -165,10 +165,10 @@ struct VMVal {
     VMVal() : type(VMType::Null) {}
     VMVal(int64_t v) : type(VMType::Int), i_val(v), d_val((double)v) {}
     VMVal(int v) : type(VMType::Int), i_val(v), d_val((double)v) {}
-    VMVal(double v) : type(VMType::Dec), d_val(v), i_val((int64_t)v) {}
+    VMVal(double v) : type(VMType::Dec), i_val((int64_t)v), d_val(v) {}
     VMVal(const std::string& v) : type(VMType::Str), s_val(v) {}
     VMVal(const char* v) : type(VMType::Str), s_val(v ? v : "") {}
-    VMVal(bool v) : type(VMType::Bool), b_val(v), i_val(v ? 1 : 0) {}
+    VMVal(bool v) : type(VMType::Bool), i_val(v ? 1 : 0), b_val(v) {}
     VMVal(const std::vector<VMVal>& v) : type(VMType::List), list_val(v) {}
     VMVal(const std::vector<uint8_t>& v) : type(VMType::Bytes), bytes_val(v) {}
 
@@ -1423,7 +1423,11 @@ public:
         }
         auto raw_args = splitArgs(args_str);
         std::vector<VMVal> args;
-        for (const auto& a : raw_args) args.push_back(evaluate(a, ctx));
+        for (const auto& a : raw_args) {
+            args.push_back(evaluate(a, ctx));
+            if (ctx.has_error || ctx.exit_code != 0) return VMVal();
+        }
+        if (ctx.has_error || ctx.exit_code != 0) return VMVal();
 
         // IO Module
         if (mod == "io" || mod == "iostream") {
@@ -2379,7 +2383,7 @@ struct StmtIf : public ASTNode {
             ctx.push_scope();
             for (const auto& node : then_branch) {
                 node->execute(ctx);
-                if (ctx.signal != FlowSignal::None) break;
+                if (ctx.signal != FlowSignal::None || ctx.has_error || ctx.exit_code != 0) break;
             }
             ctx.pop_scope();
             return VMVal();
@@ -2390,7 +2394,7 @@ struct StmtIf : public ASTNode {
                 ctx.push_scope();
                 for (const auto& node : elif.second) {
                     node->execute(ctx);
-                    if (ctx.signal != FlowSignal::None) break;
+                    if (ctx.signal != FlowSignal::None || ctx.has_error || ctx.exit_code != 0) break;
                 }
                 ctx.pop_scope();
                 return VMVal();
@@ -2401,7 +2405,7 @@ struct StmtIf : public ASTNode {
             ctx.push_scope();
             for (const auto& node : else_branch) {
                 node->execute(ctx);
-                if (ctx.signal != FlowSignal::None) break;
+                if (ctx.signal != FlowSignal::None || ctx.has_error || ctx.exit_code != 0) break;
             }
             ctx.pop_scope();
         }
@@ -2417,11 +2421,11 @@ struct StmtWhile : public ASTNode {
     StmtWhile(const std::string& c, const std::vector<NodePtr>& b) : cond(c), body(b) {}
 
     VMVal execute(VMContext& ctx) override {
-        while (ExprEvaluator::evaluate(cond, ctx).to_bool()) {
+        while (!ctx.has_error && ctx.exit_code == 0 && ExprEvaluator::evaluate(cond, ctx).to_bool()) {
             ctx.push_scope();
             for (const auto& node : body) {
                 node->execute(ctx);
-                if (ctx.signal != FlowSignal::None) break;
+                if (ctx.signal != FlowSignal::None || ctx.has_error || ctx.exit_code != 0) break;
             }
             ctx.pop_scope();
             if (ctx.signal == FlowSignal::Break) {
@@ -2460,7 +2464,7 @@ struct StmtForRange : public ASTNode {
             ctx.set_var(var_name, VMVal(i));
             for (const auto& node : body) {
                 node->execute(ctx);
-                if (ctx.signal != FlowSignal::None) break;
+                if (ctx.signal != FlowSignal::None || ctx.has_error || ctx.exit_code != 0) break;
             }
             if (ctx.signal == FlowSignal::Break) {
                 ctx.signal = FlowSignal::None;
@@ -2493,7 +2497,7 @@ struct StmtForIn : public ASTNode {
                 ctx.set_var(var_name, item);
                 for (const auto& node : body) {
                     node->execute(ctx);
-                    if (ctx.signal != FlowSignal::None) break;
+                    if (ctx.signal != FlowSignal::None || ctx.has_error || ctx.exit_code != 0) break;
                 }
                 if (ctx.signal == FlowSignal::Break) { ctx.signal = FlowSignal::None; break; }
                 if (ctx.signal == FlowSignal::Continue) ctx.signal = FlowSignal::None;
@@ -2519,7 +2523,7 @@ struct StmtLoopRepeat : public ASTNode {
         for (int64_t i = 0; i < count; ++i) {
             for (const auto& node : body) {
                 node->execute(ctx);
-                if (ctx.signal != FlowSignal::None) break;
+                if (ctx.signal != FlowSignal::None || ctx.has_error || ctx.exit_code != 0) break;
             }
             if (ctx.signal == FlowSignal::Break) { ctx.signal = FlowSignal::None; break; }
             if (ctx.signal == FlowSignal::Continue) ctx.signal = FlowSignal::None;
@@ -2706,11 +2710,11 @@ private:
                     } else if (c == '(') {
                         paren++; cur += c;
                     } else if (c == ')') {
-                        if (paren > 0) paren--; cur += c;
+                        if (paren > 0) { paren--; } cur += c;
                     } else if (c == '[') {
                         bracket++; cur += c;
                     } else if (c == ']') {
-                        if (bracket > 0) bracket--; cur += c;
+                        if (bracket > 0) { bracket--; } cur += c;
                     } else if (c == '{') {
                         std::string tcur = trim(cur);
                         bool is_control = startsWith(tcur, "!if") || startsWith(tcur, "?if") || startsWith(tcur, "if ") || startsWith(tcur, "if(") ||
@@ -2801,7 +2805,7 @@ public:
         // Execute top-level / functions
         for (const auto& node : root_nodes) {
             node->execute(ctx);
-            if (ctx.signal == FlowSignal::Return || ctx.has_error) break;
+            if (ctx.signal == FlowSignal::Return || ctx.has_error || ctx.exit_code != 0) break;
         }
 
         // Check if main() exists
@@ -2810,7 +2814,7 @@ public:
             ctx.push_scope();
             for (const auto& node : fit->second->body) {
                 node->execute(ctx);
-                if (ctx.signal == FlowSignal::Return || ctx.has_error) break;
+                if (ctx.signal == FlowSignal::Return || ctx.has_error || ctx.exit_code != 0) break;
             }
             ctx.pop_scope();
         }
@@ -2869,7 +2873,7 @@ public:
                         is_assign = true;
                     }
                 }
-                for (const std::string& op : {"+=", "-=", "*=", "/="}) {
+                for (const char* op : {"+=", "-=", "*=", "/="}) {
                     size_t op_p = single.find(op);
                     if (op_p != std::string::npos) {
                         std::string left = trim(single.substr(0, op_p));
@@ -2901,6 +2905,10 @@ public:
                                (single.find('(') != std::string::npos && (endsWith(single, ":") || endsWith(single, "->") || endsWith(single, "{")));
                 if (!is_stmt) {
                     VMVal v = ExprEvaluator::evaluate(single, ctx);
+                    if (ctx.has_error || ctx.exit_code != 0) {
+                        is_expr = false;
+                        return VMVal();
+                    }
                     is_expr = true;
                     return v;
                 }
@@ -3324,7 +3332,7 @@ private:
             // Compound Variable Assignment: @x += 1, x += 1, etc.
             size_t op_pos = std::string::npos;
             std::string found_op = "";
-            for (const std::string& op : {"+=", "-=", "*=", "/="}) {
+            for (const char* op : {"+=", "-=", "*=", "/="}) {
                 size_t p = line.find(op);
                 if (p != std::string::npos) {
                     op_pos = p;

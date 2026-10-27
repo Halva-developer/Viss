@@ -26,7 +26,7 @@ namespace viss {
             JsonValue(Bool b) : type(JsonType::Bool), bool_val(b) {}
             JsonValue(Int i) : type(JsonType::Int), int_val(i), num_val((Dec)i) {}
             JsonValue(int i) : type(JsonType::Int), int_val((Int)i), num_val((Dec)i) {}
-            JsonValue(Dec d) : type(JsonType::Number), num_val(d), int_val((Int)d) {}
+            JsonValue(Dec d) : type(JsonType::Number), int_val((Int)d), num_val(d) {}
             JsonValue(const Str& s) : type(JsonType::String), str_val(s) {}
             JsonValue(const char* s) : type(JsonType::String), str_val(s) {}
             JsonValue(const Var& v) {

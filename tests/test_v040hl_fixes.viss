@@ -1,0 +1,41 @@
+$import lib "io" as io
+$import lib "str" as str
+$import lib "fs" as fs
+$import lib "db" as db
+$import lib "crypto" as crypto
+
+!func main() {
+    // 1. Reassignment type promotion (Hornik finding: @f = 1; @f = 2.75 -> was 2, now 2.75)
+    @f = 1;
+    @f = 2.75;
+    io.println("f is: " + str.from(@f));
+
+    // 2. String to int conversion (Hornik finding: @age = @user_input | int)
+    @user_input = "25";
+    @age = @user_input | int;
+    io.println("age is: " + str.from(@age));
+
+    // 3. String to dec conversion
+    @raw_dec = "99.5";
+    @price = @raw_dec | dec;
+    io.println("price is: " + str.from(@price));
+
+    // 4. DB placeholder '?' inside single quotes
+    @db_file = "test_fixes_db.json";
+    if fs.exists(@db_file) { fs.remove(@db_file); }
+    @dbh = db.open(@db_file);
+    db.exec(@dbh, "CREATE TABLE items (id STR, question STR)");
+    db.exec_params(@dbh, "INSERT INTO items VALUES (?, ?)", ["42", "Is this real?"]);
+    @res = db.query_params(@dbh, "SELECT * FROM items WHERE question = 'Is this real?' AND id = ?", ["42"]);
+    io.println("db result count: " + str.from(@res.size()));
+    db.close(@dbh);
+    if fs.exists(@db_file) { fs.remove(@db_file); }
+
+    // 5. Crypto random bytes & uuid
+    @u = crypto.uuid();
+    io.println("uuid len: " + str.from(@u.size()));
+    @b = crypto.random_bytes(16);
+    io.println("bytes len: " + str.from(@b.size()));
+
+    io.println("ALL_FIXES_OK");
+}

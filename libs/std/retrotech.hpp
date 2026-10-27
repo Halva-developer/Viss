@@ -834,7 +834,6 @@ namespace retrotech {
             } else {
                 // Classic block mode (2 spaces per pixel)
                 int last_r = -1, last_g = -1, last_b = -1;
-                int last_fg_r = -1, last_fg_g = -1, last_fg_b = -1;
 
                 for (int y = 0; y < height; ++y) {
                     for (int x = 0; x < width; ++x) {
@@ -855,7 +854,6 @@ namespace retrotech {
                                 frame += cell.text;
                             }
                             last_r = bc.r; last_g = bc.g; last_b = bc.b;
-                            last_fg_r = fc.r; last_fg_g = fc.g; last_fg_b = fc.b;
                             continue;
                         }
 
@@ -878,7 +876,6 @@ namespace retrotech {
                     }
                     frame += "\033[0m\n";
                     last_r = -1; last_g = -1; last_b = -1;
-                    last_fg_r = -1; last_fg_g = -1; last_fg_b = -1;
                 }
             }
             if (!ui_elements.empty()) {

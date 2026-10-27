@@ -336,10 +336,10 @@ inline std::string transpileVSCtoViss(const std::string& source, bool is_repl = 
         // 2. $RUN block header: RUN:, RUN->, RUN-, $RUN:, $RUN->, $RUN-
         bool is_run_header = false;
         size_t run_del_len = 0;
-        for (const std::string& rprefix : {"$RUN->", "RUN->", "$RUN:", "RUN:", "$RUN-", "RUN-"}) {
+        for (const char* rprefix : {"$RUN->", "RUN->", "$RUN:", "RUN:", "$RUN-", "RUN-"}) {
             if (startsWith(clean, rprefix)) {
                 is_run_header = true;
-                run_del_len = rprefix.size();
+                run_del_len = std::strlen(rprefix);
                 break;
             }
         }

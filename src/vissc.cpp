@@ -1523,10 +1523,14 @@ public:
             auto sym = get_var(s.substr(1));
             if (sym) return sym->type;
         }
-        bool has_dot = false, all_digits = true;
-        for (char c : s) {
+        std::string num = s;
+        if (endsWith(num, "LL") || endsWith(num, "ll")) num = num.substr(0, num.size() - 2);
+        else if (endsWith(num, "f") || endsWith(num, "F")) num = num.substr(0, num.size() - 1);
+        num = trim(num);
+        bool has_dot = false, all_digits = !num.empty();
+        for (char c : num) {
             if (c == '.') has_dot = true;
-            else if (!std::isdigit(c) && c != '-') all_digits = false;
+            else if (!std::isdigit((unsigned char)c) && c != '-' && c != '+') all_digits = false;
         }
         if (all_digits) return has_dot ? VissType::Dec : VissType::Int;
         return VissType::Unknown;
@@ -3434,6 +3438,10 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             bool already = declared_vars.count(vname) > 0;
             declared_vars.insert(vname, parseVissType(ptype), line_num);
             current_target->push_back("#line " + std::to_string(line_num) + " \"" + filename + "\"");
+            if (ptype == "int" || ptype == "i64" || ptype == "i32") val = "viss::toInt(" + val + ")";
+            else if (ptype == "dec" || ptype == "float" || ptype == "double" || ptype == "f64") val = "viss::toDec(" + val + ")";
+            else if (ptype == "str" || ptype == "string") val = "viss::toStr(" + val + ")";
+            else if (ptype == "bool") val = "viss::toBool(" + val + ")";
             current_target->push_back(already ? (vname + " = " + val + ";") : (cpp_t + " " + vname + " = " + val + ";"));
             continue;
         }
@@ -3466,7 +3474,11 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
                 bool already = declared_vars.count(vname) > 0;
                 declared_vars.insert(vname, parseVissType(ptype), line_num);
                 current_target->push_back("#line " + std::to_string(line_num) + " \"" + filename + "\"");
-                current_target->push_back(already ? (vname + " = " + val + ";") : (cpp_t + " " + vname + " = " + val + ";"));
+                if (ptype == "int" || ptype == "i64" || ptype == "i32") val = "viss::toInt(" + val + ")";
+            else if (ptype == "dec" || ptype == "float" || ptype == "double" || ptype == "f64") val = "viss::toDec(" + val + ")";
+            else if (ptype == "str" || ptype == "string") val = "viss::toStr(" + val + ")";
+            else if (ptype == "bool") val = "viss::toBool(" + val + ")";
+            current_target->push_back(already ? (vname + " = " + val + ";") : (cpp_t + " " + vname + " = " + val + ";"));
                 continue;
             }
         }
@@ -3545,8 +3557,42 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
             if (declared_vars.count(vname)) {
                 current_target->push_back(vname + " = " + val + ";");
             } else {
-                declared_vars.insert(vname, declared_vars.infer_type_from_literal(val), line_num);
-                current_target->push_back("auto " + vname + " = " + val + ";");
+                VissType inf_t = declared_vars.infer_type_from_literal(val);
+                VissType promoted_t = inf_t;
+                int look_depth = 0;
+                for (size_t si = stmt_idx + 1; si < statements.size(); ++si) {
+                    std::string s_cand = trim(statements[si].first);
+                    for (char sc : s_cand) {
+                        if (sc == '{') look_depth++;
+                        else if (sc == '}') look_depth--;
+                    }
+                    if (look_depth < 0) break;
+                    std::smatch m_next;
+                    if (std::regex_match(s_cand, m_next, std::regex(R"(^@)" + vname + R"(\s*=\s*([\s\S]+?);?$)"))) {
+                        std::string next_val = trim(m_next[1].str());
+                        VissType next_t = declared_vars.infer_type_from_literal(next_val);
+                        if (promoted_t == VissType::Int && next_t == VissType::Dec) {
+                            promoted_t = VissType::Dec;
+                        } else if (promoted_t != VissType::Unknown && next_t != VissType::Unknown && promoted_t != next_t) {
+                            if (promoted_t == VissType::Dec && next_t == VissType::Int) {
+                                // Dec can hold Int
+                            } else {
+                                promoted_t = VissType::Any;
+                            }
+                        }
+                    }
+                }
+                if (promoted_t == VissType::Dec) {
+                    declared_vars.insert(vname, VissType::Dec, line_num);
+                    current_target->push_back("viss::Dec " + vname + " = " + val + ";");
+                } else if (promoted_t == VissType::Any) {
+                    declared_vars.insert(vname, VissType::Any, line_num);
+                    current_target->push_back("viss::Var " + vname + " = " + val + ";");
+                } else {
+                    declared_vars.insert(vname, inf_t, line_num);
+                    current_target->push_back("auto " + vname + " = " + val + ";");
+                }
+
             }
             continue;
         }
@@ -3834,7 +3880,9 @@ void sanitizeAndPrintCompilerErrors(const std::string& err_log_path, const std::
             clean_msg = replaceAll(clean_msg, "const char*", "str");
             clean_msg = replaceAll(clean_msg, "viss::Str", "str");
             clean_msg = replaceAll(clean_msg, "viss::Int", "int");
+            clean_msg = replaceAll(clean_msg, "long long int", "int");
             clean_msg = replaceAll(clean_msg, "long long", "int");
+            clean_msg = replaceAll(clean_msg, "int int", "int");
             clean_msg = replaceAll(clean_msg, "viss::Dec", "dec");
             clean_msg = replaceAll(clean_msg, "double", "dec");
             clean_msg = replaceAll(clean_msg, "viss::Bool", "bool");

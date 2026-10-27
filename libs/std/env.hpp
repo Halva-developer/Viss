@@ -78,11 +78,18 @@ namespace viss {
         inline Str exec(const Str& cmd) {
             std::array<char, 128> buffer;
             Str result;
-            #ifdef _WIN32
-            std::unique_ptr<FILE, decltype(&_pclose)> pipe(_popen(cmd.c_str(), "r"), _pclose);
-            #else
-            std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
-            #endif
+            auto closer = [](FILE* f) { if (f) {
+#ifdef _WIN32
+                _pclose(f);
+#else
+                pclose(f);
+#endif
+            }};
+#ifdef _WIN32
+            std::unique_ptr<FILE, decltype(closer)> pipe(_popen(cmd.c_str(), "r"), closer);
+#else
+            std::unique_ptr<FILE, decltype(closer)> pipe(popen(cmd.c_str(), "r"), closer);
+#endif
             if (!pipe) return "";
             while (fgets(buffer.data(), (int)buffer.size(), pipe.get()) != nullptr) {
                 result += buffer.data();

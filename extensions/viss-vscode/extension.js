@@ -47,8 +47,8 @@ function activate(context) {
         }
 
         // 3. Helper toolchain path
-        const helperPath = 'C:\\AGY\\Viss_Helper\\bin\\viss.exe';
-        if (fs.existsSync(helperPath)) return helperPath;
+        // Helper path removed for security
+
 
         // 4. Standard Linux/Unix paths
         for (const lp of ['/usr/local/bin/viss', '/usr/bin/viss', path.join(process.env.HOME || '', '.local', 'bin', 'viss')]) {

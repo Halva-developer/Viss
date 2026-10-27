@@ -218,14 +218,14 @@ namespace viss {
         Var(long v) : Var((Int)v) {}
         Var(unsigned int v) : Var((Int)v) {}
         Var(unsigned long long v) : Var((Int)v) {}
-        Var(Dec v) : type(Type::Dec), d_val(v), i_val((Int)v), s_val(std::to_string(v)), b_val(v != 0.0) {}
+        Var(Dec v) : type(Type::Dec), i_val((Int)v), d_val(v), s_val(std::to_string(v)), b_val(v != 0.0) {}
         Var(float v) : Var((Dec)v) {}
         Var(const Str& v) : type(Type::Str), s_val(v), b_val(!v.empty()) {
             try { i_val = std::stoll(v); } catch(...) { i_val = 0; }
             try { d_val = std::stod(v); } catch(...) { d_val = 0.0; }
         }
         Var(const char* v) : Var(Str(v ? v : "")) {}
-        Var(Bool v) : type(Type::Bool), b_val(v), i_val(v ? 1 : 0), d_val(v ? 1.0 : 0.0), s_val(v ? "true" : "false") {}
+        Var(Bool v) : type(Type::Bool), i_val(v ? 1 : 0), d_val(v ? 1.0 : 0.0), s_val(v ? "true" : "false"), b_val(v) {}
 
         // Implicit conversions
         operator Str() const { return s_val; }
@@ -2861,6 +2861,8 @@ namespace viss {
     inline Int toInt(T val) {
         return static_cast<Int>(val);
     }
+    inline Int toInt(const Str& s);
+    inline Int toInt(const char* s) { return s ? toInt(Str(s)) : 0; }
     inline Int toInt(const Str& s) {
         try {
             return std::stoll(s, nullptr, 0);
@@ -2872,6 +2874,8 @@ namespace viss {
     inline Dec toDec(T val) {
         return static_cast<Dec>(val);
     }
+    inline Dec toDec(const Str& s);
+    inline Dec toDec(const char* s) { return s ? toDec(Str(s)) : 0.0; }
     inline Dec toDec(const Str& s) {
         try {
             return std::stod(s);

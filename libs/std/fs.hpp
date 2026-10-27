@@ -42,7 +42,7 @@ namespace viss {
         inline void write_lines(const Str& path, const List<Str>& lines) {
             std::ofstream f(path);
             if (f.is_open()) {
-                for (size_t i = 0; i < lines.size(); ++i) {
+                for (viss::Int i = 0; i < lines.size(); ++i) {
                     f << lines.get(i) << "\n";
                 }
             }

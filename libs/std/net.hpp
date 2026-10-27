@@ -442,6 +442,8 @@ namespace viss {
         private:
             SOCKET server_sock = INVALID_SOCKET;
             std::atomic<bool> is_running{false};
+            std::atomic<int> active_clients{0};
+            const int max_clients = 256;
             std::thread accept_thread;
             std::map<Str, HttpHandler> routes_get;
             std::map<Str, HttpHandler> routes_post;
@@ -466,6 +468,12 @@ namespace viss {
             }
 
             void handle_client(SOCKET client_fd, Str client_ip) {
+                active_clients++;
+                struct ClientGuard {
+                    std::atomic<int>& ac;
+                    ClientGuard(std::atomic<int>& a) : ac(a) {}
+                    ~ClientGuard() { ac--; }
+                } guard(active_clients);
 #ifdef _WIN32
                 DWORD tv = 10000;
                 setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
@@ -663,6 +671,17 @@ namespace viss {
                         SOCKET client_fd = ::accept(server_sock, (struct sockaddr*)&client_addr, &c_len);
                         if (client_fd == INVALID_SOCKET) {
                             if (!is_running) break;
+                            continue;
+                        }
+
+                        if (active_clients.load() >= max_clients) {
+                            const char* busy_resp = "HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nServer Busy\r\n";
+                            send(client_fd, busy_resp, (int)strlen(busy_resp), 0);
+                            #ifdef _WIN32
+                            closesocket(client_fd);
+                            #else
+                            close(client_fd);
+                            #endif
                             continue;
                         }
 

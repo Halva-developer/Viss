@@ -353,7 +353,7 @@ inline bool parse_ogg(const std::string& path, AudioTag& tag) {
         if (std::memcmp(magic, "OggS", 4) != 0) continue;
 
         f.get(); // ver
-        uint8_t header_type = f.get();
+        (void)f.get(); // header_type
         f.seekg(20, std::ios::cur); // skip granule, serial, seq, crc
         int n_segs = f.get();
         if (n_segs < 0) break;

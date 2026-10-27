@@ -201,12 +201,9 @@ namespace viss {
 
         // --- UUID v4 ---
         inline Str uuid() {
-            static std::random_device rd;
-            static std::mt19937_64 gen(rd());
-            static std::uniform_int_distribution<uint32_t> dis;
-
+            std::random_device rd;
             uint32_t data[4];
-            for (int i = 0; i < 4; ++i) data[i] = dis(gen);
+            for (int i = 0; i < 4; ++i) data[i] = rd();
             // Set version to 4
             data[1] = (data[1] & 0xFFFF0FFF) | 0x00004000;
             // Set variant to RFC 4122
@@ -225,12 +222,15 @@ namespace viss {
 
         inline Bytes random_bytes(Int count) {
             if (count <= 0) return Bytes(0);
-            static std::random_device rd;
-            static std::mt19937 gen(rd());
-            static std::uniform_int_distribution<int> dis(0, 255);
+            std::random_device rd;
             Bytes b((size_t)count);
-            for (Int i = 0; i < count; ++i) {
-                b.set(i, (uint8_t)dis(gen));
+            size_t idx = 0;
+            while (idx < (size_t)count) {
+                uint32_t r = rd();
+                for (int k = 0; k < 4 && idx < (size_t)count; ++k, ++idx) {
+                    b.set((Int)idx, (uint8_t)(r & 0xFF));
+                    r >>= 8;
+                }
             }
             return b;
         }
