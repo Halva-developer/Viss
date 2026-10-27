@@ -190,10 +190,13 @@ inline int run_process_silent(const std::string& cmd) {
     std::wstring wcmd(size_needed, 0);
     MultiByteToWideChar(CP_UTF8, 0, cmd.data(), (int)cmd.size(), &wcmd[0], size_needed);
 
-    STARTUPINFOW si = { sizeof(si) };
+    STARTUPINFOW si;
+    std::memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
     si.dwFlags = STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_HIDE;
-    PROCESS_INFORMATION pi = { 0 };
+    PROCESS_INFORMATION pi;
+    std::memset(&pi, 0, sizeof(pi));
 
     BOOL ok = CreateProcessW(NULL, &wcmd[0], NULL, NULL, FALSE, 0x08000000, NULL, NULL, &si, &pi);
     if (!ok) {
@@ -1260,10 +1263,13 @@ inline bool start_render_video(const std::string& audio_path, const std::string&
         std::wstring wcmd(sz, 0);
         MultiByteToWideChar(CP_UTF8, 0, cmd.data(), (int)cmd.size(), &wcmd[0], sz);
 
-        STARTUPINFOW si = { sizeof(si) };
+        STARTUPINFOW si;
+    std::memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
         si.dwFlags = STARTF_USESHOWWINDOW;
         si.wShowWindow = SW_HIDE;
-        PROCESS_INFORMATION pi = { 0 };
+        PROCESS_INFORMATION pi;
+    std::memset(&pi, 0, sizeof(pi));
 
         BOOL ok = CreateProcessW(NULL, &wcmd[0], NULL, NULL, FALSE, 0x08000000, NULL, NULL, &si, &pi);
         if (!ok) {

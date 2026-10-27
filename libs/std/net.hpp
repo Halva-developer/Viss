@@ -42,7 +42,9 @@ namespace viss {
         inline Str request(const Str& method, const Str& url, const Str& body = "", const Str& headers = "") {
 #ifdef _WIN32
             g_last_status_code = 0;
-            URL_COMPONENTSA uc = { sizeof(uc) };
+            URL_COMPONENTSA uc;
+            std::memset(&uc, 0, sizeof(uc));
+            uc.dwStructSize = sizeof(uc);
             char host[512] = {0};
             char path[4096] = {0};
             uc.lpszHostName = host;
@@ -224,7 +226,9 @@ namespace viss {
 
         inline Bool download(const Str& url, const Str& destinationPath) {
 #ifdef _WIN32
-            URL_COMPONENTSA uc = { sizeof(uc) };
+            URL_COMPONENTSA uc;
+            std::memset(&uc, 0, sizeof(uc));
+            uc.dwStructSize = sizeof(uc);
             char host[512] = {0};
             char path[4096] = {0};
             uc.lpszHostName = host;

@@ -1,6 +1,6 @@
 # =============================================================================
 # Viss Language Toolchain Makefile
-# Version: 0.4.0hl "Flame Princess (Hot Speed & Loud)"
+# Version: 0.4.1 "Flame Princess"
 # Supported Platforms: Linux, macOS, FreeBSD, MinGW/Windows
 # =============================================================================
 

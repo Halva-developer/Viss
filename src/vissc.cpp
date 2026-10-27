@@ -30,8 +30,8 @@
 
 namespace fs = std::filesystem;
 
-const std::string VERSION = "0.4.0hl";
-const std::string CODENAME = "Flame Princess (Hot Speed & Loud)";
+const std::string VERSION = "0.4.1";
+const std::string CODENAME = "Flame Princess";
 
 // =============================================================================
 // 1. UTILITY FUNCTIONS
@@ -150,6 +150,10 @@ std::string getVissIncludeFlags(const fs::path& file_dir = "") {
                           + "-I\"" + viss_parent.string() + "\" ";
     if (!file_dir.empty()) {
         inc_paths += "-I\"" + file_dir.string() + "\" ";
+        fs::path p_libs = file_dir / "libs";
+        if (fs::exists(p_libs)) {
+            inc_paths += "-I\"" + p_libs.string() + "\" ";
+        }
     }
     inc_paths += "-I. ";
 
@@ -1355,8 +1359,8 @@ inline std::string transformInOperator(const std::string& expr) {
         size_t op_len = is_contains ? 8 : (is_in ? 2 : 0);
 
         if (op_len > 0) {
-            bool left_ok = (i == 0 || (!isalnum((unsigned char)s[i-1]) && s[i-1] != '_'));
-            bool right_ok = (i + op_len >= s.size() || (!isalnum((unsigned char)s[i+op_len]) && s[i+op_len] != '_'));
+            bool left_ok = (i == 0 || (!isalnum((unsigned char)s[i-1]) && s[i-1] != '_' && s[i-1] != '.'));
+            bool right_ok = (i + op_len >= s.size() || (!isalnum((unsigned char)s[i+op_len]) && s[i+op_len] != '_' && s[i+op_len] != '('));
             if (left_ok && right_ok) {
                 size_t p = i;
                 while (p > 0 && (s[p-1] == ' ' || s[p-1] == '\t')) p--;
@@ -2367,7 +2371,15 @@ std::string transpile(const std::string& raw_viss_code, const std::string& filen
                 includes_section.push_back("#include \"libs/std/zip.hpp\"");
                 aliases_section.push_back("namespace " + alias + " = viss::zip;");
             } else {
-                includes_section.push_back("#include \"libs/std/" + lib_name + ".hpp\"");
+                fs::path local_lib_hpp = fs::path(current_dir) / "libs" / (lib_name + ".hpp");
+                fs::path local_hpp = fs::path(current_dir) / (lib_name + ".hpp");
+                if (fs::exists(local_lib_hpp)) {
+                    includes_section.push_back("#include \"libs/" + lib_name + ".hpp\"");
+                } else if (fs::exists(local_hpp)) {
+                    includes_section.push_back("#include \"" + lib_name + ".hpp\"");
+                } else {
+                    includes_section.push_back("#include \"libs/std/" + lib_name + ".hpp\"");
+                }
                 aliases_section.push_back("namespace " + alias + " = viss::" + lib_name + ";");
             }
             continue;

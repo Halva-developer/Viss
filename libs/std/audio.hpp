@@ -525,10 +525,13 @@ namespace audio {
             std::string ff = find_audio_ffmpeg();
             std::string cmd = "cmd.exe /c \"\"" + ff + "\" -y -i \"" + path + "\" -vn \"" + temp_wav + "\"\"";
 
-            STARTUPINFOA si = { sizeof(si) };
+            STARTUPINFOA si;
+            std::memset(&si, 0, sizeof(si));
+            si.cb = sizeof(si);
             si.dwFlags = STARTF_USESHOWWINDOW;
             si.wShowWindow = SW_HIDE;
-            PROCESS_INFORMATION pi = { 0 };
+            PROCESS_INFORMATION pi;
+            std::memset(&pi, 0, sizeof(pi));
             if (CreateProcessA(NULL, &cmd[0], NULL, NULL, FALSE, 0x08000000, NULL, NULL, &si, &pi)) {
                 WaitForSingleObject(pi.hProcess, 4000);
                 CloseHandle(pi.hProcess);
