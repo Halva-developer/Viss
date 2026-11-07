@@ -29,6 +29,8 @@
 #include <functional>
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
+#include "std/shellquote.hpp"
 #include <random>
 
 namespace viss {
@@ -36,7 +38,22 @@ namespace viss {
     using Int = long long;
     using Dec = double;
     using Bool = bool;
-    
+
+    // One canonical text form for decimals, used by println, i"...", str(), "s" + x and Var.
+    // Short form that reads back to the same value: 2.5 -> "2.5", 1234567.5 -> "1234567.5",
+    // 100.0 -> "100", 1e-7 -> "1e-07", 0.1 + 0.2 -> "0.30000000000000004" (honest, like Python).
+    inline std::string fmtDec(double v) {
+        if (std::isnan(v)) return "nan";
+        if (std::isinf(v)) return v < 0 ? "-inf" : "inf";
+        char buf[64];
+        // Shortest of 15/16/17 significant digits that round-trips (pi needs 16).
+        for (int prec = 15; prec <= 17; ++prec) {
+            std::snprintf(buf, sizeof(buf), "%.*g", prec, v);
+            if (std::strtod(buf, nullptr) == v) break;
+        }
+        return std::string(buf);
+    }
+
     // Viss 2.0 type aliases
     using int_t = Int;
     using dec_t = Dec;
@@ -182,11 +199,14 @@ namespace viss {
     inline Vec3 vec3(Dec x = 0.0, Dec y = 0.0, Dec z = 0.0) { return Vec3(x, y, z); }
 
     inline Str toStr(const Vec2& v) {
-        return "Vec2(" + std::to_string(v.x) + ", " + std::to_string(v.y) + ")";
+        return "Vec2(" + fmtDec(v.x) + ", " + fmtDec(v.y) + ")";
     }
     inline Str toStr(const Vec3& v) {
-        return "Vec3(" + std::to_string(v.x) + ", " + std::to_string(v.y) + ", " + std::to_string(v.z) + ")";
+        return "Vec3(" + fmtDec(v.x) + ", " + fmtDec(v.y) + ", " + fmtDec(v.z) + ")";
     }
+    // io.println(@v) for vectors
+    inline std::ostream& operator<<(std::ostream& os, const Vec2& v) { return os << toStr(v); }
+    inline std::ostream& operator<<(std::ostream& os, const Vec3& v) { return os << toStr(v); }
 
     class Error : public std::exception {
     private:
@@ -218,7 +238,8 @@ namespace viss {
         Var(long v) : Var((Int)v) {}
         Var(unsigned int v) : Var((Int)v) {}
         Var(unsigned long long v) : Var((Int)v) {}
-        Var(Dec v) : type(Type::Dec), i_val((Int)v), d_val(v), s_val(std::to_string(v)), b_val(v != 0.0) {}
+        Var(unsigned long v) : Var((Int)v) {}
+        Var(Dec v) : type(Type::Dec), i_val((Int)v), d_val(v), s_val(fmtDec(v)), b_val(v != 0.0) {}
         Var(float v) : Var((Dec)v) {}
         Var(const Str& v) : type(Type::Str), s_val(v), b_val(!v.empty()) {
             try { i_val = std::stoll(v); } catch(...) { i_val = 0; }
@@ -681,12 +702,10 @@ namespace viss {
     inline bool contains(const Map<K, V>& map, const U& key) {
         return map.has(key);
     }
+    // Case-sensitive, exactly like str.contains(). (It used to silently fall back to a
+    // case-insensitive match, so "Hello" contains "hello" was true.)
     inline bool contains(const Str& str, const Str& sub) {
-        if (str.find(sub) != std::string::npos) return true;
-        std::string s1 = str, s2 = sub;
-        for (char& c : s1) c = (char)std::tolower((unsigned char)c);
-        for (char& c : s2) c = (char)std::tolower((unsigned char)c);
-        return s1.find(s2) != std::string::npos;
+        return str.find(sub) != std::string::npos;
     }
     inline bool contains(const Str& str, const char* sub) {
         return contains(str, Str(sub ? sub : ""));
@@ -696,6 +715,11 @@ namespace viss {
     }
     inline bool contains(const Var& var, const Var& item) {
         return var.to_str().find(item.to_str()) != std::string::npos;
+    }
+    // Any user type with its own contains() method (method-call syntax @obj.contains(x) maps here).
+    template<typename T, typename U>
+    inline auto contains(const T& obj, const U& item) -> decltype(static_cast<bool>(obj.contains(item))) {
+        return static_cast<bool>(obj.contains(item));
     }
 
     // Inf: Dynamic Table / Expando Bag for infinite variables
@@ -2889,7 +2913,8 @@ namespace viss {
     inline Bool toBool(const Str& s) { return s == "true" || s == "1"; }
     template<typename T>
     inline Str toStr(const T& val) {
-        return std::to_string(val);
+        if constexpr (std::is_floating_point_v<T>) return fmtDec((double)val);
+        else return std::to_string(val);
     }
     inline Str toStr(const Str& val) {
         return val;
@@ -3060,9 +3085,7 @@ namespace viss {
         if constexpr (std::is_same_v<T, bool>) {
             return s + (val ? "true" : "false");
         } else if constexpr (std::is_floating_point_v<T>) {
-            std::string res = std::to_string(val);
-            while (res.size() > 1 && res.back() == '0' && res[res.size() - 2] != '.') res.pop_back();
-            return s + res;
+            return s + fmtDec((double)val);
         } else {
             return s + std::to_string(val);
         }
@@ -3073,9 +3096,7 @@ namespace viss {
         if constexpr (std::is_same_v<T, bool>) {
             return (val ? "true" : "false") + s;
         } else if constexpr (std::is_floating_point_v<T>) {
-            std::string res = std::to_string(val);
-            while (res.size() > 1 && res.back() == '0' && res[res.size() - 2] != '.') res.pop_back();
-            return res + s;
+            return fmtDec((double)val) + s;
         } else {
             return std::to_string(val) + s;
         }
@@ -3090,6 +3111,46 @@ namespace viss {
     inline bool operator==(T val, const Var& v) { return v == val; }
     template<typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
     inline bool operator!=(T val, const Var& v) { return v != val; }
+
+    // Arithmetic between plain numbers and Var values (map/JSON values): @total += @m["k"].
+    // Without these, Var's many implicit conversions make every such expression ambiguous.
+    template<typename T> using enable_num_t = std::enable_if_t<std::is_arithmetic_v<T> && !std::is_same_v<T, bool> && !std::is_same_v<T, char>>;
+    template<typename T> inline Dec var_num_dec(const Var& v) { (void)sizeof(T); return v.type == Var::Type::Dec ? v.d_val : (Dec)v.i_val; }
+
+    template<typename T, typename = enable_num_t<T>> inline Var operator+(const Var& a, T b) { return a + Var(b); }
+    template<typename T, typename = enable_num_t<T>> inline Var operator-(const Var& a, T b) { return a - Var(b); }
+    template<typename T, typename = enable_num_t<T>> inline Var operator*(const Var& a, T b) { return a * Var(b); }
+    template<typename T, typename = enable_num_t<T>> inline Var operator/(const Var& a, T b) { return a / Var(b); }
+    template<typename T, typename = enable_num_t<T>> inline Var operator+(T a, const Var& b) { return Var(a) + b; }
+    template<typename T, typename = enable_num_t<T>> inline Var operator-(T a, const Var& b) { return Var(a) - b; }
+    template<typename T, typename = enable_num_t<T>> inline Var operator*(T a, const Var& b) { return Var(a) * b; }
+    template<typename T, typename = enable_num_t<T>> inline Var operator/(T a, const Var& b) { return Var(a) / b; }
+
+    template<typename T, typename = enable_num_t<T>> inline T& operator+=(T& a, const Var& b) {
+        if constexpr (std::is_floating_point_v<T>) a += (T)var_num_dec<T>(b); else a += (T)b.i_val;
+        return a;
+    }
+    template<typename T, typename = enable_num_t<T>> inline T& operator-=(T& a, const Var& b) {
+        if constexpr (std::is_floating_point_v<T>) a -= (T)var_num_dec<T>(b); else a -= (T)b.i_val;
+        return a;
+    }
+    template<typename T, typename = enable_num_t<T>> inline T& operator*=(T& a, const Var& b) {
+        if constexpr (std::is_floating_point_v<T>) a *= (T)var_num_dec<T>(b); else a *= (T)b.i_val;
+        return a;
+    }
+    template<typename T, typename = enable_num_t<T>> inline T& operator/=(T& a, const Var& b) {
+        if constexpr (std::is_floating_point_v<T>) a /= (T)var_num_dec<T>(b); else a /= (T)b.i_val;
+        return a;
+    }
+
+    template<typename T, typename = enable_num_t<T>> inline bool operator<(const Var& a, T b) { return a < Var(b); }
+    template<typename T, typename = enable_num_t<T>> inline bool operator>(const Var& a, T b) { return Var(b) < a; }
+    template<typename T, typename = enable_num_t<T>> inline bool operator<=(const Var& a, T b) { return !(Var(b) < a); }
+    template<typename T, typename = enable_num_t<T>> inline bool operator>=(const Var& a, T b) { return !(a < Var(b)); }
+    template<typename T, typename = enable_num_t<T>> inline bool operator<(T a, const Var& b) { return Var(a) < b; }
+    template<typename T, typename = enable_num_t<T>> inline bool operator>(T a, const Var& b) { return b < Var(a); }
+    template<typename T, typename = enable_num_t<T>> inline bool operator<=(T a, const Var& b) { return !(b < Var(a)); }
+    template<typename T, typename = enable_num_t<T>> inline bool operator>=(T a, const Var& b) { return !(Var(a) < b); }
 
 }
 

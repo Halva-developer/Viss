@@ -1,0 +1,18 @@
+$import lib "io" as io
+$import lib "json" as json
+!main {
+    @a = json.parse("{\"s\": \"\\u0041\\u00e9\", \"big\": 1e308, \"pi\": 3.141592653589793}");
+    io.println(@a.get("s").as_str());
+    io.println(@a.get("big").as_dec() > 1e307);
+    io.println(@a.get("pi").as_dec());
+    @deep = "";
+    for @i in 0..20000 {
+        @deep += "[";
+    }
+    @d = json.parse(@deep);
+    io.println("survived deep nesting");
+}
+// EXPECT: Aé
+// EXPECT: true
+// EXPECT: 3.141592653589793
+// EXPECT: survived deep nesting

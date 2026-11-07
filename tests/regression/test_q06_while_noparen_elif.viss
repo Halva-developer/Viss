@@ -1,0 +1,20 @@
+$import lib "io" as io
+!main {
+    @i = 0;
+    !while @i < 3 {
+        @i += 1;
+    }
+    io.println(@i);
+    @v = 5;
+    ?if @v < 3 {
+        io.println("small");
+    }
+    ?elif @v < 10 {
+        io.println("mid");
+    }
+    ?else {
+        io.println("big");
+    }
+}
+// EXPECT: 3
+// EXPECT: mid

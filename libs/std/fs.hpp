@@ -86,6 +86,12 @@ namespace viss {
             std::error_code ec;
             std::filesystem::create_directories(path, ec);
         }
+        // Documented name (Viss_AI.md): fs.create_dir(path) -> true when the directory exists afterwards
+        inline Bool create_dir(const Str& path) {
+            std::error_code ec;
+            std::filesystem::create_directories(path, ec);
+            return std::filesystem::is_directory(path, ec);
+        }
 
         inline void copy(const Str& src, const Str& dst) {
             std::error_code ec;
@@ -294,11 +300,20 @@ namespace viss {
             std::error_code ec;
             std::filesystem::create_directories(dest_dir, ec);
 
-            std::string cmd = "tar -xf \"" + temp_zip.string() + "\" -C \"" + dest_dir + "\"";
-            int res = std::system(cmd.c_str());
-            if (res != 0) {
-                std::string ps = "powershell -WindowStyle Hidden -Command \"Expand-Archive -LiteralPath '" + temp_zip.string() + "' -DestinationPath '" + dest_dir + "' -Force\"";
-                res = std::system(ps.c_str());
+            int res = 1;
+            if (viss::shellArgSafe(temp_zip.string()) && viss::shellArgSafe(dest_dir)) {
+                std::string cmd = "tar -xf " + viss::shellArg(temp_zip.string()) + " -C " + viss::shellArg(dest_dir);
+                res = std::system(cmd.c_str());
+                // PowerShell single-quoted strings escape ' as ''
+                auto ps_quote = [](std::string v) {
+                    std::string r = "'";
+                    for (char c : v) { if (c == '\'') r += "''"; else r += c; }
+                    return r + "'";
+                };
+                if (res != 0) {
+                    std::string ps = "powershell -WindowStyle Hidden -Command \"Expand-Archive -LiteralPath " + ps_quote(temp_zip.string()) + " -DestinationPath " + ps_quote(dest_dir) + " -Force\"";
+                    res = std::system(ps.c_str());
+                }
             }
 
             std::filesystem::remove(temp_zip, ec);

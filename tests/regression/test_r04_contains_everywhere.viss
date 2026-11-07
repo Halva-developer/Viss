@@ -1,0 +1,20 @@
+$import lib "io" as io
+!main {
+    @s = "Hello Viss";
+    io.println(@s.contains("Viss"));
+    io.println(@s.contains("viss"));
+    @xs = [1, 2, 3];
+    io.println(@xs.contains(2));
+    io.println(@xs.contains(7));
+    @m = {"k": 1};
+    io.println(@m.contains("k"));
+    ?if (!@s.contains("zzz") and "Viss" in @s) {
+        io.println("ok");
+    }
+}
+// EXPECT: true
+// EXPECT: false
+// EXPECT: true
+// EXPECT: false
+// EXPECT: true
+// EXPECT: ok

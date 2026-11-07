@@ -1,0 +1,15 @@
+$import lib "io" as io
+!main {
+    io.println("a // not a comment");
+    io.println("braces { and } and ; inside");
+    io.println("?if @x and or not in contains");
+    io.println("tab\tend");
+    io.println('single "quoted" text');
+    io.println("http://example.com/path");
+}
+// EXPECT: a // not a comment
+// EXPECT: braces { and } and ; inside
+// EXPECT: ?if @x and or not in contains
+// EXPECT: tab	end
+// EXPECT: single "quoted" text
+// EXPECT: http://example.com/path

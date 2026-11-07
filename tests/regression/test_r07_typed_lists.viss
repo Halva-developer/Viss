@@ -1,0 +1,18 @@
+$import lib "io" as io
+struct P {
+    x: int = 0
+}
+!main {
+    @ps = [] | P;
+    @ps.add(P(3));
+    @ps.add(P(4));
+    io.println(@ps.len());
+    @ns = [1, 2, 3] | dec;
+    io.println(@ns[0] / 2);
+    @ss = [] | str;
+    @ss.add("q");
+    io.println(@ss[0]);
+}
+// EXPECT: 2
+// EXPECT: 0.5
+// EXPECT: q

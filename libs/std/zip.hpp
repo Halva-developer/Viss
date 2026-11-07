@@ -71,8 +71,9 @@ namespace viss {
             }
 
             // Fallback to tar / unzip command if binary parsing encountered an edge case
+            if (!viss::shellArgSafe(p)) return results;
 #ifdef _WIN32
-            std::string cmd = "tar.exe -tf \"" + p + "\"";
+            std::string cmd = viss::systemTar() + " -tf " + viss::shellArg(p);
             FILE* pipe = _popen(cmd.c_str(), "r");
             if (pipe) {
                 char line[1024];
@@ -84,7 +85,7 @@ namespace viss {
                 _pclose(pipe);
             }
 #else
-            std::string cmd = "tar -tf \"" + p + "\" 2>/dev/null || unzip -l \"" + p + "\"";
+            std::string cmd = "tar -tf " + viss::shellArg(p) + " 2>/dev/null || unzip -l " + viss::shellArg(p);
             FILE* pipe = popen(cmd.c_str(), "r");
             if (pipe) {
                 char line[1024];
@@ -104,10 +105,12 @@ namespace viss {
             std::string zp = zip_path.c_str();
             std::string fz = file_in_zip.c_str();
             std::string result;
+            // Entry names come from the archive itself, so they are untrusted input.
+            if (!viss::shellArgSafe(zp) || !viss::shellArgSafe(fz)) return "";
 
 #ifdef _WIN32
             // Use tar -xOf to stream file directly to stdout
-            std::string cmd = "tar.exe -xOf \"" + zp + "\" \"" + fz + "\"";
+            std::string cmd = viss::systemTar() + " -xOf " + viss::shellArg(zp) + " " + viss::shellArg(fz);
             FILE* pipe = _popen(cmd.c_str(), "rb");
             if (pipe) {
                 char buf[4096];
@@ -118,7 +121,7 @@ namespace viss {
                 _pclose(pipe);
             }
 #else
-            std::string cmd = "tar -xOf \"" + zp + "\" \"" + fz + "\" 2>/dev/null || unzip -p \"" + zp + "\" \"" + fz + "\" 2>/dev/null";
+            std::string cmd = "tar -xOf " + viss::shellArg(zp) + " " + viss::shellArg(fz) + " 2>/dev/null || unzip -p " + viss::shellArg(zp) + " " + viss::shellArg(fz) + " 2>/dev/null";
             FILE* pipe = popen(cmd.c_str(), "r");
             if (pipe) {
                 char buf[4096];
@@ -139,11 +142,12 @@ namespace viss {
             fs::create_directories(dp);
 
 #ifdef _WIN32
-            std::string cmd = "tar.exe -xf \"" + zp + "\" -C \"" + dp + "\"";
+            if (!viss::shellArgSafe(zp) || !viss::shellArgSafe(dp)) return false;
+            std::string cmd = viss::systemTar() + " -xf " + viss::shellArg(zp) + " -C " + viss::shellArg(dp);
             int ret = std::system(cmd.c_str());
             return ret == 0;
 #else
-            std::string cmd = "tar -xf \"" + zp + "\" -C \"" + dp + "\" 2>/dev/null || unzip -q -o \"" + zp + "\" -d \"" + dp + "\"";
+            std::string cmd = "tar -xf " + viss::shellArg(zp) + " -C " + viss::shellArg(dp) + " 2>/dev/null || unzip -q -o " + viss::shellArg(zp) + " -d " + viss::shellArg(dp);
             int ret = std::system(cmd.c_str());
             return ret == 0;
 #endif

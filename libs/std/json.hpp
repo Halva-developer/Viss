@@ -313,10 +313,15 @@ namespace viss {
         public:
             bool has_error = false;
             Str error_msg = "";
+            int depth = 0;
+            static constexpr int kMaxDepth = 512;  // deeper input is rejected instead of overflowing the stack
 
             JsonParser(const Str& src) : s(src), pos(0) {}
 
+            bool at_end() { skip_ws(); return pos >= s.size(); }
+
             JsonValue parse_value() {
+                if (has_error) return JsonValue();
                 skip_ws();
                 if (pos >= s.size()) {
                     has_error = true;
@@ -328,6 +333,8 @@ namespace viss {
                 if (c == '"') {
                     return JsonValue(parse_string());
                 } else if (c == '{') {
+                    if (++depth > kMaxDepth) { has_error = true; error_msg = "JSON nesting too deep"; return JsonValue(); }
+                    struct DepthGuard { int& d; ~DepthGuard() { --d; } } dg{depth};
                     get(); // skip {
                     JsonValue obj;
                     obj.type = JsonType::Object;
@@ -345,6 +352,7 @@ namespace viss {
                             break;
                         }
                         obj.obj_val[key] = parse_value();
+                        if (has_error) break;
                         char next = peek();
                         if (next == ',') { get(); }
                         else if (next == '}') { get(); break; }
@@ -356,12 +364,15 @@ namespace viss {
                     }
                     return obj;
                 } else if (c == '[') {
+                    if (++depth > kMaxDepth) { has_error = true; error_msg = "JSON nesting too deep"; return JsonValue(); }
+                    struct DepthGuard { int& d; ~DepthGuard() { --d; } } dg{depth};
                     get(); // skip [
                     JsonValue arr;
                     arr.type = JsonType::Array;
                     if (peek() == ']') { get(); return arr; }
                     while (pos < s.size()) {
                         arr.arr_val.push_back(parse_value());
+                        if (has_error) break;
                         char next = peek();
                         if (next == ',') { get(); }
                         else if (next == ']') { get(); break; }
@@ -396,9 +407,7 @@ namespace viss {
             JsonParser p(src);
             auto val = p.parse_value();
             if (p.has_error) err_out = p.error_msg;
-            else {
-                p.parse_value(); // Check if remaining unexpected characters
-            }
+            else if (!p.at_end()) err_out = "Unexpected trailing characters after JSON value";
             return val;
         }
 

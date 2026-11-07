@@ -1,0 +1,11 @@
+$import lib "io" as io
+!main {
+    @big = 9000000000;
+    io.println(@big * 2);
+    @f = 0.1 + 0.2;
+    io.println(@f > 0.3);
+    io.println(1e3);
+}
+// EXPECT: 18000000000
+// EXPECT: true
+// EXPECT: 1000

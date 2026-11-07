@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <atomic>
 #include <mutex>
+#include "shellquote.hpp"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -198,15 +199,10 @@ inline int run_process_silent(const std::string& cmd) {
     PROCESS_INFORMATION pi;
     std::memset(&pi, 0, sizeof(pi));
 
+    // No cmd.exe fallback: CreateProcessW already searches PATH, and cmd.exe would
+    // re-interpret quotes inside tag values (command injection through song titles).
     BOOL ok = CreateProcessW(NULL, &wcmd[0], NULL, NULL, FALSE, 0x08000000, NULL, NULL, &si, &pi);
-    if (!ok) {
-        std::string c = "cmd.exe /c \"" + cmd + "\"";
-        int sz2 = MultiByteToWideChar(CP_UTF8, 0, c.data(), (int)c.size(), NULL, 0);
-        std::wstring wcmd2(sz2, 0);
-        MultiByteToWideChar(CP_UTF8, 0, c.data(), (int)c.size(), &wcmd2[0], sz2);
-        ok = CreateProcessW(NULL, &wcmd2[0], NULL, NULL, FALSE, 0x08000000, NULL, NULL, &si, &pi);
-        if (!ok) return -1;
-    }
+    if (!ok) return -1;
     while (true) {
         DWORD wait_res = MsgWaitForMultipleObjects(1, &pi.hProcess, FALSE, 50, QS_ALLINPUT);
         if (wait_res == WAIT_OBJECT_0) {
@@ -682,7 +678,7 @@ inline double get_duration(const std::string& path) {
 // Extract embedded artwork into image file (.jpg or .png)
 inline bool extract_cover(const std::string& audio_path, const std::string& out_image_path) {
     std::string ffmpeg = find_ffmpeg();
-    std::string cmd = "\"" + ffmpeg + "\" -y -i \"" + audio_path + "\" -an -vcodec copy \"" + out_image_path + "\"";
+    std::string cmd = "" + viss::quoteArg(ffmpeg) + " -y -i " + viss::quoteArg(audio_path) + " -an -vcodec copy " + viss::quoteArg(out_image_path) + "";
     if (run_process_silent(cmd) == 0 && fs::exists(out_image_path) && fs::file_size(out_image_path) > 100) {
         return true;
     }
@@ -772,19 +768,19 @@ inline bool embed_cover(const std::string& audio_path, const std::string& image_
         meta_out << "COVERARTMIME=" << mime << "\n";
         meta_out.close();
 
-        cmd = "\"" + ffmpeg + "\" -y -i \"" + audio_path + "\" -i \"" + meta_txt.string() + "\" -map 0:a -map_metadata 1 -c:a copy \"" + temp_file.string() + "\"";
+        cmd = "" + viss::quoteArg(ffmpeg) + " -y -i " + viss::quoteArg(audio_path) + " -i " + viss::quoteArg(meta_txt.string()) + " -map 0:a -map_metadata 1 -c:a copy " + viss::quoteArg(temp_file.string()) + "";
     } else if (ext == ".mp3") {
-        cmd = "\"" + ffmpeg + "\" -y -i \"" + audio_path + "\" -i \"" + image_path + "\" -map 0:a -map 1:v -c:a copy -c:v copy -id3v2_version 3 -metadata:s:v title=\"Album cover\" -metadata:s:v comment=\"Cover (front)\" -disposition:v:0 attached_pic -metadata title=\"" + cur_title + "\" -metadata artist=\"" + cur_artist + "\" ";
+        cmd = "" + viss::quoteArg(ffmpeg) + " -y -i " + viss::quoteArg(audio_path) + " -i " + viss::quoteArg(image_path) + " -map 0:a -map 1:v -c:a copy -c:v copy -id3v2_version 3 -metadata:s:v title=\"Album cover\" -metadata:s:v comment=\"Cover (front)\" -disposition:v:0 attached_pic -metadata title=" + viss::quoteArg(cur_title) + " -metadata artist=" + viss::quoteArg(cur_artist) + " ";
         for (const auto& kv : tags) {
-            cmd += "-metadata " + kv.first + "=\"" + kv.second + "\" ";
+            cmd += "-metadata " + viss::quoteArg(kv.first + "=" + kv.second) + " ";
         }
-        cmd += "\"" + temp_file.string() + "\"";
+        cmd += "" + viss::quoteArg(temp_file.string()) + "";
     } else {
-        cmd = "\"" + ffmpeg + "\" -y -i \"" + audio_path + "\" -i \"" + image_path + "\" -map 0:a -map 1:v -c copy -disposition:v:0 attached_pic -metadata title=\"" + cur_title + "\" -metadata artist=\"" + cur_artist + "\" ";
+        cmd = "" + viss::quoteArg(ffmpeg) + " -y -i " + viss::quoteArg(audio_path) + " -i " + viss::quoteArg(image_path) + " -map 0:a -map 1:v -c copy -disposition:v:0 attached_pic -metadata title=" + viss::quoteArg(cur_title) + " -metadata artist=" + viss::quoteArg(cur_artist) + " ";
         for (const auto& kv : tags) {
-            cmd += "-metadata " + kv.first + "=\"" + kv.second + "\" ";
+            cmd += "-metadata " + viss::quoteArg(kv.first + "=" + kv.second) + " ";
         }
-        cmd += "\"" + temp_file.string() + "\"";
+        cmd += "" + viss::quoteArg(temp_file.string()) + "";
     }
 
     int ret = run_process_silent(cmd);
@@ -867,7 +863,7 @@ inline bool write_tags(const std::string& audio_path, const std::map<std::string
         meta_out << "COVERARTMIME=" << mime << "\n";
         meta_out.close();
 
-        std::string cmd = "\"" + ffmpeg + "\" -y -i \"" + audio_path + "\" -i \"" + meta_txt.string() + "\" -map 0:a -map_metadata 1 -c:a copy \"" + temp_file.string() + "\"";
+        std::string cmd = "" + viss::quoteArg(ffmpeg) + " -y -i " + viss::quoteArg(audio_path) + " -i " + viss::quoteArg(meta_txt.string()) + " -map 0:a -map_metadata 1 -c:a copy " + viss::quoteArg(temp_file.string()) + "";
         int ret = run_process_silent(cmd);
         if (fs::exists(meta_txt)) {
             std::error_code ec;
@@ -884,11 +880,11 @@ inline bool write_tags(const std::string& audio_path, const std::map<std::string
     }
 
     std::string map_arg = (ext_lower == ".ogg" || ext_lower == ".opus") ? "-map 0:a -c:a copy " : "-c copy ";
-    std::string cmd = "\"" + ffmpeg + "\" -y -i \"" + audio_path + "\" " + map_arg;
+    std::string cmd = "" + viss::quoteArg(ffmpeg) + " -y -i " + viss::quoteArg(audio_path) + " " + map_arg;
     for (const auto& kv : tags) {
-        cmd += "-metadata " + kv.first + "=\"" + kv.second + "\" ";
+        cmd += "-metadata " + viss::quoteArg(kv.first + "=" + kv.second) + " ";
     }
-    cmd += "\"" + temp_file.string() + "\"";
+    cmd += "" + viss::quoteArg(temp_file.string()) + "";
 
     int ret = run_process_silent(cmd);
     if (ret == 0 && fs::exists(temp_file)) {
@@ -970,7 +966,7 @@ inline bool convert_audio(const std::string& in_path, const std::string& out_pat
     else if (ext == ".wav") codec_args = "-c:a pcm_s16le";
     else codec_args = "-c:a copy";
 
-    std::string cmd = "\"" + ffmpeg + "\" -y -i \"" + in_path + "\" " + codec_args + " \"" + out_path + "\"";
+    std::string cmd = "" + viss::quoteArg(ffmpeg) + " -y -i " + viss::quoteArg(in_path) + " " + codec_args + " " + viss::quoteArg(out_path) + "";
     return run_process_silent(cmd) == 0 && fs::exists(out_path);
 }
 
@@ -1013,7 +1009,7 @@ inline bool render_video(const std::string& audio_path, const std::string& cover
 
     if (use_blur_bg && fs::exists(actual_cover)) {
         temp_blur_bg = fs::temp_directory_path() / ("viss_bg_blur_" + std::to_string(get_current_pid()) + "_" + std::to_string(rand()) + ".jpg");
-        std::string pre_blur_cmd = "\"" + ffmpeg + "\" -y -i \"" + actual_cover + "\" -vf \"scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=25:20\" -frames:v 1 \"" + temp_blur_bg.string() + "\"";
+        std::string pre_blur_cmd = "" + viss::quoteArg(ffmpeg) + " -y -i " + viss::quoteArg(actual_cover) + " -vf \"scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=25:20\" -frames:v 1 " + viss::quoteArg(temp_blur_bg.string()) + "";
         run_process_silent(pre_blur_cmd);
     }
 
@@ -1023,23 +1019,23 @@ inline bool render_video(const std::string& audio_path, const std::string& cover
         } else {
             filter_str = "-filter_complex \"color=c=0x0b1120:s=1920x1080:r=2[v]\" -map \"[v]\" -map 0:a";
         }
-        cmd = "\"" + ffmpeg + "\" -y -i \"" + audio_path + "\" " + filter_str + " -c:v libx264 -preset veryfast -threads 0 -c:a aac -b:a 320k -pix_fmt yuv420p -shortest \"" + out_mp4_path + "\"";
+        cmd = "" + viss::quoteArg(ffmpeg) + " -y -i " + viss::quoteArg(audio_path) + " " + filter_str + " -c:v libx264 -preset veryfast -threads 0 -c:a aac -b:a 320k -pix_fmt yuv420p -shortest " + viss::quoteArg(out_mp4_path) + "";
     } else if (!temp_blur_bg.empty() && fs::exists(temp_blur_bg)) {
         if (use_waveform) {
             filter_str = "-filter_complex \"[1:v]scale=920:920:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];[0:v][fg]overlay=(W-w)/2:(H-h)/2[v0];[2:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.85:rate=60[wave];[v0][wave]overlay=0:H-h-20[v]\" -map \"[v]\" -map 2:a";
         } else {
             filter_str = "-filter_complex \"[1:v]scale=920:920:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];[0:v][fg]overlay=(W-w)/2:(H-h)/2[v]\" -map \"[v]\" -map 2:a";
         }
-        cmd = "\"" + ffmpeg + "\" -y -loop 1 -framerate " + fps_str + " -i \"" + temp_blur_bg.string() + "\" -loop 1 -framerate " + fps_str + " -i \"" + actual_cover + "\" -i \"" + audio_path + "\" " +
-              filter_str + " -c:v libx264 -preset veryfast -threads 0 -c:a aac -b:a 320k -pix_fmt yuv420p -shortest \"" + out_mp4_path + "\"";
+        cmd = "" + viss::quoteArg(ffmpeg) + " -y -loop 1 -framerate " + fps_str + " -i " + viss::quoteArg(temp_blur_bg.string()) + " -loop 1 -framerate " + fps_str + " -i " + viss::quoteArg(actual_cover) + " -i " + viss::quoteArg(audio_path) + " " +
+              filter_str + " -c:v libx264 -preset veryfast -threads 0 -c:a aac -b:a 320k -pix_fmt yuv420p -shortest " + viss::quoteArg(out_mp4_path) + "";
     } else {
         if (use_waveform) {
             filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x050508[v0];[1:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.85:rate=60[wave];[v0][wave]overlay=0:H-h-20[v]\" -map \"[v]\" -map 1:a";
         } else {
             filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x050508[v]\" -map \"[v]\" -map 1:a";
         }
-        cmd = "\"" + ffmpeg + "\" -y -loop 1 -framerate " + fps_str + " -i \"" + actual_cover + "\" -i \"" + audio_path + "\" " +
-              filter_str + " -c:v libx264 -preset veryfast -threads 0 -c:a aac -b:a 320k -pix_fmt yuv420p -shortest \"" + out_mp4_path + "\"";
+        cmd = "" + viss::quoteArg(ffmpeg) + " -y -loop 1 -framerate " + fps_str + " -i " + viss::quoteArg(actual_cover) + " -i " + viss::quoteArg(audio_path) + " " +
+              filter_str + " -c:v libx264 -preset veryfast -threads 0 -c:a aac -b:a 320k -pix_fmt yuv420p -shortest " + viss::quoteArg(out_mp4_path) + "";
     }
 
     int res = run_process_silent(cmd);
@@ -1226,11 +1222,11 @@ inline bool start_render_video(const std::string& audio_path, const std::string&
 
         if (use_blur_bg && fs::exists(actual_cover)) {
             temp_blur_bg = fs::temp_directory_path() / ("viss_bg_blur_" + std::to_string(get_current_pid()) + "_" + std::to_string(rand()) + ".jpg");
-            std::string pre_blur_cmd = "\"" + ffmpeg + "\" -y -i \"" + actual_cover + "\" -vf \"scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=25:20\" -frames:v 1 \"" + temp_blur_bg.string() + "\"";
+            std::string pre_blur_cmd = "" + viss::quoteArg(ffmpeg) + " -y -i " + viss::quoteArg(actual_cover) + " -vf \"scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=25:20\" -frames:v 1 " + viss::quoteArg(temp_blur_bg.string()) + "";
             run_process_silent(pre_blur_cmd);
         }
 
-        std::string prog_arg = st.progress_file.empty() ? "" : (" -progress \"" + st.progress_file + "\"");
+        std::string prog_arg = st.progress_file.empty() ? "" : (" -progress " + viss::quoteArg(st.progress_file) + "");
 
         if (!fs::exists(actual_cover)) {
             if (use_waveform) {
@@ -1238,23 +1234,23 @@ inline bool start_render_video(const std::string& audio_path, const std::string&
             } else {
                 filter_str = "-filter_complex \"color=c=0x0b1120:s=1920x1080:r=2[v]\" -map \"[v]\" -map 0:a";
             }
-            cmd = "\"" + ffmpeg + "\" -y -i \"" + audio_path + "\" " + filter_str + prog_arg + " -c:v libx264 -preset veryfast -threads 0 -c:a aac -b:a 320k -pix_fmt yuv420p -shortest \"" + out_mp4_path + "\"";
+            cmd = "" + viss::quoteArg(ffmpeg) + " -y -i " + viss::quoteArg(audio_path) + " " + filter_str + prog_arg + " -c:v libx264 -preset veryfast -threads 0 -c:a aac -b:a 320k -pix_fmt yuv420p -shortest " + viss::quoteArg(out_mp4_path) + "";
         } else if (!temp_blur_bg.empty() && fs::exists(temp_blur_bg)) {
             if (use_waveform) {
                 filter_str = "-filter_complex \"[1:v]scale=920:920:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];[0:v][fg]overlay=(W-w)/2:(H-h)/2[v0];[2:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.85:rate=60[wave];[v0][wave]overlay=0:H-h-20[v]\" -map \"[v]\" -map 2:a";
             } else {
                 filter_str = "-filter_complex \"[1:v]scale=920:920:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];[0:v][fg]overlay=(W-w)/2:(H-h)/2[v]\" -map \"[v]\" -map 2:a";
             }
-            cmd = "\"" + ffmpeg + "\" -y -loop 1 -framerate " + fps_str + " -i \"" + temp_blur_bg.string() + "\" -loop 1 -framerate " + fps_str + " -i \"" + actual_cover + "\" -i \"" + audio_path + "\" " +
-                  filter_str + prog_arg + " -c:v libx264 -preset veryfast -threads 0 -c:a aac -b:a 320k -pix_fmt yuv420p -shortest \"" + out_mp4_path + "\"";
+            cmd = "" + viss::quoteArg(ffmpeg) + " -y -loop 1 -framerate " + fps_str + " -i " + viss::quoteArg(temp_blur_bg.string()) + " -loop 1 -framerate " + fps_str + " -i " + viss::quoteArg(actual_cover) + " -i " + viss::quoteArg(audio_path) + " " +
+                  filter_str + prog_arg + " -c:v libx264 -preset veryfast -threads 0 -c:a aac -b:a 320k -pix_fmt yuv420p -shortest " + viss::quoteArg(out_mp4_path) + "";
         } else {
             if (use_waveform) {
                 filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x050508[v0];[1:a]showwaves=s=1920x160:mode=line:colors=0x38bdf8@0.85:rate=60[wave];[v0][wave]overlay=0:H-h-20[v]\" -map \"[v]\" -map 1:a";
             } else {
                 filter_str = "-filter_complex \"[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x050508[v]\" -map \"[v]\" -map 1:a";
             }
-            cmd = "\"" + ffmpeg + "\" -y -loop 1 -framerate " + fps_str + " -i \"" + actual_cover + "\" -i \"" + audio_path + "\" " +
-                  filter_str + prog_arg + " -c:v libx264 -preset veryfast -threads 0 -c:a aac -b:a 320k -pix_fmt yuv420p -shortest \"" + out_mp4_path + "\"";
+            cmd = "" + viss::quoteArg(ffmpeg) + " -y -loop 1 -framerate " + fps_str + " -i " + viss::quoteArg(actual_cover) + " -i " + viss::quoteArg(audio_path) + " " +
+                  filter_str + prog_arg + " -c:v libx264 -preset veryfast -threads 0 -c:a aac -b:a 320k -pix_fmt yuv420p -shortest " + viss::quoteArg(out_mp4_path) + "";
         }
 
         int exit_code = -1;
@@ -1271,14 +1267,8 @@ inline bool start_render_video(const std::string& audio_path, const std::string&
         PROCESS_INFORMATION pi;
     std::memset(&pi, 0, sizeof(pi));
 
+        // No cmd.exe fallback (see run_process_silent).
         BOOL ok = CreateProcessW(NULL, &wcmd[0], NULL, NULL, FALSE, 0x08000000, NULL, NULL, &si, &pi);
-        if (!ok) {
-            std::string c = "cmd.exe /c \"" + cmd + "\"";
-            int sz2 = MultiByteToWideChar(CP_UTF8, 0, c.data(), (int)c.size(), NULL, 0);
-            std::wstring wcmd2(sz2, 0);
-            MultiByteToWideChar(CP_UTF8, 0, c.data(), (int)c.size(), &wcmd2[0], sz2);
-            ok = CreateProcessW(NULL, &wcmd2[0], NULL, NULL, FALSE, 0x08000000, NULL, NULL, &si, &pi);
-        }
 
         if (ok) {
             st.hProcess = pi.hProcess;

@@ -1,0 +1,21 @@
+$import lib "io" as io
+!main {
+    @xs = [5, 6, 7];
+    @acc = 0;
+    for @i in 0..@xs.len() {
+        @acc += @xs[@i];
+    }
+    io.println(@acc);
+    @v = vec2(3.0, 4.0);
+    io.println(@v.len_sq());
+    io.println(@v.len());
+    io.println(0xFF);
+    io.println(2.5e2);
+    io.println(@xs.first() + @xs.last());
+}
+// EXPECT: 18
+// EXPECT: 25
+// EXPECT: 5
+// EXPECT: 255
+// EXPECT: 250
+// EXPECT: 12

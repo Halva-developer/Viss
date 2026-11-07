@@ -11,7 +11,7 @@ $import lib "sys" as sys
 !main {
     io.println("==================================================");
     io.println("  Viss Multiplatform Standalone Application");
-    io.println("  Release: v0.3.0 'Peppermint Butler'");
+    io.println("  Built with the Viss native toolchain");
     io.println("==================================================");
 
     io.println("Host Operating System: ", sys.os());

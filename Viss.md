@@ -312,7 +312,7 @@ enum GameState {
 ### `time`  -  High-Resolution Clock & Timers
 - `time.now_ms()`  -  Current timestamp in milliseconds (`int64_t`).
 - `time.sleep_ms(ms)`  -  Suspends execution for the specified milliseconds.
-- `time.sleep(sec)`  -  Suspends execution for the specified seconds.
+- `time.sleep(ms)`  -  Suspends execution for the specified milliseconds (same as `time.sleep_ms`). Use `time.sleep_sec(s)` for seconds.
 - `time.format("%Y-%m-%d %H:%M:%S")`  -  Formats current time using strftime patterns.
 
 ### `audio`  -  Sound Effects & Music Player

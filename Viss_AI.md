@@ -3,7 +3,7 @@
 > **Document Purpose:** Definitive, formal, zero-hallucination specification of the Viss programming language for AI Models, Coding Agents, LLMs, and Compiler Engineers.  
 > **Compiler Target:** Native C++20 via `src/vissc.cpp` -> MinGW GCC / Clang standalone binary.  
 > **Transpilation Mode:** Single-pass AST-free deterministic transpiler with regex pattern matching and scope-tracking code emission.  
-> **Current Release:** Viss v0.3.0 "Peppermint Butler" (Native)  
+> **Current Release:** Viss v0.4.2 "Flame Princess" (Native)  
 > **Creator & Author:** Halva (Halva-developer)
 
 ---
@@ -37,7 +37,8 @@ When writing code in Viss, the AI model MUST strictly adhere to the following in
      @bullets.retain(|b| b.active && b.life > 0.0)
      ```
 5. **String Interpolation Invariant:**
-   - String interpolation uses `i"..."` with `{expression}` inside.
+   - String interpolation uses `i"..."` with `{expression}` inside, or a bare variable/field: `i"Hi @name, hp @player.hp"`.
+   - Literal `@` is written `\@`; literal braces are written `{{` and `}}`.
    - NEVER emit Python's `f"..."`, C#'s `$"..."`, or JS's `` `...` ``.
 
 ---
@@ -253,7 +254,8 @@ Bool create_dir(const Str& path);
 Int now_ms();               // Current Unix timestamp in ms
 Int now();                  // Current Unix timestamp in seconds
 void sleep_ms(Int ms);      // Sleep current thread for ms
-void sleep(Dec sec);        // Sleep current thread for seconds
+void sleep(Int ms);         // Same as sleep_ms (milliseconds, NOT seconds)
+void sleep_sec(Dec sec);    // Sleep current thread for seconds
 Str format(const Str& fmt); // Strftime formatted date
 ```
 

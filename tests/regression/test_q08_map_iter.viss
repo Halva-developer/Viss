@@ -1,0 +1,13 @@
+$import lib "io" as io
+!main {
+    @m = {"x": 1, "y": 2};
+    @m["z"] = 3;
+    io.println(@m.len());
+    @tot = 0;
+    for @k in @m.keys() {
+        @tot += @m[@k];
+    }
+    io.println(@tot);
+}
+// EXPECT: 3
+// EXPECT: 6

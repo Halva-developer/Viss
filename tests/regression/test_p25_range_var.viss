@@ -1,0 +1,10 @@
+$import lib "io" as io
+!main {
+    @n = 4;
+    @acc = "";
+    for @i in 0..@n {
+        @acc = @acc + str(@i);
+    }
+    io.println(@acc);
+}
+// EXPECT: 0123

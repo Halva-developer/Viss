@@ -211,7 +211,7 @@ namespace lsp {
                                 "\"definitionProvider\":true,"
                                 "\"documentSymbolProvider\":true"
                             "},"
-                            "\"serverInfo\":{\"name\":\"viss-lsp\",\"version\":\"0.3.0\"}"
+                            "\"serverInfo\":{\"name\":\"viss-lsp\",\"version\":\"" VISS_VERSION_STRING "\"}"
                         "}"
                     "}";
                     sendRpcResponse(res);

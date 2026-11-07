@@ -1,33 +1,44 @@
 // =============================================================================
-// Viss Example 04: Embedded SQLite Database Engine
+// Viss Example 04: Embedded Database (db module)
 // Run with: viss run examples/04_sqlite_database.viss
+//
+// The db module is a small embedded document store saved as a JSON file.
+// It understands a SQL subset (CREATE TABLE, INSERT, SELECT ... WHERE, UPDATE,
+// DELETE, LIKE) - it is not SQLite. Use exec_params/query_params for user input.
 // =============================================================================
 
 $import lib "io" as io
 $import lib "db" as db
+$import lib "fs" as fs
 
 !main {
-    io.println("=== Initializing Embedded SQLite Database ===");
+    io.println("=== Opening embedded database ===");
+    @path = "app_data.json";
+    ?if (fs.exists(@path)) { fs.remove(@path); }
+    @database = db.open(@path);
 
-    // Open or create SQLite database file
-    @database = db.open("app_data.db");
+    db.exec(@database, "CREATE TABLE tasks (title STR, status STR)");
 
-    // Execute schema migrations
-    @database.exec("CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, status TEXT);");
+    // Parameters are never spliced into the SQL text, so quotes in values are safe.
+    db.exec_params(@database, "INSERT INTO tasks VALUES (?, ?)", ["Implement Viss", "Completed"]);
+    db.exec_params(@database, "INSERT INTO tasks VALUES (?, ?)", ["Build cross-platform binary", "Completed"]);
+    db.exec_params(@database, "INSERT INTO tasks VALUES (?, ?)", ["Write the 'next' release", "Planned"]);
 
-    // Insert records
-    @database.exec("INSERT INTO tasks (title, status) VALUES ('Implement Viss v0.3.0', 'Completed');");
-    @database.exec("INSERT INTO tasks (title, status) VALUES ('Build Cross-Platform Binary', 'Completed');");
+    io.println(i"Total task records: {db.count(@database, \"tasks\")}");
 
-    // Count rows
-    @total = @database.count("tasks");
-    io.println(i"Total task records: {@total}");
+    @done = db.query_params(@database, "SELECT * FROM tasks WHERE status = ?", ["Completed"]);
+    io.println(i"Completed tasks: {@done.len()}");
 
-    // Query rows directly to JSON format
-    @rows_json = @database.query_json("SELECT id, title, status FROM tasks;");
-    io.println(i"Query results (JSON):\n{@rows_json}");
+    io.println("Rows as JSON:");
+    io.println(db.query_json(@database, "SELECT * FROM tasks"));
 
-    // Clean close
-    @database.close();
-    io.println("Database closed successfully.");
+    // Transactions: nothing reaches the file until commit; rollback discards it.
+    db.begin(@database);
+    db.exec(@database, "DELETE FROM tasks");
+    db.rollback(@database);
+    io.println(i"After rollback: {db.count(@database, \"tasks\")} rows");
+
+    db.close(@database);
+    fs.remove(@path);
+    io.println("Database closed and removed.");
 }

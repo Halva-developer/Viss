@@ -2135,11 +2135,12 @@ public:
                     }
                 }
                 if (!res.empty()) return VMVal(res);
+                if (!viss::shellArgSafe(p)) return VMVal(res);
                 #ifdef _WIN32
-                std::string cmd = "tar.exe -tf \"" + p + "\"";
+                std::string cmd = viss::systemTar() + " -tf " + viss::shellArg(p) + "";
                 FILE* pipe = _popen(cmd.c_str(), "r");
                 #else
-                std::string cmd = "tar -tf \"" + p + "\" 2>/dev/null || unzip -l \"" + p + "\"";
+                std::string cmd = "tar -tf " + viss::shellArg(p) + " 2>/dev/null || unzip -l " + viss::shellArg(p) + "";
                 FILE* pipe = popen(cmd.c_str(), "r");
                 #endif
                 if (pipe) {
@@ -2161,11 +2162,13 @@ public:
                 std::string zp = args[0].to_string();
                 std::string fz = args[1].to_string();
                 std::string result;
+                // Entry names come from the archive itself: untrusted input.
+                if (!viss::shellArgSafe(zp) || !viss::shellArgSafe(fz)) return VMVal(result);
                 #ifdef _WIN32
-                std::string cmd = "tar.exe -xOf \"" + zp + "\" \"" + fz + "\"";
+                std::string cmd = viss::systemTar() + " -xOf " + viss::shellArg(zp) + " " + viss::shellArg(fz) + "";
                 FILE* pipe = _popen(cmd.c_str(), "rb");
                 #else
-                std::string cmd = "tar -xOf \"" + zp + "\" \"" + fz + "\" 2>/dev/null || unzip -p \"" + zp + "\" \"" + fz + "\" 2>/dev/null";
+                std::string cmd = "tar -xOf " + viss::shellArg(zp) + " " + viss::shellArg(fz) + " 2>/dev/null || unzip -p " + viss::shellArg(zp) + " " + viss::shellArg(fz) + " 2>/dev/null";
                 FILE* pipe = popen(cmd.c_str(), "r");
                 #endif
                 if (pipe) {
@@ -2185,12 +2188,13 @@ public:
             if (fname == "extract" && args.size() >= 2) {
                 std::string zp = args[0].to_string();
                 std::string dp = args[1].to_string();
+                if (!viss::shellArgSafe(zp) || !viss::shellArgSafe(dp)) return VMVal(false);
                 std::filesystem::create_directories(dp);
                 #ifdef _WIN32
-                std::string cmd = "tar.exe -xf \"" + zp + "\" -C \"" + dp + "\"";
+                std::string cmd = viss::systemTar() + " -xf " + viss::shellArg(zp) + " -C " + viss::shellArg(dp) + "";
                 int ret = std::system(cmd.c_str());
                 #else
-                std::string cmd = "tar -xf \"" + zp + "\" -C \"" + dp + "\" 2>/dev/null || unzip -q -o \"" + zp + "\" -d \"" + dp + "\"";
+                std::string cmd = "tar -xf " + viss::shellArg(zp) + " -C " + viss::shellArg(dp) + " 2>/dev/null || unzip -q -o " + viss::shellArg(zp) + " -d " + viss::shellArg(dp) + "";
                 int ret = std::system(cmd.c_str());
                 #endif
                 return VMVal(ret == 0);
@@ -3363,13 +3367,17 @@ private:
                     bool in_q = false;
                     char qc = 0;
                     size_t pipe_pos = std::string::npos;
+                    int pdepth = 0;
                     for (size_t pi = 0; pi < expr.size(); ++pi) {
                         char c = expr[pi];
                         if (in_q) {
                             if (c == qc && (pi == 0 || expr[pi - 1] != '\\')) in_q = false;
                         } else {
                             if (c == '"' || c == '\'') { in_q = true; qc = c; }
-                            else if (c == '|') {
+                            else if (c == '(' || c == '[' || c == '{') pdepth++;
+                            else if (c == ')' || c == ']' || c == '}') pdepth--;
+                            // Only a top-level '|' can be a type cast; '|x|' inside map(|x| ...) is a lambda.
+                            else if (c == '|' && pdepth == 0) {
                                 if ((pi + 1 < expr.size() && (expr[pi + 1] == '|' || expr[pi + 1] == '>')) ||
                                     (pi > 0 && expr[pi - 1] == '|')) {
                                     // || or |>
@@ -3381,8 +3389,19 @@ private:
                     }
                     std::string cast_type = "";
                     if (pipe_pos != std::string::npos) {
-                        cast_type = trim(expr.substr(pipe_pos + 1));
-                        expr = trim(expr.substr(0, pipe_pos));
+                        std::string cand = trim(expr.substr(pipe_pos + 1));
+                        // A cast target looks like a type name: int, str, list<int>, "int, const"
+                        bool looks_like_type = !cand.empty() && (std::isalpha((unsigned char)cand[0]) || cand[0] == '_');
+                        for (char tc : cand) {
+                            if (!(std::isalnum((unsigned char)tc) || tc == '_' || tc == '<' || tc == '>' || tc == ',' || tc == ' ')) {
+                                looks_like_type = false;
+                                break;
+                            }
+                        }
+                        if (looks_like_type) {
+                            cast_type = cand;
+                            expr = trim(expr.substr(0, pipe_pos));
+                        }
                     }
                     out_nodes.push_back(std::make_shared<StmtAssign>(vname, "=", expr, cast_type));
                     continue;

@@ -1,0 +1,18 @@
+$import lib "io" as io
+!main {
+    @m = {"a": 2, "b": 3};
+    @x = 10;
+    @x += @m["a"];
+    io.println(@x);
+    @y = @m["b"] * 2;
+    io.println(@y);
+    ?if (@m["a"] < 5) {
+        io.println("small");
+    }
+    @z = 1 + @m["b"];
+    io.println(@z);
+}
+// EXPECT: 12
+// EXPECT: 6
+// EXPECT: small
+// EXPECT: 4

@@ -581,6 +581,10 @@ namespace audio {
         mciSendStringA("close viss_bgm", NULL, 0, NULL);
     }
 
+    // Documented in the stdlib reference but previously missing.
+    inline void pause_bgm() { mciSendStringA("pause viss_bgm", NULL, 0, NULL); }
+    inline void resume_bgm() { mciSendStringA("resume viss_bgm", NULL, 0, NULL); }
+
     inline void set_bgm_volume(double volume) {
         int vol = (int)(volume * 1000.0);
         if (vol < 0) vol = 0;
@@ -594,6 +598,8 @@ namespace audio {
     inline bool is_file_playing() { return false; }
     inline bool play_bgm(const std::string& path, double volume = 0.25) { return false; }
     inline void stop_bgm() {}
+    inline void pause_bgm() {}
+    inline void resume_bgm() {}
     inline void set_bgm_volume(double volume) {}
 #endif
 

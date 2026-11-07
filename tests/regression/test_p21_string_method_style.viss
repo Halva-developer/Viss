@@ -1,0 +1,10 @@
+$import lib "io" as io
+!main {
+    @s = "Hello Viss";
+    ?if (@s.contains("Viss")) {
+        io.println("yes");
+    }
+    io.println(@s.len());
+}
+// EXPECT: yes
+// EXPECT: 10

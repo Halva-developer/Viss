@@ -1,0 +1,10 @@
+$import lib "io" as io
+!main {
+    /* @x = 99; io.println("hidden");
+       ?if { */
+    @x = 1;
+    io.println(@x); // trailing "quote' comment
+    io.println("end");
+}
+// EXPECT: 1
+// EXPECT: end

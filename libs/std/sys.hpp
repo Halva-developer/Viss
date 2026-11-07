@@ -8,6 +8,14 @@
 #include <array>
 #include <memory>
 #include <filesystem>
+#include <csignal>
+#include <cstring>
+#include <exception>
+#include <random>
+
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -23,9 +31,13 @@ namespace viss {
         inline void seed() {
             srand((unsigned int)std::chrono::system_clock::now().time_since_epoch().count());
         }
+        // Uniform integer in [min_v, max_v). rand() was used before, and RAND_MAX is only
+        // 32767 on Windows, so sys.random(0, 100000) never returned values above 32767.
         inline Int random(Int min_v, Int max_v) {
             if (max_v <= min_v) return min_v;
-            return min_v + (rand() % (max_v - min_v));
+            static std::mt19937_64 gen{std::random_device{}()};
+            std::uniform_int_distribution<long long> dis(min_v, max_v - 1);
+            return dis(gen);
         }
 
         template<typename T>
@@ -58,7 +70,79 @@ namespace viss {
             return s_args;
         }
 
+        // Readable runtime crash reports instead of a silent exit code (e.g. 0xC0000094).
+        // Only async-signal-safe calls are used inside the low-level handlers.
+        inline void crash_write(const char* msg) {
+#ifdef _WIN32
+            DWORD written = 0;
+            HANDLE h = GetStdHandle(STD_ERROR_HANDLE);
+            if (h && h != INVALID_HANDLE_VALUE) WriteFile(h, msg, (DWORD)std::strlen(msg), &written, nullptr);
+#else
+            ssize_t r = ::write(2, msg, std::strlen(msg));
+            (void)r;
+#endif
+        }
+
+#ifdef _WIN32
+        inline LONG WINAPI crash_filter(EXCEPTION_POINTERS* info) {
+            std::cout.flush();
+            std::fflush(stdout);
+            DWORD code = info && info->ExceptionRecord ? info->ExceptionRecord->ExceptionCode : 0;
+            switch (code) {
+                case EXCEPTION_INT_DIVIDE_BY_ZERO: crash_write("\n[Viss RuntimeError] Integer division by zero.\n"); break;
+                case EXCEPTION_INT_OVERFLOW: crash_write("\n[Viss RuntimeError] Integer overflow.\n"); break;
+                case EXCEPTION_ACCESS_VIOLATION: crash_write("\n[Viss RuntimeError] Memory access violation (invalid or null reference).\n"); break;
+                case EXCEPTION_STACK_OVERFLOW: crash_write("\n[Viss RuntimeError] Stack overflow (runaway recursion?).\n"); break;
+                case EXCEPTION_ARRAY_BOUNDS_EXCEEDED: crash_write("\n[Viss RuntimeError] Index out of bounds.\n"); break;
+                default: crash_write("\n[Viss RuntimeError] The program crashed (native exception).\n"); break;
+            }
+            ExitProcess(1);
+            return EXCEPTION_EXECUTE_HANDLER;
+        }
+#else
+        inline void crash_signal(int sig) {
+            std::fflush(stdout);
+            switch (sig) {
+                case SIGFPE: crash_write("\n[Viss RuntimeError] Arithmetic error (integer division by zero?).\n"); break;
+                case SIGSEGV: crash_write("\n[Viss RuntimeError] Memory access violation (invalid or null reference, or stack overflow).\n"); break;
+                case SIGBUS: crash_write("\n[Viss RuntimeError] Bus error (misaligned or invalid memory access).\n"); break;
+                default: crash_write("\n[Viss RuntimeError] The program crashed.\n"); break;
+            }
+            _exit(1);
+        }
+#endif
+
+        inline void install_crash_handlers() {
+            // Uncaught Viss errors (?error "...") and C++ exceptions: print the message, exit 1.
+            std::set_terminate([]() {
+                std::cout.flush();
+                std::fflush(stdout);
+                try {
+                    auto e = std::current_exception();
+                    if (e) std::rethrow_exception(e);
+                    crash_write("\n[Viss RuntimeError] Program terminated.\n");
+                } catch (const std::exception& ex) {
+                    std::string msg = "\n[Viss RuntimeError] Uncaught error: " + std::string(ex.what()) + "\n";
+                    crash_write(msg.c_str());
+                } catch (...) {
+                    crash_write("\n[Viss RuntimeError] Uncaught error of unknown type.\n");
+                }
+                std::_Exit(1);
+            });
+#ifdef _WIN32
+            SetUnhandledExceptionFilter(crash_filter);
+            // Reserve stack so the filter can still run after a stack overflow.
+            ULONG guarantee = 32 * 1024;
+            SetThreadStackGuarantee(&guarantee);
+#else
+            std::signal(SIGFPE, crash_signal);
+            std::signal(SIGSEGV, crash_signal);
+            std::signal(SIGBUS, crash_signal);
+#endif
+        }
+
         inline void init_args(int argc, char* argv[]) {
+            install_crash_handlers();
             auto& a = get_cli_args();
             a.clear();
             for (int i = 0; i < argc; ++i) {
@@ -98,10 +182,10 @@ namespace viss {
             std::wstring wcmd(size_needed, 0);
             MultiByteToWideChar(CP_UTF8, 0, c.data(), (int)c.size(), &wcmd[0], size_needed);
 
-            STARTUPINFOW si = { sizeof(si) };
+            STARTUPINFOW si{}; si.cb = sizeof(si);
             si.dwFlags = STARTF_USESHOWWINDOW;
             si.wShowWindow = SW_HIDE;
-            PROCESS_INFORMATION pi = { 0 };
+            PROCESS_INFORMATION pi{};
 
             // CREATE_NO_WINDOW = 0x08000000
             BOOL ok = CreateProcessW(NULL, &wcmd[0], NULL, NULL, FALSE, 0x08000000, NULL, NULL, &si, &pi);
@@ -149,12 +233,12 @@ namespace viss {
             std::wstring wcmd(size_needed, 0);
             MultiByteToWideChar(CP_UTF8, 0, c.data(), (int)c.size(), &wcmd[0], size_needed);
 
-            STARTUPINFOW si = { sizeof(si) };
+            STARTUPINFOW si{}; si.cb = sizeof(si);
             si.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
             si.wShowWindow = SW_HIDE;
             si.hStdOutput = hWrite;
             si.hStdError = hWrite;
-            PROCESS_INFORMATION pi = { 0 };
+            PROCESS_INFORMATION pi{};
 
             BOOL ok = CreateProcessW(NULL, &wcmd[0], NULL, NULL, TRUE, 0x08000000, NULL, NULL, &si, &pi);
             CloseHandle(hWrite);
@@ -201,10 +285,10 @@ namespace viss {
             std::wstring wcmd(size_needed, 0);
             MultiByteToWideChar(CP_UTF8, 0, c.data(), (int)c.size(), &wcmd[0], size_needed);
 
-            STARTUPINFOW si = { sizeof(si) };
+            STARTUPINFOW si{}; si.cb = sizeof(si);
             si.dwFlags = STARTF_USESHOWWINDOW;
             si.wShowWindow = SW_HIDE;
-            PROCESS_INFORMATION pi = { 0 };
+            PROCESS_INFORMATION pi{};
 
             // CREATE_NO_WINDOW = 0x08000000
             if (CreateProcessW(NULL, &wcmd[0], NULL, NULL, FALSE, 0x08000000, NULL, NULL, &si, &pi)) {
@@ -250,9 +334,9 @@ namespace viss {
         }
         inline void open_url(const Str& url) {
             #ifdef __APPLE__
-            std::string c = "open \"" + url + "\" &";
+            std::string c = "open " + viss::shellArg(url) + " &";
             #else
-            std::string c = "xdg-open \"" + url + "\" &";
+            std::string c = "xdg-open " + viss::shellArg(url) + " &";
             #endif
             std::system(c.c_str());
         }
@@ -363,10 +447,10 @@ namespace viss {
             int size_needed = MultiByteToWideChar(CP_UTF8, 0, ps.data(), (int)ps.size(), NULL, 0);
             std::wstring wcmd(size_needed, 0);
             MultiByteToWideChar(CP_UTF8, 0, ps.data(), (int)ps.size(), &wcmd[0], size_needed);
-            STARTUPINFOW si = { sizeof(si) };
+            STARTUPINFOW si{}; si.cb = sizeof(si);
             si.dwFlags = STARTF_USESHOWWINDOW;
             si.wShowWindow = SW_HIDE;
-            PROCESS_INFORMATION pi = { 0 };
+            PROCESS_INFORMATION pi{};
             if (CreateProcessW(NULL, &wcmd[0], NULL, NULL, FALSE, 0x08000000, NULL, NULL, &si, &pi)) {
                 CloseHandle(pi.hProcess);
                 CloseHandle(pi.hThread);

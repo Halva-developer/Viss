@@ -1,0 +1,9 @@
+$import lib "io" as io
+!main {
+    @grid = [[1, 2], [3, 4]];
+    io.println(@grid[1][0]);
+    @names = ["a", "b"];
+    io.println(@names[1]);
+}
+// EXPECT: 3
+// EXPECT: b

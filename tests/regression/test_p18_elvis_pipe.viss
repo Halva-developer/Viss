@@ -1,0 +1,16 @@
+$import lib "io" as io
+$import lib "str" as str
+$import lib "math" as math
+!main {
+    @a = "" ?: "" ?: "c";
+    io.println(@a);
+    @r = "  hi  " |> str.trim |> str.upper;
+    io.println(@r);
+    io.println(150.0 |> math.clamp(0.0, 100.0));
+    @z = 0 ?: 5;
+    io.println(@z);
+}
+// EXPECT: c
+// EXPECT: HI
+// EXPECT: 100
+// EXPECT: 5

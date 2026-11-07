@@ -1,0 +1,19 @@
+$import lib "io" as io
+!class Hero {
+    !func main(name as str) {
+        @me.name = name | str;
+        @me.hp = 10 | int;
+    }
+    !func show() {
+        io.println(i"Hero @me.name has @me.hp hp");
+    }
+}
+!main {
+    @h = Hero("Finn") | class;
+    @h.show();
+    io.println(i"mail: halva\@example.com, {{literal}}");
+    io.println(i"name: @h.name.");
+}
+// EXPECT: Hero Finn has 10 hp
+// EXPECT: mail: halva@example.com, {literal}
+// EXPECT: name: Finn.

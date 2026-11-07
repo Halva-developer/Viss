@@ -1,0 +1,20 @@
+$import lib "io" as io
+!main {
+    io.println(7 / 2);
+    io.println(7 % 3);
+    io.println(-7 + 2);
+    io.println(2 + 3 * 4);
+    io.println((2 + 3) * 4);
+    @a = 10;
+    @a -= 3;
+    @a *= 2;
+    io.println(@a);
+    io.println(1.5 + 1);
+}
+// EXPECT: 3
+// EXPECT: 1
+// EXPECT: -5
+// EXPECT: 14
+// EXPECT: 20
+// EXPECT: 14
+// EXPECT: 2.5

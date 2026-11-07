@@ -26,10 +26,12 @@
 typedef unsigned long PROPID;
 #endif
 #include <gdiplus.h>
+#ifdef _MSC_VER
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "comdlg32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "ole32.lib")
+#endif
 #endif
 
 namespace viss {
@@ -354,7 +356,7 @@ public:
 
         HINSTANCE hInstance = GetModuleHandle(NULL);
         std::wstring w_title = utf8_to_wstring(title);
-        WNDCLASSEXW wc = {0};
+        WNDCLASSEXW wc{};
         wc.cbSize = sizeof(WNDCLASSEXW);
         wc.style = CS_HREDRAW | CS_VREDRAW;
         wc.lpfnWndProc = WndProc;
@@ -690,7 +692,7 @@ public:
 
     std::string browse_folder(const std::string& title = "Select Folder:") {
         OleInitialize(NULL);
-        BROWSEINFOW bi = { 0 };
+        BROWSEINFOW bi{};
         bi.hwndOwner = hwnd;
         std::wstring w_title = utf8_to_wstring(title);
         bi.lpszTitle = w_title.c_str();

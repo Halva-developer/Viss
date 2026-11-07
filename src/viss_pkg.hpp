@@ -587,14 +587,14 @@ namespace pkg {
             }
 
             std::cout << "\n=================================================================\n";
-            std::cout << "  Viss Package Registry Server (Peppermint Butler v0.3.0)\n";
+            std::cout << "  Viss Package Registry Server (v" VISS_VERSION_STRING ")\n";
             std::cout << "  Listening on: http://127.0.0.1:" << port << "\n";
             std::cout << "  Press Ctrl+C to stop.\n";
             std::cout << "=================================================================\n\n";
 
             auto srv = net::create_server();
             srv.get("/", [port](const net::HttpRequest& req, net::HttpResponse& res) {
-                res.json("{\"server\":\"Viss Package Registry\",\"version\":\"0.3.0\",\"port\":" + std::to_string(port) + ",\"status\":\"healthy\"}");
+                res.json("{\"server\":\"Viss Package Registry\",\"version\":\"" VISS_VERSION_STRING "\",\"port\":" + std::to_string(port) + ",\"status\":\"healthy\"}");
             });
 
             srv.get("/api/packages", [](const net::HttpRequest& req, net::HttpResponse& res) {
@@ -636,7 +636,7 @@ namespace pkg {
 
     inline int dispatch(const std::vector<std::string>& args) {
         if (args.empty() || args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
-            std::cout << "Viss Package Manager (Peppermint Butler v0.3.0)\n\n"
+            std::cout << "Viss Package Manager (v" VISS_VERSION_STRING ")\n\n"
                       << "Usage:\n"
                       << "  viss pkg install <name|url> [-g|--global] [-v <ver>]  Install package\n"
                       << "  viss pkg purge <name> [-g|--global]                   Purge package\n"

@@ -1,6 +1,6 @@
 // =============================================================================
 // VSC - Viss Script Core (Standalone CLI Executable)
-// Version 0.4.0hl "Flame Princess (Hot Speed & Loud)"
+// Version: see viss_version.hpp
 // =============================================================================
 
 #include <iostream>

@@ -1,0 +1,11 @@
+$import lib "io" as io
+!func boom() {
+    ?error "kaboom";
+}
+!main {
+    io.println("before");
+    boom();
+    io.println("after");
+}
+// EXPECT: before
+// EXPECT_RC: 1

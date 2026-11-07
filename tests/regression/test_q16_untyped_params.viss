@@ -1,0 +1,13 @@
+$import lib "io" as io
+!func twice(x) {
+    return x * 2;
+}
+!func greet(@name) {
+    io.println("hi " + @name);
+}
+!main {
+    io.println(twice(21));
+    greet("bob");
+}
+// EXPECT: 42
+// EXPECT: hi bob

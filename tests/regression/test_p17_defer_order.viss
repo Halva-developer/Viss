@@ -1,0 +1,14 @@
+$import lib "io" as io
+!func work() {
+    defer io.println("d1");
+    defer io.println("d2");
+    io.println("body");
+}
+!main {
+    work();
+    io.println("after");
+}
+// EXPECT: body
+// EXPECT: d2
+// EXPECT: d1
+// EXPECT: after

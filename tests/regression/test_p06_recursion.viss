@@ -1,0 +1,11 @@
+$import lib "io" as io
+!func fib(n as int) -> int {
+    ?if (n < 2) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+!main {
+    io.println(fib(20));
+}
+// EXPECT: 6765

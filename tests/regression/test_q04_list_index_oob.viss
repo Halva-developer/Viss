@@ -1,0 +1,12 @@
+$import lib "io" as io
+!main {
+    @xs = [1, 2, 3];
+    ?try {
+        @v = @xs[10];
+        io.println(i"bad {@v}");
+    }
+    ?expect Exception as @e {
+        io.println("oob caught");
+    }
+}
+// EXPECT: oob caught

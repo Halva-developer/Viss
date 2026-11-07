@@ -26,6 +26,9 @@ namespace viss {
             ).count();
         }
 
+        // Documented name: time.now() -> Unix time in seconds
+        inline Int now() { return now_secs(); }
+
         inline void sleep(Int ms) {
             std::this_thread::sleep_for(std::chrono::milliseconds(ms));
         }
@@ -50,6 +53,8 @@ namespace viss {
             #endif
             return ss.str();
         }
+        // Documented name: time.format(fmt) -> current local time formatted with strftime codes
+        inline Str format(const Str& fmt = "%Y-%m-%d %H:%M:%S") { return format_now(fmt); }
 
         class Stopwatch {
         private:

@@ -1,0 +1,8 @@
+$import lib "io" as io
+!main {
+    @xs = [1, 2, 3];
+    io.println("before");
+    io.println(@xs[7]);
+}
+// EXPECT: before
+// EXPECT_RC: 1

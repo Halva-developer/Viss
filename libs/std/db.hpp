@@ -45,6 +45,7 @@ namespace db {
         bool in_transaction = false;
         std::map<Str, DbTable> tx_snapshot;
         Str last_error;
+        bool closed = false;  // after db.close() the handle never touches the file again
 
         Database(const Str& path) : filepath(path) {
             if (path.empty() || path == ":memory:") {
@@ -55,14 +56,21 @@ namespace db {
         }
 
         ~Database() {
-            if (!in_memory && !filepath.empty()) {
+            // A closed database was already saved; saving again here would resurrect
+            // a file the program deleted after db.close().
+            if (!in_memory && !filepath.empty() && !closed) {
                 save_to_disk();
             }
         }
 
         void save_to_disk() {
-            if (in_memory || filepath.empty()) return;
-            std::ofstream out(filepath, std::ios::binary);
+            // Nothing reaches the disk inside a transaction: commit() saves, rollback() just drops it.
+            if (in_memory || filepath.empty() || closed || in_transaction) return;
+            // Write to a temp file and rename over the original, so a crash mid-write
+            // can never leave a truncated database behind.
+            const Str tmp_path = filepath + ".tmp";
+            {
+            std::ofstream out(tmp_path, std::ios::binary);
             if (!out.is_open()) return;
 
             // Simple robust persistent format: JSON dump of tables & rows
@@ -93,6 +101,12 @@ namespace db {
                 out << "\n";
             }
             out << "  }\n}\n";
+            out.flush();
+            if (!out.good()) { out.close(); std::error_code rm_ec; std::filesystem::remove(tmp_path, rm_ec); return; }
+            }
+            std::error_code ec;
+            std::filesystem::rename(tmp_path, filepath, ec);
+            if (ec) { std::error_code rm_ec; std::filesystem::remove(tmp_path, rm_ec); last_error = "save failed: " + ec.message(); }
         }
 
         void load_from_disk() {
@@ -155,8 +169,9 @@ namespace db {
     }
 
     inline void close(DbHandle db) {
-        if (!db) return;
+        if (!db || db->closed) return;
         db->save_to_disk();
+        db->closed = true;
     }
 
     inline Bool begin(DbHandle db) {

@@ -10,6 +10,13 @@ namespace viss {
     namespace math {
         inline const Dec PI = 3.14159265358979323846;
         inline const Dec E  = 2.71828182845904523536;
+        inline const Dec pi = PI;  // documented lowercase spelling (math.pi)
+
+        // Documented in the stdlib reference but previously missing.
+        template<typename A, typename B>
+        inline std::common_type_t<A, B> min(A a, B b) { return (b < a) ? (std::common_type_t<A, B>)b : (std::common_type_t<A, B>)a; }
+        template<typename A, typename B>
+        inline std::common_type_t<A, B> max(A a, B b) { return (a < b) ? (std::common_type_t<A, B>)b : (std::common_type_t<A, B>)a; }
 
         inline Dec sin(Dec x) { return std::sin(x); }
         inline Dec cos(Dec x) { return std::cos(x); }

@@ -1,0 +1,13 @@
+$import lib "io" as io
+!main {
+    @x = 1;
+    ?if (@x == 1) { // check one
+        io.println("one");
+    } // end if
+    else {
+        io.println("other");
+    }
+    io.println("end"); // done
+}
+// EXPECT: one
+// EXPECT: end

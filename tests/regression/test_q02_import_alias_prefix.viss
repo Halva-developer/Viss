@@ -1,0 +1,6 @@
+$import lib "str" as strings
+$import lib "io" as io
+!main {
+    io.println(strings.upper("ok"));
+}
+// EXPECT: OK

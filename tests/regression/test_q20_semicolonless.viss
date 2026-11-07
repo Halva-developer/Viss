@@ -1,0 +1,11 @@
+$import lib "io" as io
+!main {
+    @a = 1
+    @b = 2
+    io.println(@a + @b)
+    @xs = [] | int
+    @xs.add(4)
+    io.println(@xs.len())
+}
+// EXPECT: 3
+// EXPECT: 1

@@ -1,0 +1,15 @@
+$import lib "io" as io
+!main {
+    @x = 1;
+    ?if (true) {
+        @x = 2;
+    }
+    io.println(@x);
+    @total = 0;
+    for @i in 0..3 {
+        @total = @total + @i;
+    }
+    io.println(@total);
+}
+// EXPECT: 2
+// EXPECT: 3

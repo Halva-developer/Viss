@@ -1,0 +1,18 @@
+$import lib "io" as io
+!main {
+    @i = 0;
+    !while (true) {
+        @i += 1;
+        ?if (@i == 3) {
+            continue;
+        }
+        ?if (@i > 5) {
+            break;
+        }
+        io.print(@i);
+    }
+    io.println("");
+    io.println("done");
+}
+// EXPECT: 1245
+// EXPECT: done

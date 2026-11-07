@@ -1,0 +1,19 @@
+$import lib "io" as io
+!main {
+    @d = 2.5;
+    io.println(@d);
+    io.println(i"d={@d}");
+    io.println("d=" + @d);
+    io.println(str(@d));
+    io.println(1234567.5);
+    @m = {"price": 1.5};
+    io.println(@m["price"]);
+    io.println(vec2(1.5, 2.0));
+}
+// EXPECT: 2.5
+// EXPECT: d=2.5
+// EXPECT: d=2.5
+// EXPECT: 2.5
+// EXPECT: 1234567.5
+// EXPECT: 1.5
+// EXPECT: Vec2(1.5, 2)

@@ -1,0 +1,16 @@
+$import lib "io" as io
+$import lib "str" as str
+!main {
+    @s = "Hello \"Viss\" World";
+    io.println(str.contains(@s, "\"Viss\""));
+    @parts = str.split("a,b,c", ",");
+    io.println(@parts.len());
+    io.println(str.join(@parts, "-"));
+    io.println(str.replace("aaa", "a", "bb"));
+    io.println(str.to_int("42") + 1);
+}
+// EXPECT: true
+// EXPECT: 3
+// EXPECT: a-b-c
+// EXPECT: bbbbbb
+// EXPECT: 43

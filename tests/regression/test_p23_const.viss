@@ -1,0 +1,9 @@
+$import lib "io" as io
+!main {
+    @MAX = 100 | int, const;
+    io.println(@MAX);
+    @age = "25" | int;
+    io.println(@age + 1);
+}
+// EXPECT: 100
+// EXPECT: 26

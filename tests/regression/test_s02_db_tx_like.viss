@@ -1,0 +1,25 @@
+$import lib "io" as io
+$import lib "db" as db
+$import lib "fs" as fs
+!main {
+    @f = "probe_db_tx.json";
+    ?if (fs.exists(@f)) { fs.remove(@f); }
+    @h = db.open(@f);
+    db.exec(@h, "CREATE TABLE t (name STR)");
+    db.exec(@h, "INSERT INTO t VALUES ('alpha')");
+    db.exec(@h, "INSERT INTO t VALUES ('beta')");
+    io.println(db.query(@h, "SELECT * FROM t WHERE name LIKE 'al%'").len());
+    db.begin(@h);
+    db.exec(@h, "INSERT INTO t VALUES ('ghost')");
+    @on_disk = fs.read(@f);
+    io.println(@on_disk.contains("ghost"));
+    db.rollback(@h);
+    io.println(db.count(@h, "t"));
+    db.close(@h);
+    fs.remove(@f);
+    io.println(fs.exists(@f));
+}
+// EXPECT: 1
+// EXPECT: false
+// EXPECT: 2
+// EXPECT: false

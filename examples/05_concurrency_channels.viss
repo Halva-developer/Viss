@@ -1,5 +1,5 @@
 // =============================================================================
-// Viss Example 05: Go-Style CSP Concurrency Channels
+// Viss Example 05: Go-Style Concurrency Channels
 // Run with: viss run examples/05_concurrency_channels.viss
 // =============================================================================
 
@@ -9,26 +9,26 @@ $import lib "chan" as chan
 !main {
     io.println("=== Go-Style Channels in Viss ===");
 
-    // Create buffered thread-safe string channel with capacity 5
-    @ch = chan.create_str(5);
+    // Buffered, thread-safe channel of strings with capacity 5
+    @ch = chan.create<str>(5);
 
-    // Send messages into channel
-    @ch.send("Task Alpha started");
-    @ch.send("Data processing completed");
-    @ch.send("Ready for deployment");
+    // Send messages into the channel
+    chan.send(@ch, "Task Alpha started");
+    chan.send(@ch, "Data processing completed");
+    chan.send(@ch, "Ready for deployment");
 
-    io.println(i"Channel buffered size: {@ch.size()}");
+    io.println(i"Buffered messages: {chan.len(@ch)} of {chan.cap(@ch)}");
 
     // Receive messages in FIFO order
-    @m1 = @ch.recv();
-    @m2 = @ch.recv();
-    @m3 = @ch.recv();
+    @m1 = chan.recv(@ch);
+    @m2 = chan.recv(@ch);
+    @m3 = chan.recv(@ch);
 
     io.println(i"Received 1: {@m1}");
     io.println(i"Received 2: {@m2}");
     io.println(i"Received 3: {@m3}");
 
-    // Close channel
-    @ch.close();
-    io.println(i"Channel is closed: {@ch.is_closed()}");
+    // Close the channel
+    chan.close(@ch);
+    io.println(i"Channel is closed: {chan.is_closed(@ch)}");
 }

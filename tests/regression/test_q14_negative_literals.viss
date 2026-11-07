@@ -1,0 +1,11 @@
+$import lib "io" as io
+!main {
+    @a = -5;
+    @b = @a * -2;
+    io.println(@b);
+    io.println(-@a);
+    io.println(3 - -2);
+}
+// EXPECT: 10
+// EXPECT: 5
+// EXPECT: 5

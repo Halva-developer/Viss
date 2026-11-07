@@ -1,0 +1,18 @@
+$import lib "io" as io
+!func check(hp as int) {
+    ?if (hp <= 0) {
+        ?error "dead";
+    }
+}
+!main {
+    ?try {
+        check(0);
+        io.println("not reached");
+    }
+    ?expect Exception as @e {
+        io.println(i"caught: @e");
+    }
+    io.println("end");
+}
+// EXPECT: caught: dead
+// EXPECT: end

@@ -8,7 +8,7 @@ $import lib "io" as io
 $import lib "math" as math
 
 !func greet(name as str) -> str {
-    return i"Hello, {@name}! Welcome to Viss v0.3.0 'Peppermint Butler'.";
+    return i"Hello, {@name}! Welcome to Viss.";
 }
 
 !main {

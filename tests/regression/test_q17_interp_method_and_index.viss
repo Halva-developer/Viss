@@ -1,0 +1,9 @@
+$import lib "io" as io
+!main {
+    @xs = [10, 20, 30];
+    io.println(i"len={@xs.len()} first={@xs[0]} sum={@xs[0] + @xs[2]}");
+    @m = {"k": "v"};
+    io.println(i"m={@m["k"]}");
+}
+// EXPECT: len=3 first=10 sum=40
+// EXPECT: m=v

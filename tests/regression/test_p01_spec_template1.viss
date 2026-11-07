@@ -1,0 +1,36 @@
+$import lib "iostream" as io
+enum ItemRarity {
+    Common = 0,
+    Rare = 1,
+    Legendary = 2
+}
+struct Item {
+    name: str = ""
+    rarity: ItemRarity = ItemRarity.Common
+    value: int = 10
+    !func get_sell_price() as int {
+        ?match @rarity {
+            case ItemRarity.Legendary {
+                return @value * 5
+            }
+            case ItemRarity.Rare {
+                return @value * 2
+            }
+            default {
+                return @value
+            }
+        }
+    }
+}
+!main {
+    @inventory = [] | Item
+    @inventory.add(Item("Rusty Dagger", ItemRarity.Common, 15))
+    @inventory.add(Item("Shadow Bow", ItemRarity.Rare, 80))
+    @inventory.add(Item("Excalibur", ItemRarity.Legendary, 500))
+    @inventory.retain(|item| item.get_sell_price() >= 50)
+    for @item in @inventory {
+        io.println(i"Item: {@item.name} | Price: {@item.get_sell_price()} Gold")
+    }
+}
+// EXPECT: Item: Shadow Bow | Price: 160 Gold
+// EXPECT: Item: Excalibur | Price: 2500 Gold

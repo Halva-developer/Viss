@@ -1,0 +1,14 @@
+$import lib "io" as io
+!func is_even(n as int) -> bool {
+    return n % 2 == 0;
+}
+!main {
+    ?if is_even(4) {
+        io.println("4 even");
+    }
+    ?if not is_even(3) {
+        io.println("3 odd");
+    }
+}
+// EXPECT: 4 even
+// EXPECT: 3 odd

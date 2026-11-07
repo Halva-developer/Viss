@@ -1,0 +1,19 @@
+$import lib "io" as io
+!main {
+    @a = "abc";
+    @b = "ab" + "c";
+    ?if (@a == @b) {
+        io.println("eq");
+    }
+    io.println("n=" + 5);
+    io.println("x" + 1.5);
+    @s = "";
+    for @w in ["a", "b", "c"] {
+        @s += @w;
+    }
+    io.println(@s);
+}
+// EXPECT: eq
+// EXPECT: n=5
+// EXPECT: x1.5
+// EXPECT: abc

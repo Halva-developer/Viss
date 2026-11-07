@@ -5,7 +5,7 @@
 
 set -e
 
-VERSION="0.4.0hl"
+VERSION="$(sed -n 's/^#define VISS_VERSION_STRING "\(.*\)"/\1/p' "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/src/viss_version.hpp")"
 ARCH="$(uname -m 2>/dev/null || echo x86_64)"
 DIST_NAME="viss-${VERSION}-linux-${ARCH}"
 STAGING_DIR="/tmp/${DIST_NAME}"

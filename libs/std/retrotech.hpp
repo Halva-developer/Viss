@@ -133,11 +133,11 @@ namespace retrotech {
             hWinmm = LoadLibraryA("winmm.dll");
             if (!hWinmm) return;
 
-            pWaveOutOpen = (waveOutOpen_t)GetProcAddress(hWinmm, "waveOutOpen");
-            pWaveOutPrepareHeader = (waveOutPrepareHeader_t)GetProcAddress(hWinmm, "waveOutPrepareHeader");
-            pWaveOutWrite = (waveOutWrite_t)GetProcAddress(hWinmm, "waveOutWrite");
-            pWaveOutUnprepareHeader = (waveOutUnprepareHeader_t)GetProcAddress(hWinmm, "waveOutUnprepareHeader");
-            pWaveOutClose = (waveOutClose_t)GetProcAddress(hWinmm, "waveOutClose");
+            pWaveOutOpen = reinterpret_cast<waveOutOpen_t>(reinterpret_cast<void (*)()>(GetProcAddress(hWinmm, "waveOutOpen")));
+            pWaveOutPrepareHeader = reinterpret_cast<waveOutPrepareHeader_t>(reinterpret_cast<void (*)()>(GetProcAddress(hWinmm, "waveOutPrepareHeader")));
+            pWaveOutWrite = reinterpret_cast<waveOutWrite_t>(reinterpret_cast<void (*)()>(GetProcAddress(hWinmm, "waveOutWrite")));
+            pWaveOutUnprepareHeader = reinterpret_cast<waveOutUnprepareHeader_t>(reinterpret_cast<void (*)()>(GetProcAddress(hWinmm, "waveOutUnprepareHeader")));
+            pWaveOutClose = reinterpret_cast<waveOutClose_t>(reinterpret_cast<void (*)()>(GetProcAddress(hWinmm, "waveOutClose")));
 
             if (pWaveOutOpen && pWaveOutPrepareHeader && pWaveOutWrite) {
                 WAVEFORMATEX wfx;
@@ -368,7 +368,7 @@ namespace retrotech {
 
         bool open_window(const std::string& title = "Viss RetroTech Engine", int scale = 4) {
             window_scale = scale > 0 ? scale : 4;
-            WNDCLASSEXA wc = { sizeof(WNDCLASSEXA) };
+            WNDCLASSEXA wc{}; wc.cbSize = sizeof(WNDCLASSEXA);
             wc.lpfnWndProc = VissWindowProc;
             wc.hInstance = GetModuleHandle(NULL);
             wc.lpszClassName = "VissRetroWindowClass";

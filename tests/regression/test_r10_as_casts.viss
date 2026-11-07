@@ -1,0 +1,15 @@
+$import lib "io" as io
+!main {
+    @a = "42";
+    io.println(@a as int + 1);
+    @f = 7 as dec;
+    io.println(@f / 2);
+    @s = 12 as str;
+    io.println(@s + "!");
+    @b = 1 as bool;
+    io.println(@b);
+}
+// EXPECT: 43
+// EXPECT: 3.5
+// EXPECT: 12!
+// EXPECT: true

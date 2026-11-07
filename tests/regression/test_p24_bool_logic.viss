@@ -1,0 +1,17 @@
+$import lib "io" as io
+!main {
+    @a = true;
+    @b = false;
+    ?if (@a and not @b) {
+        io.println("ok1");
+    }
+    ?if (@a or @b) {
+        io.println("ok2");
+    }
+    io.println(@a && @b);
+    io.println(!@b);
+}
+// EXPECT: ok1
+// EXPECT: ok2
+// EXPECT: false
+// EXPECT: true

@@ -1,0 +1,12 @@
+// VSC regression: a lambda inside an assigned expression used to be parsed as a
+// "| type" cast, so `d = nums.map(|x| x * 2)` silently produced null (v0.4.1).
+nums = [10, 20, 30];
+doubled = nums.map(|x| x * 2);
+println(doubled.join(","));
+big = nums.filter(|x| x > 15);
+println(big.join(","));
+n = "42" | int;
+println(n + 1);
+// EXPECT: 20,40,60
+// EXPECT: 20,30
+// EXPECT: 43

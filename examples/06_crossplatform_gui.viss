@@ -1,25 +1,49 @@
 // =============================================================================
-// Viss Example 06: Native Desktop GUI Window
+// Viss Example 06: Desktop GUI (immediate mode)
 // Run with: viss run examples/06_crossplatform_gui.viss
-// Build GUI exe: viss create exe examples/06_crossplatform_gui.viss --gui
+//
+// The gui module is immediate-mode: every frame you clear the window, draw
+// everything, and check input. There are no widget objects - a "button" is a
+// rectangle plus a click test.
 // =============================================================================
 
 $import lib "io" as io
-$import lib "gui" as gui
+$import lib "gui" as ui
+$import lib "time" as time
 
 !main {
-    io.println("Initializing Viss Desktop GUI...");
+    io.println("Opening Viss GUI window... close it to exit.");
+    ui.create("Viss GUI Example", 640, 480);
+    !defer ui.close()
 
-    // Create desktop window (width 640, height 480)
-    @win = gui.create_window("Viss v0.3.0 GUI Application", 640, 480);
+    @clicks = 0;
+    @btn_x = 30;
+    @btn_y = 90;
+    @btn_w = 180;
+    @btn_h = 44;
 
-    // Add widgets
-    @lbl = gui.label(@win, "Welcome to Native Viss Desktop GUI!", 30, 30, 360, 30);
-    @btn = gui.button(@win, "Click Me", 30, 80, 160, 40, || {
-        io.println("Button was clicked!");
-    });
+    !while ui.is_open() {
+        ui.poll();
 
-    io.println("GUI components initialized successfully.");
-    // To run the main GUI event loop, call:
-    // gui.run(@win);
+        @mx = ui.mouse_x();
+        @my = ui.mouse_y();
+        @hover = @mx >= @btn_x and @mx <= @btn_x + @btn_w and @my >= @btn_y and @my <= @btn_y + @btn_h;
+        ?if (@hover and ui.mouse_clicked()) {
+            @clicks += 1;
+            io.println(i"Button clicked {@clicks} time(s)");
+        }
+
+        ui.clear(ui.Color.rgb(15, 18, 30));
+        ui.draw_text(30, 30, "Welcome to the native Viss desktop GUI!", ui.Color.rgb(230, 230, 240), 18);
+        ?if (@hover) {
+            ui.draw_round_rect(@btn_x, @btn_y, @btn_w, @btn_h, 10, ui.Color.rgb(70, 130, 255));
+        } else {
+            ui.draw_round_rect(@btn_x, @btn_y, @btn_w, @btn_h, 10, ui.Color.rgb(50, 100, 220));
+        }
+        ui.draw_text(@btn_x + 50, @btn_y + 12, "Click me", ui.Color.rgb(255, 255, 255), 16);
+        ui.draw_text(30, 160, i"Clicks: {@clicks}", ui.Color.rgb(180, 200, 255), 16);
+
+        ui.update();
+        time.sleep_ms(16);
+    }
 }

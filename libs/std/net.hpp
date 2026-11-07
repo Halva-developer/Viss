@@ -5,8 +5,10 @@
 #include <winsock2.h>
 #include <windows.h>
 #include <wininet.h>
+#ifdef _MSC_VER
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "wininet.lib")
+#endif
 #else
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -18,6 +20,9 @@
 #endif
 
 #include <sstream>
+#include <fstream>
+#include <filesystem>
+#include <random>
 #include <iomanip>
 
 namespace viss {
@@ -126,6 +131,46 @@ namespace viss {
                 proto = s_url.substr(0, p_pos);
                 rest_start = p_pos + 3;
             }
+
+            // This raw-socket client has no TLS. https:// used to go out as PLAINTEXT on
+            // port 443 (headers and tokens included). Hand TLS requests to curl instead,
+            // which verifies certificates. Every value is passed as a quoted argument.
+            if (proto == "https") {
+                std::string cmd = "curl -sS -L -A 'Viss-Net/2.0' -X " + viss::quoteArg(method) + " -w '\\n%{http_code}'";
+                std::string hline;
+                std::istringstream hs(headers);
+                while (std::getline(hs, hline)) {
+                    if (!hline.empty() && hline.back() == '\r') hline.pop_back();
+                    if (!hline.empty()) cmd += " -H " + viss::quoteArg(hline);
+                }
+                std::filesystem::path body_file;
+                if (!body.empty()) {
+                    body_file = std::filesystem::temp_directory_path() /
+                        ("viss_net_body_" + std::to_string(std::random_device{}()) + ".bin");
+                    std::ofstream bf(body_file, std::ios::binary);
+                    bf << body;
+                    bf.close();
+                    cmd += " --data-binary @" + viss::quoteArg(body_file.string());
+                }
+                cmd += " -- " + viss::quoteArg(url);
+                std::string out;
+                FILE* pipe = popen(cmd.c_str(), "r");
+                if (pipe) {
+                    char cbuf[4096];
+                    size_t cn;
+                    while ((cn = fread(cbuf, 1, sizeof(cbuf), pipe)) > 0) out.append(cbuf, cn);
+                    pclose(pipe);
+                }
+                if (!body_file.empty()) {
+                    std::error_code rm_ec;
+                    std::filesystem::remove(body_file, rm_ec);
+                }
+                size_t last_nl = out.rfind('\n');
+                if (last_nl == std::string::npos) return "";
+                g_last_status_code = std::atoi(out.c_str() + last_nl + 1);
+                return out.substr(0, last_nl);
+            }
+
             size_t slash_pos = s_url.find('/', rest_start);
             std::string host_port = "";
             if (slash_pos != std::string::npos) {
@@ -282,7 +327,8 @@ namespace viss {
             InternetCloseHandle(hInternet);
             return true;
 #else
-            std::string cmd = "curl -s -L -A \"Viss-Net/2.0\" -o \"" + destinationPath + "\" \"" + url + "\"";
+            // URLs and paths are data: quote them so $(...) or ; in a URL cannot run commands.
+            std::string cmd = "curl -s -L -A \"Viss-Net/2.0\" -o " + viss::shellArg(destinationPath) + " -- " + viss::shellArg(url);
             int ret = std::system(cmd.c_str());
             return (ret == 0 && std::filesystem::exists(destinationPath) && std::filesystem::file_size(destinationPath) > 0);
 #endif
@@ -587,20 +633,30 @@ namespace viss {
                     }
                 } else {
                     res.status = 404;
+                    // Plain text: the request path is attacker-controlled (reflected XSS as text/html).
+                    res.content_type = "text/plain; charset=utf-8";
                     res.body = "404 Not Found: " + req.path;
                 }
+
+                // Header values must never contain CR/LF (response splitting), even when a
+                // handler writes res.headers or res.content_type directly instead of set_header().
+                auto no_crlf = [](Str s) {
+                    s.erase(std::remove(s.begin(), s.end(), '\r'), s.end());
+                    s.erase(std::remove(s.begin(), s.end(), '\n'), s.end());
+                    return s;
+                };
 
                 // Build HTTP response
                 std::ostringstream resp_stream;
                 resp_stream << "HTTP/1.1 " << res.status << " " << status_message(res.status) << "\r\n";
-                resp_stream << "Content-Type: " << res.content_type << "\r\n";
+                resp_stream << "Content-Type: " << no_crlf(res.content_type) << "\r\n";
                 resp_stream << "Content-Length: " << res.body.size() << "\r\n";
                 resp_stream << "Connection: close\r\n";
-                resp_stream << "Server: Viss-HTTP/0.3\r\n";
+                resp_stream << "Server: Viss-HTTP\r\n";
 
                 auto hkeys = res.headers.keys();
                 for (size_t i = 0; i < (size_t)hkeys.len(); ++i) {
-                    resp_stream << hkeys[i] << ": " << res.headers[hkeys[i]] << "\r\n";
+                    resp_stream << no_crlf(hkeys[i]) << ": " << no_crlf(res.headers[hkeys[i]]) << "\r\n";
                 }
                 resp_stream << "\r\n";
                 resp_stream << res.body;

@@ -1,0 +1,10 @@
+$import lib "io" as io
+!main {
+    io.println("a\nb");
+    io.println("back\\slash");
+    io.println("q\"uote");
+}
+// EXPECT: a
+// EXPECT: b
+// EXPECT: back\slash
+// EXPECT: q"uote

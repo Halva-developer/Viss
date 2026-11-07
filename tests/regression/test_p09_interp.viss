@@ -1,0 +1,9 @@
+$import lib "io" as io
+!main {
+    @n = 3;
+    @name = "Bob";
+    io.println(i"n={@n} next={@n + 1} name={@name}");
+    io.println(i"Hi @name! score @n");
+}
+// EXPECT: n=3 next=4 name=Bob
+// EXPECT: Hi Bob! score 3

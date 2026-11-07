@@ -1,0 +1,35 @@
+$import lib "io" as io
+!func rank(s as int) to str {
+    ?match s {
+        case 100 {
+            return "Champion";
+        }
+        case 50 {
+            return "Warrior";
+        }
+        else {
+            return "Recruit";
+        }
+    }
+}
+!main {
+    io.println(rank(100));
+    io.println(rank(50));
+    io.println(rank(1));
+    @cmd = "stop";
+    ?match @cmd {
+        case "go" {
+            io.println("going");
+        }
+        case "stop" {
+            io.println("stopping");
+        }
+        default {
+            io.println("?");
+        }
+    }
+}
+// EXPECT: Champion
+// EXPECT: Warrior
+// EXPECT: Recruit
+// EXPECT: stopping

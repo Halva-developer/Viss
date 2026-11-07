@@ -12,7 +12,7 @@
 %import iostream as io;
 %import math as math;
 
-println("=== VSC (Viss Script Core) v0.3.0 Demo ===");
+println("=== VSC (Viss Script Core) Demo ===");
 
 // 1. System inspection
 @os = sys.os();

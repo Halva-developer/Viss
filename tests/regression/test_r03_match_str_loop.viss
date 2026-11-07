@@ -1,0 +1,29 @@
+$import lib "io" as io
+!main {
+    @out = "";
+    for @w in ["a", "skip", "b", "stop", "c"] {
+        ?match @w {
+            case "skip" {
+                continue;
+            }
+            case "stop" {
+                break;
+            }
+            default {
+                @out += @w;
+            }
+        }
+    }
+    io.println(@out);
+    @k = "y";
+    ?match @k {
+        case "x", "y" {
+            io.println("x-or-y");
+        }
+        else {
+            io.println("other");
+        }
+    }
+}
+// EXPECT: ab
+// EXPECT: x-or-y

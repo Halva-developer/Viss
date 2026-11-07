@@ -244,5 +244,7 @@ namespace viss {
         inline double to_float(const Str& s, double def_v = 0.0) {
             try { return std::stod(s); } catch (...) { return def_v; }
         }
+        // Documented name (Viss_AI.md): str.to_dec(s, def)
+        inline Dec to_dec(const Str& s, Dec def_v = 0.0) { return to_float(s, def_v); }
     }
 }

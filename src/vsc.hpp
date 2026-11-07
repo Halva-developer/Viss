@@ -15,14 +15,15 @@
 #include <filesystem>
 #include <algorithm>
 #include <cctype>
+#include "viss_version.hpp"
 #include "viss_vm.hpp"
 
 namespace fs = std::filesystem;
 
 namespace vsc {
 
-const std::string VSC_VERSION = "0.4.0hl";
-const std::string VSC_CODENAME = "Flame Princess (Hot Speed & Loud)";
+const std::string VSC_VERSION = VISS_VERSION_STRING;
+const std::string VSC_CODENAME = VISS_CODENAME_STRING;
 const std::string SSI_VERSION = VSC_VERSION;
 const std::string SSI_CODENAME = VSC_CODENAME;
 

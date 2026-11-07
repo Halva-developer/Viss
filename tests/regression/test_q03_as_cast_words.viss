@@ -1,0 +1,14 @@
+$import lib "io" as io
+!main {
+    @a = "42";
+    @b = @a as int;
+    io.println(@b + 1);
+    @c = 3;
+    @d = @c as dec;
+    io.println(@d / 2);
+    @e = 7 as str;
+    io.println(@e + "!");
+}
+// EXPECT: 43
+// EXPECT: 1.5
+// EXPECT: 7!

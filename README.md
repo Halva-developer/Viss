@@ -5,8 +5,8 @@
 # Viss Programming Language
 ### The High-Performance, Visually Structured Language for Everyday Development & Systems
 
-[![Version](https://img.shields.io/badge/version-v0.4.1%20%22Flame%20Princess%22-blue.svg)](https://github.com/Halva-developer/Viss)
-[![Release](https://img.shields.io/badge/%F0%9F%94%A5%20flame%20princess-v0.4.1-orange.svg)](https://github.com/Halva-developer/Viss)
+[![Version](https://img.shields.io/badge/version-v0.4.2%20%22Flame%20Princess%22-blue.svg)](https://github.com/Halva-developer/Viss)
+[![Release](https://img.shields.io/badge/%F0%9F%94%A5%20flame%20princess-v0.4.2-orange.svg)](https://github.com/Halva-developer/Viss)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-orange.svg)](https://github.com/Halva-developer/Viss)
 
@@ -44,7 +44,8 @@ Following the beloved Debian tradition with *Toy Story*, Viss codenames each off
 | `v0.3.2` | **"Hot Dog Princess"** | Hot Dog Princess | Complete audit cleanup; strict security hardening (SQL injection prevention, path traversal protection, removal of proprietary license code, workspace trust); 64-bit integer literal precision; class inheritance (`!class Player :: Entity`); bounds checking; UTF-8 codepoint string handling (`.len`, `.substr`, `.upper()`, `.lower()`); control loop fixes (`!for`, `!while`, `?if` without paren collisions); non-zero error exits. |
 | `v0.3.3h` | **"Flame Princess"** | Flame Princess | VM parser and tokenization fixes (eliminated brace counter corruption on comparison operators `<=`, `>=`, `==` in `?if`/`!while`); regular expressions standard module `re` (`re.match`, `re.search`, `re.findall`, `re.sub`, `re.split`); zero-dependency zip archive module `zip` (`zip.list`, `zip.read_text`, `zip.extract` for reading `.docx` and archives); hex (`0xFF`), binary (`0b1010`), and scientific notation number literals; VSC arrow return statements normalization. |
 | `v0.4.0hl` | **"Flame Princess"** | Flame Princess | Hot speed & loud: VM branch precedence and `?else if` execution order fixes; string interpolation `i"..."` in VM; strings containing `|` in VM; automatic declaration of `@me.field` class members in C++ struct codegen; fixed parameterized SQL placeholder substitution in `db.exec_params`; comment preservation in formatter (`viss fmt`); compiler auto-discovery in PATH for `viss run`/`build`. |
-| `v0.4.1` | **"Flame Princess"** | Flame Princess | **Current Release:** Complete Linux GCC 13/14 compilation audit (zero compiler warnings with `-Wall -Wextra`); variable lookahead type promotion for untyped floats; type-conversion pipelines without error leaks; VM error handling (eliminated trailing null after NameError); SQL placeholder parser hardened against string literals; CSPRNG hardware entropy for `random_bytes` and `uuid`; HTTP server active connection throttling (`max_clients = 256`); project-local `libs/` resolution for `$import lib`; AudioCoverWatcher v0.4.1 native modernization. |
+| `v0.4.1` | **"Flame Princess"** | Flame Princess | Complete Linux GCC 13/14 compilation audit (zero compiler warnings with `-Wall -Wextra` on Linux); variable lookahead type promotion for untyped floats; type-conversion pipelines without error leaks; VM error handling (eliminated trailing null after NameError); SQL placeholder parser hardened against string literals; CSPRNG hardware entropy for `random_bytes` and `uuid`; HTTP server active connection throttling (`max_clients = 256`); project-local `libs/` resolution for `$import lib`; AudioCoverWatcher v0.4.1 native modernization. |
+| `v0.4.2` | **"Flame Princess"** | Flame Princess | **Current Release:** Full audit release. Stale-binary cache fixed (builds are fingerprinted, so tests really test the current compiler); `viss test` checks `// EXPECT:` output and runs `.vsc` tests; 60 new regression tests; spec features that did not compile now work (`[] \| Type` typed lists, `@x as int`, `?match` on strings, `i"Hi @name"`, `\|>` inside call arguments, `@s.contains()`, `.first()`/`.last()`, `1e3`); one decimal format everywhere; readable runtime errors (division by zero, crashes, uncaught `?error`); shell-injection fixes in `media`/`zip`/`fs`/`net`; `db.close()` no longer resurrects deleted files and saves atomically; one version source for all tools. |
 
 ---
 
@@ -350,9 +351,23 @@ viss build app.viss                        # Transpile and compile to standard e
 viss bundle app.viss -o app.exe            # 100% standalone binary (Zero DLL dependencies)
 viss sfx installer.viss -p dir/ -o out.exe # Self-extracting single-file installer
 viss lsp                                   # Start Language Server Protocol daemon
-viss test                                  # Run automated test suites in tests/
+viss test [dir]                            # Run tests/ recursively (test_*.viss / test_*.vsc), checking // EXPECT: lines
 viss clean                                 # Clean cache (.viss_cache/)
 viss version                               # Print toolchain version & codename
+```
+
+### Writing Tests
+
+`viss test` runs every `test_*.viss` / `test_*.vsc` under `tests/` (recursively). A test can state the exact
+output it must print and the exit code it must return; without these lines it passes when it exits with 0:
+
+```viss
+$import lib "io" as io
+!main {
+    io.println(2 + 3);
+}
+// EXPECT: 5
+// EXPECT_RC: 0
 ```
 
 ---
@@ -369,10 +384,10 @@ viss version                               # Print toolchain version & codename
 * **`system` (`sys`)**: Process spawning (`sys.command`, `sys.exec`), environment variables (`sys.env`), CPU core detection (`sys.cpu_count`), OS detection (`sys.os`), distro detection (`sys.distro`).
 * **`fs`**: File system manipulation (`read`, `write`, `exists`, `mkdir`, `list`, `size`, `remove`).
 * **`math`**: Complete mathematical functions (`sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sqrt`, `cbrt`, `pow`, `abs`, `round`, `floor`, `ceil`, `clamp`, `random_int`, `random_dec`, `PI`, `E`).
-* **`time`**: Timestamps (`time.now_ms()`, `time.now_secs()`), high-resolution sleep, timestamp formatting.
+* **`time`**: Timestamps (`time.now()`, `time.now_ms()`, `time.now_secs()`), sleep in milliseconds (`time.sleep(ms)`, `time.sleep_sec(s)`), timestamp formatting (`time.format(fmt)`).
 * **`str`**: Complete UTF-8 aware string manipulation (`split`, `join`, `trim`, `lower`, `upper`, `contains`, `replace`, `starts_with`, `ends_with`, `substr`, `len`).
 * **`re`**: Full regular expressions engine (`match`, `search`, `findall`, `sub`, `split`).
-* **`zip`**: Zero-dependency ZIP archive reader and extractor (`list`, `read_text`, `extract`).
+* **`zip`**: ZIP archive reader and extractor (`list`, `read_text`, `extract`). Listing is parsed natively; reading and extraction use the system `tar` (Windows 10+, Linux, macOS) or `unzip`.
 * **`asyncIO` (`async`)**: High-performance thread pool, timers, async task dispatching.
 
 ---
@@ -411,6 +426,8 @@ Viss features an official Visual Studio Code extension located in `extensions/vi
 - [x] Viss 0.3.2 Security Hardening, Audit Fixes & UTF-8 Strings
 - [x] Viss 0.3.3h Flame Princess (Hot Speed) — VM Comparison Parser Fixes, Regex (`re`), Zero-Dependency ZIP (`zip`), Hex/Bin Numerics
 - [x] Viss 0.4.0hl Flame Princess (Hot Speed & Loud) — VM if/elif/else branch precedence, string interpolation `i"..."`, `@me.field` auto-declaration, `db.exec_params` placeholder fix, formatter comments preservation
+- [x] Viss 0.4.1 Flame Princess — Linux GCC warning audit, project-local `libs/`, ACW modernization
+- [x] Viss 0.4.2 Flame Princess — full audit: honest test runner, spec features that now compile, runtime error messages, shell-injection fixes
 
 ---
 

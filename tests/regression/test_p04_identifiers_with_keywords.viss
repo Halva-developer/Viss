@@ -1,0 +1,17 @@
+$import lib "io" as io
+!main {
+    @index = 5;
+    @info = "inf";
+    @android = 3;
+    @notes = 2;
+    @order = 1;
+    @contains_x = 7;
+    @main_count = 9;
+    @into = @index + @android + @notes + @order;
+    io.println(@into);
+    io.println(@info);
+    io.println(@contains_x + @main_count);
+}
+// EXPECT: 11
+// EXPECT: inf
+// EXPECT: 16

@@ -1,0 +1,11 @@
+$import lib "io" as io
+$import lib "str" as str
+!main {
+    @s = "Привет, мир";
+    io.println(str.len(@s));
+    io.println(str.upper(@s));
+    io.println(i"Слово: {@s}");
+}
+// EXPECT: 11
+// EXPECT: ПРИВЕТ, МИР
+// EXPECT: Слово: Привет, мир

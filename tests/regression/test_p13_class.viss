@@ -1,0 +1,16 @@
+$import lib "io" as io
+!class Player {
+    !func main(name as str, score as int) {
+        @me.name = name | str;
+        @me.score = score | int;
+    }
+    !func bump(n as int) {
+        @me.score += n;
+    }
+}
+!main {
+    @p = Player("Arthur", 100) | class;
+    @p.bump(5);
+    io.println(i"{@p.name} {@p.score}");
+}
+// EXPECT: Arthur 105

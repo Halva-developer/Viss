@@ -1,0 +1,13 @@
+$import lib "io" as io
+!main {
+    @mystr = "abc";
+    io.println(@mystr.len());
+    @hint = 5;
+    @uptime = 7;
+    io.println(@hint + @uptime);
+    @point = 2;
+    io.println(@point);
+}
+// EXPECT: 3
+// EXPECT: 12
+// EXPECT: 2

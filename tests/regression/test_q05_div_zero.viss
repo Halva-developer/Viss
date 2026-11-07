@@ -1,0 +1,10 @@
+$import lib "io" as io
+!main {
+    @a = 10;
+    @b = 0;
+    io.println("start");
+    @c = @a / @b;
+    io.println(i"bad {@c}");
+}
+// EXPECT: start
+// EXPECT_RC: 1

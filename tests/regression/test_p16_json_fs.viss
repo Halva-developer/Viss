@@ -1,0 +1,17 @@
+$import lib "io" as io
+$import lib "fs" as fs
+$import lib "json" as json
+!main {
+    fs.write("probe_tmp.txt", "line1\nline2");
+    io.println(fs.read("probe_tmp.txt"));
+    io.println(fs.exists("probe_tmp.txt"));
+    fs.remove("probe_tmp.txt");
+    io.println(fs.exists("probe_tmp.txt"));
+    @j = json.parse("{\"a\": [1, 2, {\"b\": \"x\"}]}");
+    io.println(@j.get("a").len());
+}
+// EXPECT: line1
+// EXPECT: line2
+// EXPECT: true
+// EXPECT: false
+// EXPECT: 3

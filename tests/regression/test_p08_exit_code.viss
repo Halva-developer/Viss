@@ -1,0 +1,9 @@
+$import lib "io" as io
+$import lib "sys" as sys
+!main {
+    io.println("before");
+    sys.exit(3);
+    io.println("after");
+}
+// EXPECT: before
+// EXPECT_RC: 3

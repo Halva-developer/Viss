@@ -1,0 +1,10 @@
+$import lib "io" as io
+$import lib "sys" as sys
+!func fail() {
+    sys.exit(7);
+}
+!main {
+    defer io.println("deferred");
+    fail();
+}
+// EXPECT_RC: 7

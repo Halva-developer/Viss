@@ -280,7 +280,7 @@ namespace updater {
             else if (arg == "--branch" || arg == "-b") {
                 if (i + 1 < argc) target_branch = argv[++i];
             } else if (arg == "dev" || arg == "nightly") {
-                target_branch = "dev/v0.3.0-peppermint-butler";
+                target_branch = "main"; // the old dev branch is frozen at v0.3.0; tracking it would downgrade
                 build_source = true;
             } else if (arg == "main") {
                 target_branch = "main";

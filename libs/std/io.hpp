@@ -16,6 +16,12 @@ namespace viss {
         inline void print_single(const T& value) {
             std::cout << value;
         }
+        inline void print_single(double value) {
+            std::cout << fmtDec(value);
+        }
+        inline void print_single(float value) {
+            std::cout << fmtDec((double)value);
+        }
         inline void print_single(uint8_t value) {
             std::cout << (int)value;
         }
@@ -59,6 +65,10 @@ namespace viss {
             std::getline(std::cin, s);
             return s;
         }
+        // Documented names (Viss_AI.md): io.read_line(), io.error(value)
+        inline Str read_line() { return readln(); }
+        template<typename T>
+        inline void error(const T& value) { std::cerr << viss::toStr(value) << "\n"; }
 
         inline Str read_char() {
             #ifdef _WIN32

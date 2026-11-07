@@ -1,0 +1,24 @@
+$import lib "io" as io
+!main {
+    @xs = [3, 1, 2];
+    @xs.add(5);
+    io.println(@xs.len());
+    @sum = 0;
+    for @v in @xs {
+        @sum += @v;
+    }
+    io.println(@sum);
+    @m = {"a": 1, "b": 2};
+    io.println(@m["b"]);
+    ?if (@xs contains 5) {
+        io.println("has5");
+    }
+    ?if (2 in @xs) {
+        io.println("has2");
+    }
+}
+// EXPECT: 4
+// EXPECT: 11
+// EXPECT: 2
+// EXPECT: has5
+// EXPECT: has2

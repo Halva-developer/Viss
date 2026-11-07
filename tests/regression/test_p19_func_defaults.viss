@@ -1,0 +1,15 @@
+$import lib "io" as io
+!func add(a as int, b as int = 10) -> int {
+    return a + b;
+}
+!func half(x: dec) -> dec {
+    return x / 2;
+}
+!main {
+    io.println(add(1));
+    io.println(add(1, 2));
+    io.println(half(5));
+}
+// EXPECT: 11
+// EXPECT: 3
+// EXPECT: 2.5

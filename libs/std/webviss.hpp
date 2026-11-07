@@ -18,6 +18,10 @@
 #define closesocket close
 #endif
 
+// WARNING: webviss / vts:// is an OFFLINE DEMO.
+// - fetch() sends no network traffic; responses are hard-coded placeholders.
+// - The "handshake" uses p = 23 (22 possible keys) and the cipher is a XOR shuffle.
+// It provides NO confidentiality or integrity. Never use it for real data or secrets.
 namespace viss {
     namespace webviss {
         inline Bool vtsEnabled = false;
@@ -26,7 +30,7 @@ namespace viss {
             if (proto == "vts") {
                 vtsEnabled = true;
                 std::cout << "[WebViss] Protocol 'vts://' (Viss Tunnel Security) has been enabled.\n";
-                std::cout << "[WebViss] Security: Ephemeral ECDH key exchange, Perfect Forward Secrecy & Traffic Obfuscation active.\n";
+                std::cout << "[WebViss] NOTE: vts:// is an offline demo. It sends no network traffic and provides NO real encryption.\n";
             }
         }
 
@@ -80,7 +84,7 @@ namespace viss {
             for (Int i = 0; i < clientPriv; ++i) clientShared = (clientShared * serverPub) % p;
 
             Str key = std::to_string(clientShared) + "_VTS_SECRET_KEY_SHIFT_93";
-            std::cout << "[VTS Handshake] Shared key established. Perfect Forward Secrecy enabled.\n";
+            std::cout << "[VTS Handshake] Demo key derived (toy parameters, not secure).\n";
             
             VtsSession session;
             session.sessionKey = key;
@@ -106,7 +110,7 @@ namespace viss {
                 Str decryptedResponse = session.decrypt(encryptedResponse);
                 return decryptedResponse;
             } else if (url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0) {
-                std::cout << "[WebViss] Fetching standard web url: " << url << "\n";
+                std::cout << "[WebViss] Demo stub: no request is made for " << url << " (use the net module for real HTTP)\n";
                 return "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n[WebViss] Standard HTTP Response stub";
             }
             return "[WebViss Error] Unsupported protocol in URL: " + url;
